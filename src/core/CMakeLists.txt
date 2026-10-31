@@ -8,7 +8,8 @@ add_library(lt_core STATIC
     llmstreamclient.cpp
     translationengine.cpp
     soundplayer.cpp
+    shortcutmonitor.cpp
 )
 add_library(lt::core ALIAS lt_core)
 target_include_directories(lt_core PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/..)
-target_link_libraries(lt_core PUBLIC Qt6::Core Qt6::Network)
+target_link_libraries(lt_core PUBLIC Qt6::Core Qt6::Network lt::interfaces)

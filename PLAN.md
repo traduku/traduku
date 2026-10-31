@@ -97,4 +97,7 @@ tools/mock-openai.py  стриминговый mock для ручной пров
       язык, статус; copyRequested/settingsRequested сигналами - без
       зависимости от платформы) + SettingsDialog (load/save/cancel/defaults,
       Test API).
-- [ ] M9 … M11.
+- [x] M9 platform/x11: X11HotkeyBackend (XI2 raw -> RECORD fallback,
+      XKB-probe, feedKeyEvent seam для тестов) + core ShortcutMonitor
+      (одиночный global shortcut -> двойной жест тем же детектором).
+- [ ] M10 … M11.

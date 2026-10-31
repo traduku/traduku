@@ -24,7 +24,8 @@ lt_add_test(tst_doublepress SOURCES unit/tst_doublepressdetector.cpp LIBS lt::co
 lt_add_test(tst_sseparser SOURCES unit/tst_sseparser.cpp LIBS lt::core)
 
 # M4: streaming client (integration: in-process mock SSE server)
-lt_add_test(tst_llmstreamclient SOURCES integration/tst_llmstreamclient.cpp integration/mocksseserver.h
+lt_add_test(tst_llmstreamclient SOURCES integration/tst_llmstreamclient.cpp
+    integration/mocksseserver.h
     LIBS lt::core Qt6::Network)
 target_include_directories(tst_llmstreamclient PRIVATE integration)
 
@@ -46,3 +47,12 @@ lt_add_test(tst_translatorwindow SOURCES unit/tst_translatorwindow.cpp
     LIBS lt::ui Qt6::Widgets)
 lt_add_test(tst_settingsdialog SOURCES unit/tst_settingsdialog.cpp
     LIBS lt::ui Qt6::Widgets)
+
+# M9: shortcut monitor (core glue) + X11 hotkey backend pipeline
+lt_add_test(tst_shortcutmonitor SOURCES unit/tst_shortcutmonitor.cpp
+    LIBS lt::core Qt6::Widgets)
+target_include_directories(tst_shortcutmonitor PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/../src)
+if(LT_BUILD_X11)
+    lt_add_test(tst_x11hotkey SOURCES integration/tst_x11hotkey.cpp
+        LIBS lt::platform_x11)
+endif()
