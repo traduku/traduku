@@ -82,4 +82,7 @@ tools/mock-openai.py  стриминговый mock для ручной пров
       unit-тестов, включая non-Latin keycode 54 и auto-repeat).
 - [x] M3 core: SseParser (инкрементальный; partial lines, split UTF-8,
       surrogate pairs, [DONE], error payload, CRLF, keepalive).
-- [ ] M4 … M11.
+- [x] M4 core: LlmStreamClient (stream=true) + integration/mocksseserver.h -
+      in-process фрагментированный SSE-сервер: дельты по порядку, split по
+      7 байт, auth header, stream:true, 5xx, mid-stream error, refused.
+- [ ] M5 … M11.

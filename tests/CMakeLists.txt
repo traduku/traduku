@@ -22,3 +22,8 @@ lt_add_test(tst_doublepress SOURCES unit/tst_doublepressdetector.cpp LIBS lt::co
 
 # M3: core streaming SSE parser
 lt_add_test(tst_sseparser SOURCES unit/tst_sseparser.cpp LIBS lt::core)
+
+# M4: streaming client (integration: in-process mock SSE server)
+lt_add_test(tst_llmstreamclient SOURCES integration/tst_llmstreamclient.cpp integration/mocksseserver.h
+    LIBS lt::core Qt6::Network)
+target_include_directories(tst_llmstreamclient PRIVATE integration)

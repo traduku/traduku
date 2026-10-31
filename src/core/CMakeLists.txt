@@ -5,6 +5,7 @@ add_library(lt_core STATIC
     settings.cpp
     doublepressdetector.cpp
     sseparser.cpp
+    llmstreamclient.cpp
 )
 add_library(lt::core ALIAS lt_core)
 target_include_directories(lt_core PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/..)
