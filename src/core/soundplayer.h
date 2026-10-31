@@ -35,6 +35,7 @@ public:
                          QObject *parent = nullptr);
 
     static QString fileName(SoundEvent event);
+    virtual ~SoundPlayer() = default;
 
     /// Overrides the default backend chain (paplay/pw-play/aplay).
     void setBackendChain(QVector<Player> chain);
@@ -42,7 +43,7 @@ public:
     /// First existing candidate path, empty when unresolvable.
     QString resolve(SoundEvent event) const;
 
-    void play(SoundEvent event);
+    virtual void play(SoundEvent event);
 
 private:
     static QVector<Player> defaultChain();

@@ -100,4 +100,10 @@ tools/mock-openai.py  стриминговый mock для ручной пров
 - [x] M9 platform/x11: X11HotkeyBackend (XI2 raw -> RECORD fallback,
       XKB-probe, feedKeyEvent seam для тестов) + core ShortcutMonitor
       (одиночный global shortcut -> двойной жест тем же детектором).
-- [ ] M10 … M11.
+- [x] M10 app/AppController (DE-agnostic композиционный корень: hotkey ->
+      клипборд -> стрим -> окно -> клипборд -> звук+нотификация) +
+      platform/kde (KdeTray, KdeNotifier, KdeGlobalShortcut) + XdgAutostart
+      (кросс-DE) + app/kde/main.cpp (CLI --translate со стримом в stdout,
+      fallback-цепочка хоткеев, live-reload конфига). Полная интеграция
+      (tst_appcontroller) + живой CLI прогон против streaming-mock.
+- [ ] M11.

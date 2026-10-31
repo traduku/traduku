@@ -14,6 +14,7 @@ find_package(Qt6 ${QT_MIN_VERSION} REQUIRED
     COMPONENTS Core Gui Widgets Network Multimedia Test)
 
 include(CTest)
+include(GNUInstallDirs)
 find_package(PkgConfig REQUIRED)
 add_subdirectory(tests)
 

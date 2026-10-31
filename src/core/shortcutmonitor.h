@@ -1,6 +1,7 @@
 #pragma once
 
 #include "core/doublepressdetector.h"
+#include "interfaces/ihotkeybackend.h"
 
 #include <QObject>
 
@@ -16,24 +17,24 @@ class Settings;
  * fallback shortcut twice quickly" behaves exactly like the passive
  * monitor. The registered sequence and interval follow the settings live.
  */
-class ShortcutMonitor : public QObject
+class ShortcutMonitor : public IHotkeyBackend
 {
     Q_OBJECT
 public:
     ShortcutMonitor(IGlobalShortcut *shortcut, Settings *settings,
                     QObject *parent = nullptr);
 
-    bool start();
-    void stop();
+    bool start() override;
+    void stop() override;
+    QString backendName() const override { return QStringLiteral("shortcut"); }
 
     void setClock(DoublePressDetector::Clock clock);   // test seam
-
-Q_SIGNALS:
-    void activated();
 
 private:
     void applyFromSettings();
     void onTriggered();
+    // activated() is inherited from IHotkeyBackend and re-emitted by the
+    // internal DoublePressDetector.
 
     IGlobalShortcut *m_shortcut;
     Settings *m_settings;

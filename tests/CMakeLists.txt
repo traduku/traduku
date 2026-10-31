@@ -56,3 +56,13 @@ if(LT_BUILD_X11)
     lt_add_test(tst_x11hotkey SOURCES integration/tst_x11hotkey.cpp
         LIBS lt::platform_x11)
 endif()
+
+# M10: full app pipeline (hotkey -> stream -> window -> clipboard -> sounds)
+lt_add_test(tst_appcontroller SOURCES integration/tst_appcontroller.cpp
+    integration/mocksseserver.h ../src/app/AppController.h
+    LIBS lt::app lt::ui lt::core Qt6::Network)
+target_include_directories(tst_appcontroller PRIVATE integration ${CMAKE_CURRENT_SOURCE_DIR}/../src)
+
+# M10: XDG autostart (cross-DE, Qt-only)
+lt_add_test(tst_xdgautostart SOURCES unit/tst_xdgautostart.cpp
+    LIBS lt::platform_qt)

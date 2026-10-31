@@ -7,12 +7,12 @@ namespace lt {
 
 ShortcutMonitor::ShortcutMonitor(IGlobalShortcut *shortcut, Settings *settings,
                                  QObject *parent)
-    : QObject(parent)
+    : IHotkeyBackend(parent)
     , m_shortcut(shortcut)
     , m_settings(settings)
 {
-    connect(&m_detector, &DoublePressDetector::activated,
-            this, &ShortcutMonitor::activated);
+    connect(&m_detector, &DoublePressDetector::activated, this,
+            [this]() { Q_EMIT activated(); });
     connect(m_settings, &Settings::changed, this, &ShortcutMonitor::applyFromSettings);
 }
 

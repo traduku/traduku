@@ -1,19 +1,17 @@
-# Per-module CMakeLists are added as modules land (see PLAN.md).
+# src layout - see PLAN.md
 add_subdirectory(core)
 add_subdirectory(interfaces)
+add_subdirectory(ui)
+add_subdirectory(app)
+add_subdirectory(platform/qt)
+add_subdirectory(platform/wl)
 
-if(TARGET lt_core)
-    add_subdirectory(ui)
-    add_subdirectory(platform/qt)
-    add_subdirectory(platform/wl)
-endif()
-
-if(LT_BUILD_X11 AND TARGET lt_core)
+if(LT_BUILD_X11)
     pkg_check_modules(X11 REQUIRED IMPORTED_TARGET x11 xtst xi)
     add_subdirectory(platform/x11)
 endif()
 
-if(LT_BUILD_KDE AND TARGET lt_core)
+if(LT_BUILD_KDE)
     find_package(KF6CoreAddons QUIET)
     find_package(KF6Config QUIET)
     find_package(KF6DBusAddons QUIET)
