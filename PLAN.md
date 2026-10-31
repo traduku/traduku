@@ -80,4 +80,6 @@ tools/mock-openai.py  стриминговый mock для ручной пров
       редакторов) — 3 тестовых бинарника зелёные.
 - [x] M2 core: DoublePressDetector (инъекция часов/пробы модификаторов; 12
       unit-тестов, включая non-Latin keycode 54 и auto-repeat).
-- [ ] M3 … M11.
+- [x] M3 core: SseParser (инкрементальный; partial lines, split UTF-8,
+      surrogate pairs, [DONE], error payload, CRLF, keepalive).
+- [ ] M4 … M11.

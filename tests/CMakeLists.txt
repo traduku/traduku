@@ -19,3 +19,6 @@ lt_add_test(tst_settings  SOURCES unit/tst_settings.cpp  LIBS lt::core)
 
 # M2: core double-Ctrl+C detector
 lt_add_test(tst_doublepress SOURCES unit/tst_doublepressdetector.cpp LIBS lt::core)
+
+# M3: core streaming SSE parser
+lt_add_test(tst_sseparser SOURCES unit/tst_sseparser.cpp LIBS lt::core)
