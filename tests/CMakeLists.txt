@@ -40,3 +40,9 @@ lt_add_test(tst_clipboards SOURCES integration/tst_clipboards.cpp
 
 # M7: core sound player (events, theme resolution, backend chain)
 lt_add_test(tst_soundplayer SOURCES unit/tst_soundplayer.cpp LIBS lt::core)
+
+# M8: UI windows (offscreen)
+lt_add_test(tst_translatorwindow SOURCES unit/tst_translatorwindow.cpp
+    LIBS lt::ui Qt6::Widgets)
+lt_add_test(tst_settingsdialog SOURCES unit/tst_settingsdialog.cpp
+    LIBS lt::ui Qt6::Widgets)

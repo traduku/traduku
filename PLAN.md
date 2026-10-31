@@ -93,4 +93,8 @@ tools/mock-openai.py  стриминговый mock для ручной пров
 - [x] M7 core: SoundPlayer (started=bell, finished=complete, failed=dialog-error;
       XDG-тема, приоритетные каталоги, цепочка paplay->pw-play->aplay,
       отключение настройкой, инъекция бэкендов).
-- [ ] M8 … M11.
+- [x] M8 ui: TranslatorWindow (оригинал|перевод, live-стрим дельт, copy,
+      язык, статус; copyRequested/settingsRequested сигналами - без
+      зависимости от платформы) + SettingsDialog (load/save/cancel/defaults,
+      Test API).
+- [ ] M9 … M11.
