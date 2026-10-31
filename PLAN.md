@@ -74,4 +74,8 @@ tools/mock-openai.py  стриминговый mock для ручной пров
 
 ## Статус
 
-- [ ] M0 … M11 — обновляется по мере работы.
+- [x] M0 каркас + harness (QtTest/CTest, offscreen) — зелёно.
+- [x] M1 core: languages + settings (собственный INI вместо KConfig/QSettings-
+      кэша: Qt пишет `[%General]`, нам нужен честный `[General]` для внешних
+      редакторов) — 3 тестовых бинарника зелёные.
+- [ ] M2 … M11.

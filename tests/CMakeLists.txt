@@ -11,3 +11,7 @@ endfunction()
 
 # Harness smoke test: proves QtTest + CTest + offscreen GUI work.
 lt_add_test(tst_harness SOURCES tst_harness.cpp LIBS Qt6::Widgets)
+
+# M1: core languages + settings
+lt_add_test(tst_languages SOURCES tst_languages.cpp LIBS lt::core)
+lt_add_test(tst_settings  SOURCES tst_settings.cpp  LIBS lt::core)
