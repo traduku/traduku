@@ -1,0 +1,33 @@
+# Per-module CMakeLists are added as modules land (see PLAN.md).
+add_subdirectory(core)
+add_subdirectory(interfaces)
+
+if(TARGET lt_core)
+    add_subdirectory(ui)
+    add_subdirectory(platform/qt)
+    add_subdirectory(platform/wl)
+endif()
+
+if(LT_BUILD_X11 AND TARGET lt_core)
+    pkg_check_modules(X11 REQUIRED IMPORTED_TARGET x11 xtst xi)
+    add_subdirectory(platform/x11)
+endif()
+
+if(LT_BUILD_KDE AND TARGET lt_core)
+    find_package(KF6CoreAddons QUIET)
+    find_package(KF6Config QUIET)
+    find_package(KF6DBusAddons QUIET)
+    find_package(KF6I18n QUIET)
+    find_package(KF6StatusNotifierItem QUIET)
+    find_package(KF6GlobalAccel QUIET)
+    find_package(KF6Notifications QUIET)
+    if(KF6CoreAddons_FOUND AND KF6Config_FOUND AND KF6DBusAddons_FOUND
+       AND KF6I18n_FOUND AND KF6StatusNotifierItem_FOUND
+       AND KF6GlobalAccel_FOUND AND KF6Notifications_FOUND)
+        add_subdirectory(platform/kde)
+        add_subdirectory(app/kde)
+    else()
+        message(STATUS "KF6 not fully present - skipping the KDE platform layer")
+        set(LT_BUILD_KDE OFF)
+    endif()
+endif()
