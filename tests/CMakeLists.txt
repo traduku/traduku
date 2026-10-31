@@ -1,5 +1,6 @@
-# lt_add_test(<name> SOURCES a.cpp ... [LIBS lt::core ...] [QT QtTest])
-# Registers a QtTest executable with CTest; GUI tests run offscreen.
+# Per-module test registration (tests live in tests/unit/, integration in
+# tests/integration/). lt_add_test wires QtTest + CTest + offscreen QPA.
+
 function(lt_add_test name)
     cmake_parse_arguments(ARG "" "" "SOURCES;LIBS" ${ARGN})
     add_executable(${name} ${ARG_SOURCES})
@@ -10,8 +11,11 @@ function(lt_add_test name)
 endfunction()
 
 # Harness smoke test: proves QtTest + CTest + offscreen GUI work.
-lt_add_test(tst_harness SOURCES tst_harness.cpp LIBS Qt6::Widgets)
+lt_add_test(tst_harness SOURCES unit/tst_harness.cpp LIBS Qt6::Widgets)
 
 # M1: core languages + settings
-lt_add_test(tst_languages SOURCES tst_languages.cpp LIBS lt::core)
-lt_add_test(tst_settings  SOURCES tst_settings.cpp  LIBS lt::core)
+lt_add_test(tst_languages SOURCES unit/tst_languages.cpp LIBS lt::core)
+lt_add_test(tst_settings  SOURCES unit/tst_settings.cpp  LIBS lt::core)
+
+# M2: core double-Ctrl+C detector
+lt_add_test(tst_doublepress SOURCES unit/tst_doublepressdetector.cpp LIBS lt::core)

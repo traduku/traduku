@@ -78,4 +78,6 @@ tools/mock-openai.py  стриминговый mock для ручной пров
 - [x] M1 core: languages + settings (собственный INI вместо KConfig/QSettings-
       кэша: Qt пишет `[%General]`, нам нужен честный `[General]` для внешних
       редакторов) — 3 тестовых бинарника зелёные.
-- [ ] M2 … M11.
+- [x] M2 core: DoublePressDetector (инъекция часов/пробы модификаторов; 12
+      unit-тестов, включая non-Latin keycode 54 и auto-repeat).
+- [ ] M3 … M11.
