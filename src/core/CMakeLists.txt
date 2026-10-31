@@ -7,6 +7,7 @@ add_library(lt_core STATIC
     sseparser.cpp
     llmstreamclient.cpp
     translationengine.cpp
+    soundplayer.cpp
 )
 add_library(lt::core ALIAS lt_core)
 target_include_directories(lt_core PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/..)

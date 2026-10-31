@@ -90,4 +90,7 @@ tools/mock-openai.py  стриминговый mock для ручной пров
 - [x] M6 interfaces (IClipboard/IHotkeyBackend/INotifier/IAutostart/
       IGlobalShortcut) + platform/qt QtClipboard, platform/wl WlClipboard
       (инжектируемый tool-runner) + factory wayland->wl, иначе qt.
-- [ ] M7 … M11.
+- [x] M7 core: SoundPlayer (started=bell, finished=complete, failed=dialog-error;
+      XDG-тема, приоритетные каталоги, цепочка paplay->pw-play->aplay,
+      отключение настройкой, инъекция бэкендов).
+- [ ] M8 … M11.

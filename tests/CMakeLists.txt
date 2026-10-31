@@ -37,3 +37,6 @@ target_include_directories(tst_translationengine PRIVATE integration)
 # M6: clipboard interfaces + backends (integration: fake tool runner)
 lt_add_test(tst_clipboards SOURCES integration/tst_clipboards.cpp
     LIBS lt::platform_wl lt::platform_qt lt::interfaces Qt6::Widgets)
+
+# M7: core sound player (events, theme resolution, backend chain)
+lt_add_test(tst_soundplayer SOURCES unit/tst_soundplayer.cpp LIBS lt::core)
