@@ -87,4 +87,7 @@ tools/mock-openai.py  стриминговый mock для ручной пров
       7 байт, auth header, stream:true, 5xx, mid-stream error, refused.
 - [x] M5 core: TranslationEngine (промпт с маркерами, language code->name,
       busy-guard, empty-check, delta->concat, failure unlock).
-- [ ] M6 … M11.
+- [x] M6 interfaces (IClipboard/IHotkeyBackend/INotifier/IAutostart/
+      IGlobalShortcut) + platform/qt QtClipboard, platform/wl WlClipboard
+      (инжектируемый tool-runner) + factory wayland->wl, иначе qt.
+- [ ] M7 … M11.

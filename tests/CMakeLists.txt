@@ -33,3 +33,7 @@ lt_add_test(tst_translationengine SOURCES integration/tst_translationengine.cpp
     integration/mocksseserver.h
     LIBS lt::core Qt6::Network)
 target_include_directories(tst_translationengine PRIVATE integration)
+
+# M6: clipboard interfaces + backends (integration: fake tool runner)
+lt_add_test(tst_clipboards SOURCES integration/tst_clipboards.cpp
+    LIBS lt::platform_wl lt::platform_qt lt::interfaces Qt6::Widgets)
