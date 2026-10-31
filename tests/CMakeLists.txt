@@ -27,3 +27,9 @@ lt_add_test(tst_sseparser SOURCES unit/tst_sseparser.cpp LIBS lt::core)
 lt_add_test(tst_llmstreamclient SOURCES integration/tst_llmstreamclient.cpp integration/mocksseserver.h
     LIBS lt::core Qt6::Network)
 target_include_directories(tst_llmstreamclient PRIVATE integration)
+
+# M5: translation engine (prompt + orchestration, integration via mock server)
+lt_add_test(tst_translationengine SOURCES integration/tst_translationengine.cpp
+    integration/mocksseserver.h
+    LIBS lt::core Qt6::Network)
+target_include_directories(tst_translationengine PRIVATE integration)

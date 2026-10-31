@@ -85,4 +85,6 @@ tools/mock-openai.py  стриминговый mock для ручной пров
 - [x] M4 core: LlmStreamClient (stream=true) + integration/mocksseserver.h -
       in-process фрагментированный SSE-сервер: дельты по порядку, split по
       7 байт, auth header, stream:true, 5xx, mid-stream error, refused.
-- [ ] M5 … M11.
+- [x] M5 core: TranslationEngine (промпт с маркерами, language code->name,
+      busy-guard, empty-check, delta->concat, failure unlock).
+- [ ] M6 … M11.
