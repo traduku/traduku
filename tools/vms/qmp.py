@@ -1,60 +1,84 @@
 #!/usr/bin/env python3
-"""QMP client for the VM grid: screendump + key injection (virtual keyboard)."""
+"""QMP client for the VM grid: screendump + key injection (virtual keyboard).
+
+QEMU 10 QAPI (verified against query-qmp-schema of the running QMP):
+  events: [{"type": "key",
+            "data": {"key": {"type": "qcode", "data": "c"}, "down": true}}]
+A tap = down, sleep, up(reversed) — a real key press.
+"""
 import json
 import socket
 import sys
 import time
 
+QCODE = {  # normalized aliases -> QKeyCode enum names
+    "ctrl_l": "ctrl", "alt_l": "alt", "shift_l": "shift", "meta_l": "meta",
+    "super": "meta", "enter": "ret", "return": "ret", "space": "spc",
+    "backspace": "backspace",
+}
 
-def qmp(sock_path):
-    s = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
-    s.connect(sock_path)
-    f = s.makefile("rw")
 
-    def read():
-        return json.loads(f.readline())
+class Qmp:
+    def __init__(self, sock_path):
+        self.s = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+        self.s.connect(sock_path)
+        self.f = self.s.makefile("rw")
+        self.f.readline()  # greeting
+        self.cmd("qmp_capabilities")
 
-    def send(obj):
-        f.write(json.dumps(obj) + "\r\n")
-        f.flush()
-        return read()
+    def cmd(self, name, args=None):
+        msg = {"execute": name}
+        if args:
+            msg["arguments"] = args
+        self.f.write(json.dumps(msg) + "\r\n")
+        self.f.flush()
+        while True:
+            line = json.loads(self.f.readline())
+            if "event" not in line:
+                break
+        if "error" in line:
+            raise RuntimeError(f"QMP error on {name}: {line['error']}")
+        return line.get("return", {})
 
-    read()  # greeting
-    send({"execute": "qmp_capabilities"})
-    return s, f, send
+    def key_event(self, down, name):
+        self.cmd("input-send-event", {"events": [{
+            "type": "key",
+            "data": {"key": {"type": "qcode",
+                             "data": QCODE.get(name.lower(), name.lower())},
+                     "down": down}}]})
+
+    def tap(self, keys, ms=40):
+        codes = [k.lower() for k in keys]
+        for c in codes:
+            self.key_event(True, c)
+        time.sleep(ms / 1000.0)
+        for c in reversed(codes):
+            self.key_event(False, c)
 
 
 def main():
     sock, cmd = sys.argv[1], sys.argv[2]
-    s, f, send = qmp(sock)
+    q = Qmp(sock)
     if cmd == "system_powerdown":
-        r = send({"execute": "system_powerdown"})
+        q.cmd("system_powerdown")
     elif cmd == "screendump":
         fn = sys.argv[3]
-        r = send({"execute": "screendump", "arguments": {"filename": fn}})
+        q.cmd("screendump", {"filename": fn})
         print("saved", fn)
     elif cmd == "key":
-        # key <vm> "ctrl c" -> press+release
-        keys = sys.argv[3].split()
-        r = send({"execute": "sendkey", "arguments": {"keys": keys}})
-        time.sleep(0.08)
+        q.tap(sys.argv[3].split())
     elif cmd == "keyseq":
-        # keyseq <vm> "ctrl c;150;ctrl c"  (; segments, numbers = ms delay)
-        seq = sys.argv[3]
-        parts = [p.strip() for p in seq.split(";")]
-        for p in parts:
+        # keyseq "ctrl c;150;ctrl c"  (segments; pure numbers = ms delays)
+        for p in (x.strip() for x in sys.argv[3].split(";")):
             if not p:
                 continue
             if p.isdigit():
                 time.sleep(int(p) / 1000.0)
             else:
-                send({"execute": "sendkey", "arguments": {"keys": p.split()}})
+                q.tap(p.split())
     else:
-        r = send({"execute": cmd})
-    if "error" in r:
-        print("QMP error:", r["error"], file=sys.stderr)
-        sys.exit(1)
-    s.close()
+        q.cmd(cmd)
+    q.s.close()
 
 
 if __name__ == "__main__":
