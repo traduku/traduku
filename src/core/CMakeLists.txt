@@ -2,6 +2,7 @@
 # Anything KDE/Wayland/X11-specific lives in src/interfaces + src/platform.
 add_library(lt_core STATIC
     languages.cpp
+    chunker.cpp
     settings.cpp
     doublepressdetector.cpp
     sseparser.cpp

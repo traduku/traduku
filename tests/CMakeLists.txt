@@ -69,3 +69,6 @@ lt_add_test(tst_xdgautostart SOURCES unit/tst_xdgautostart.cpp
 
 # BUG-1: unicode escape safety net (core)
 lt_add_test(tst_unicodeescapes SOURCES unit/tst_unicodeescapes.cpp LIBS lt::core)
+
+# M12: core chunker (translation units, join==identity)
+lt_add_test(tst_chunker SOURCES unit/tst_chunker.cpp LIBS lt::core)
