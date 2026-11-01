@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Tiny OpenAI-compatible MOCK server for manual testing of llm-translate.
+"""Tiny OpenAI-compatible MOCK server for manual testing of traduku.
 
     ./tools/mock-openai.py [port]        # default 8931
 
@@ -8,7 +8,7 @@ emitting real SSE deltas (a few per word) and GET /v1/models.
 The reply echoes the request's user prompt, prefixed with the detected
 destination language, e.g. "[MOCK -> ru] <first 200 chars>".
 
-In llm-translate Settings:
+In traduku Settings:
     API address:  http://127.0.0.1:8931/v1
     Model:        test-model
     API key:      (anything)

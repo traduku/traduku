@@ -1,6 +1,6 @@
 Format: https://www.debian.org/doc/packaging-manuals/copyright-format/1.0/
-Upstream-Name: kde-llm-translate
+Upstream-Name: traduku
 
 Files: *
-Copyright: 2026 LLM Translate contributors
+Copyright: 2026 Traduku contributors
 License: GPL-3+

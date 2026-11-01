@@ -1,7 +1,7 @@
-Source: kde-llm-translate
+Source: traduku
 Section: utils
 Priority: optional
-Maintainer: LLM Translate contributors <dev@localhost>
+Maintainer: Traduku contributors <dev@localhost>
 Build-Depends: debhelper-compat (= 13),
                cmake,
                ninja-build,
@@ -19,7 +19,7 @@ Build-Depends: debhelper-compat (= 13),
 Standards-Version: 4.6.2
 Rules-Requires-Root: no
 
-Package: kde-llm-translate
+Package: traduku
 Architecture: any
 Depends: ${shlibs:Depends}, ${misc:Depends}, qt6-multimedia, gstreamer1.0-plugins-good
 Recommends: wl-clipboard

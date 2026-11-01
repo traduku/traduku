@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Build and install kde-llm-translate into $HOME/.local (no root needed),
+# Build and install traduku into $HOME/.local (no root needed),
 # so the desktop entry is registered for the Wayland/KService stack.
 set -euo pipefail
 cd "$(dirname "$0")"
@@ -14,9 +14,9 @@ cmake --install build --prefix "$PREFIX"
 # Make KService/knotifications find the app data in the user scope even
 # when the prefix is not in system paths.
 mkdir -p "$HOME/.local/share/knotifications6"
-cp -f llm-translate.notifyrc "$HOME/.local/share/knotifications6/"
+cp -f traduku.notifyrc "$HOME/.local/share/knotifications6/"
 mkdir -p "$HOME/.local/share/applications"
-cp -f llm-translate.desktop "$HOME/.local/share/applications/"
+cp -f traduku.desktop "$HOME/.local/share/applications/"
 update-desktop-database "$HOME/.local/share/applications" 2>/dev/null || true
 
 # Workaround for a kwin packaging gap on some distros (e.g. CachyOS):
@@ -42,9 +42,9 @@ EIS
   echo "Installed missing org.kde.kwin.eisprompter.desktop (kwin packaging workaround)."
 fi
 
-pkill -x kde-llm-translate 2>/dev/null || true
+pkill -x traduku 2>/dev/null || true
 
 echo
-echo "Installed: $PREFIX/bin/kde-llm-translate"
-echo "Smoke test:  QT_QPA_PLATFORM=offscreen $PREFIX/bin/kde-llm-translate --selftest --live"
-echo "Start:       $PREFIX/bin/kde-llm-translate &"
+echo "Installed: $PREFIX/bin/traduku"
+echo "Smoke test:  QT_QPA_PLATFORM=offscreen $PREFIX/bin/traduku --selftest --live"
+echo "Start:       $PREFIX/bin/traduku &"
