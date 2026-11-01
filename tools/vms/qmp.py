@@ -12,8 +12,8 @@ import sys
 import time
 
 QCODE = {  # normalized aliases -> QKeyCode enum names
-    "ctrl_l": "ctrl", "alt_l": "alt", "shift_l": "shift", "meta_l": "meta",
-    "super": "meta", "enter": "ret", "return": "ret", "space": "spc",
+    "ctrl_l": "ctrl", "alt_l": "alt", "shift_l": "shift",
+    "meta": "meta_l", "super": "meta_l", "enter": "ret", "return": "ret", "space": "spc",
     "backspace": "backspace",
 }
 

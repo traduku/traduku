@@ -31,7 +31,12 @@ echo "== building .deb on $VM (dpkg-buildpackage, this takes a few minutes)"
 $SSH vm@127.0.0.1 "cd build/traduku-$VER && cp -r packaging/debian debian && echo vm | sudo -S dpkg-buildpackage -us -uc -b 2>&1 | tail -20"
 
 echo "== installing on $VM"
-$SSH vm@127.0.0.1 "cd build && echo vm | sudo -S DEBIAN_FRONTEND=noninteractive apt-get install -y ./traduku_${VER}-1_amd64.deb 2>&1 | tail -4"
+# The package version does not change between iterations, so plain
+# `apt-get install ./deb` answers "already the newest version" and leaves the
+# old binary in place (fixes never reach the VM). Force the reinstall and
+# prove the payload landed.
+$SSH vm@127.0.0.1 "cd build && echo vm | sudo -S DEBIAN_FRONTEND=noninteractive apt-get install -y --reinstall ./traduku_${VER}-1_amd64.deb 2>&1 | tail -4"
+$SSH vm@127.0.0.1 "set -e; rm -rf /tmp/debx && mkdir /tmp/debx && dpkg-deb -x build/traduku_${VER}-1_amd64.deb /tmp/debx; a=\$(md5sum /tmp/debx/usr/bin/traduku | cut -d' ' -f1); b=\$(md5sum /usr/bin/traduku | cut -d' ' -f1); echo \"installed md5: \$b (deb \$a)\"; [ \"\$a\" = \"\$b\" ]"
 
 echo "== gate: selftest on $VM"
 $SSH vm@127.0.0.1 "QT_QPA_PLATFORM=offscreen traduku --selftest 2>&1 | tail -4"
