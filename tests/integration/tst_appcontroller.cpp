@@ -244,6 +244,63 @@ private slots:
         combo->setCurrentIndex(combo->findData(QStringLiteral("ja")));
         QCOMPARE(m_settings->targetLanguage(), QString("ja"));
     }
+
+    // --- BUG-1: clipboard text arriving as literal \uXXXX escapes -------
+    void escapedClipboardDecodedInWindow()
+    {
+        // Verbatim form of the reported Original-pane content.
+        m_clip.m_text = QStringLiteral(
+            "\\u0414\\u043b\\u044f \\u043d\\u0430\\u0447\\u0430\\u043b\\u0430 - "
+            "\\u043e\\u0442\\u043d\\u043e\\u0448\\u0435\\u043d\\u0438\\u0435 \\u043a "
+            "\\u043f\\u0440\\u0435\\u0434\\u043c\\u0435\\u0442\\u0443");
+        m_server.setResponse(200, {test::MockSseServer::sseEvent("otvet"),
+                                   QByteArray("data: [DONE]\n\n")});
+        QSignalSpy done(m_engine, &TranslationEngine::finished);
+        Q_EMIT m_hotkey->activated();
+        QVERIFY(done.wait(5000));
+        auto *src = m_window->findChild<QTextEdit *>(QStringLiteral("m_source"));
+        QVERIFY(src->toPlainText().startsWith(QStringLiteral("Для начала - отношение")));
+        QVERIFY(!src->toPlainText().contains(QStringLiteral("\\u")));
+        // the model receives the decoded text, not the escapes:
+        QVERIFY(m_server.m_requests.last().contains(
+            QString::fromUtf8("Для начала").toUtf8()));
+    }
+
+    void escapedModelStreamDecodedAtEnd()
+    {
+        // Model streams the answer as escaped JSON-string content, escape
+        // sequences split across deltas.
+        m_server.setResponse(200, {
+            test::MockSseServer::sseEvent("\\u041f"),
+            test::MockSseServer::sseEvent("\\u0440ивет"),
+            QByteArray("data: [DONE]\n\n"),
+        });
+        m_clip.m_text = QStringLiteral("hi");
+        QSignalSpy done(m_engine, &TranslationEngine::finished);
+        Q_EMIT m_hotkey->activated();
+        QVERIFY(done.wait(5000));
+        QTRY_VERIFY(target().contains(QStringLiteral("Привет")));
+        QVERIFY(!target().contains(QStringLiteral("\\u")));
+        // clipboard replacement carries the decoded text too
+        QCOMPARE(m_clip.text(), QString("Привет"));
+    }
+
+    void codeSnippetWithEscapeLiteralUntouched()
+    {
+        // A translation that legitimately contains a \u example in prose:
+        // low escape coverage -> the safety net must not fire.
+        const QString snippet = QStringLiteral(
+            "In JSON, \\u0410 encodes the Cyrillic letter A. This sentence "
+            "explains escaping in programming languages for a long time so "
+            "the heuristic coverage stays clearly below its threshold.");
+        m_server.setResponse(200, {test::MockSseServer::sseEvent(snippet),
+                                   QByteArray("data: [DONE]\n\n")});
+        m_clip.m_text = QStringLiteral("explain \\u escapes");
+        QSignalSpy done(m_engine, &TranslationEngine::finished);
+        Q_EMIT m_hotkey->activated();
+        QVERIFY(done.wait(5000));
+        QCOMPARE(target(), snippet);
+    }
 };
 
 QTEST_MAIN(TestAppController)

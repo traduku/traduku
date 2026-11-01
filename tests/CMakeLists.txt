@@ -66,3 +66,6 @@ target_include_directories(tst_appcontroller PRIVATE integration ${CMAKE_CURRENT
 # M10: XDG autostart (cross-DE, Qt-only)
 lt_add_test(tst_xdgautostart SOURCES unit/tst_xdgautostart.cpp
     LIBS lt::platform_qt)
+
+# BUG-1: unicode escape safety net (core)
+lt_add_test(tst_unicodeescapes SOURCES unit/tst_unicodeescapes.cpp LIBS lt::core)

@@ -55,6 +55,34 @@ tests/integration/ движок+клиент+mock-сервер; полный п�
 tools/mock-openai.py  стриминговый mock для ручной проверки
 ```
 
+## Сообщённые баги / TODO
+
+- **BUG-1 (исправлен, коммит ниже): текст из windows-1251 страниц
+  (world.lib.ru) попадал в поле Original как литеральные `\uXXXX`.**
+  Диагноз: сам сайт отдаёт обычный cp1251-HTML (проверено curl'ом);
+  экранирование появляется в канале буфера обмена (Klipper-history /
+  PRIMARY-селекции браузеров отдают text/plain с JSON-escape, а KWrite
+  спасают две вещи, которых не было нам: согласование MIME-целей и
+  декодирование по charset из имени цели).
+  Решение (не «детектор кодировок» — charset в этих каналах явный):
+  1. `WlClipboard` теперь делает `wl-paste -l` -> pickBestType()
+     (text/plain;charset=utf-8 > text/plain > UTF8_STRING >
+     text/plain;charset=<X> > TEXT) и `decodeWithCharset()` через
+     QTextCodec (Core5Compat) — как Qt clipboard у KWrite.
+  2. Страховая сетка `core::decodeIfEscaped()`: декодирует `\uXXXX`
+     (вкл. surrogate pairs) только при >=2 валидных последовательностях,
+     покрывающих >=25% строки — применяется к тексту клипборда и к
+     собранному ответу модели; тексты, где escape лишь упомянут
+     (проза/код), не трогаются. Тесты: unit + интеграция (окно, стрим с
+     разрезанными escape-парными суррогатами, code-snippet regression).
+- **TODO-1:** стрим-декод `\uXXXX` инкрементально (сейчас сетка к
+  применяется к собранному результату в конце — во время стрима видны
+  сырые escape; нужно состояние в TranslationEngine с буфером <=12).
+- **TODO-2:** портировать Wayland InputCapture-портал (libei) как
+  `IHotkeyBackend` (opt-in, портал >=1.24).
+- **TODO-3:** GNOME-шелл: AppIndicator tray, libnotify notifier,
+  GNOME Shortcuts/portal hotkey — core/ui без изменений.
+
 ## Модули (порядок коммитов)
 
 | # | Модуль | Тесты (пишутся ПЕРЕД реализацией) |

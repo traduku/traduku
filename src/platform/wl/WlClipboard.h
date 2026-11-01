@@ -28,6 +28,16 @@ public:
 
     static bool isUsable(ToolRunner runner = {}, ToolFinder finder = {});
 
+    /// MIME target negotiation (the qclipboard/KWrite behaviour): from the
+    /// offers of a source app, prefer text/plain;charset=utf-8, then plain
+    /// text/plain, then UTF8_STRING, then any charset-tagged text/plain
+    /// (decoded per its charset), then TEXT; text/* only. Empty = no text.
+    static QString pickBestType(const QStringList &offered);
+
+    /// Decode payload bytes per the charset embedded in a MIME type
+    /// (utf-8 default; windows-1251 / iso-8859-1 / ... via QTextCodec).
+    static QString decodeWithCharset(const QByteArray &data, const QString &mimeType);
+
     QString text() const override;
     bool setText(const QString &text) override;
     QString backendName() const override { return QStringLiteral("wl-clipboard"); }

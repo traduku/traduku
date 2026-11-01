@@ -2,6 +2,7 @@
 
 #include <QProcess>
 #include <QStandardPaths>
+#include <QTextCodec>
 
 namespace lt {
 
@@ -57,15 +58,79 @@ int WlClipboard::runTool(const QString &program, const QStringList &args,
     return p.exitCode();
 }
 
+QString WlClipboard::pickBestType(const QStringList &offered)
+{
+    static const QStringList exact{QStringLiteral("text/plain;charset=utf-8"),
+                                   QStringLiteral("text/plain;charset=UTF-8"),
+                                   QStringLiteral("text/plain"),
+                                   QStringLiteral("UTF8_STRING")};
+    for (const QString &want : exact) {
+        if (offered.contains(want)) {
+            return want;
+        }
+    }
+    // Any charset-tagged text/plain (decode per charset), TEXT last.
+    QString fallback;
+    for (const QString &t : offered) {
+        const QString lower = t.toLower();
+        if (lower.startsWith(QLatin1String("text/plain;charset="))) {
+            return t;
+        }
+        if (fallback.isEmpty() && t == QLatin1String("TEXT")) {
+            fallback = t;
+        }
+    }
+    return fallback;
+}
+
+QString WlClipboard::decodeWithCharset(const QByteArray &data,
+                                       const QString &mimeType)
+{
+    QString charset = QStringLiteral("UTF-8");
+    const int semi = mimeType.indexOf(QLatin1Char(';'));
+    if (semi >= 0) {
+        const QString param = mimeType.mid(semi + 1).trimmed();
+        if (param.startsWith(QLatin1String("charset="), Qt::CaseInsensitive)) {
+            charset = param.mid(8).trimmed().toUpper();
+            if (charset == QLatin1String("UTF8")) {
+                charset = QStringLiteral("UTF-8");
+            }
+        }
+    }
+    if (charset == QLatin1String("UTF-8")) {
+        return QString::fromUtf8(data);
+    }
+    if (charset == QLatin1String("US-ASCII")) {
+        return QString::fromLatin1(data);
+    }
+    if (const QTextCodec *codec = QTextCodec::codecForName(charset.toLatin1())) {
+        return codec->toUnicode(data);
+    }
+    return QString::fromUtf8(data);   // last resort, replacement chars
+}
+
 QString WlClipboard::text() const
 {
-    // -n: no trailing newline; -t text/plain: text offers only
+    // -l lists every offered MIME type; then fetch the best text target
+    // (the charset matters: browsers serving legacy-codec pages offer
+    // charset-tagged text/plain variants).
+    QByteArray list;
+    if (m_run(QStringLiteral("wl-paste"), {QStringLiteral("-n"), QStringLiteral("-l")},
+              QByteArray(), &list)
+        != 0) {
+        return QString();
+    }
+    QStringList offered = QString::fromUtf8(list)
+                              .split(QLatin1Char('\n'), Qt::SkipEmptyParts);
+    const QString type = pickBestType(offered);
+    if (type.isEmpty()) {
+        return QString();
+    }
     QByteArray out;
     const int rc = m_run(QStringLiteral("wl-paste"),
-                         {QStringLiteral("-n"), QStringLiteral("-t"),
-                          QStringLiteral("text/plain")},
+                         {QStringLiteral("-n"), QStringLiteral("-t"), type},
                          QByteArray(), &out);
-    return rc == 0 ? QString::fromUtf8(out) : QString();
+    return rc == 0 ? decodeWithCharset(out, type) : QString();
 }
 
 bool WlClipboard::setText(const QString &text)

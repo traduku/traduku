@@ -4,8 +4,10 @@
 #include "core/languages.h"
 #include "core/settings.h"
 #include "core/sseparser.h"
+#include "core/unicodeescapes.h"
 #include "core/translationengine.h"
 #include "platform/qt/XdgAutostart.h"
+#include "platform/wl/WlClipboard.h"
 #include "ui/TranslatorWindow.h"
 
 #include <QCoreApplication>
@@ -138,6 +140,19 @@ int runSelfTest(QTextStream &out, bool doLive)
         // WlClipboard::isUsable pure-logic check (no spawning):
         r.check(finder(QStringLiteral("wl-paste")).startsWith(QLatin1Char('/')),
                 "clipboard: tool finder logic (wayland backend available)");
+    }
+
+    // 7b. Unicode-escape safety net (BUG-1)
+    {
+        const QString esc = QStringLiteral(
+            "\\u0414\\u043b\\u044f \\u043d\\u0430\\u0447\\u0430\\u043b\\u0430");
+        r.check(decodeIfEscaped(esc).startsWith(QStringLiteral("Для начала"))
+                    && !looksEscaped(QStringLiteral("plain text with one \\u0410 code ref"))
+                    && WlClipboard::pickBestType(
+                           {QStringLiteral("text/html"),
+                            QStringLiteral("text/plain;charset=utf-8")})
+                    == QLatin1String("text/plain;charset=utf-8"),
+                "unicode: escaped-clipboard safety net + MIME negotiation");
     }
 
     // 8. XDG autostart enable/disable (isolated config home)

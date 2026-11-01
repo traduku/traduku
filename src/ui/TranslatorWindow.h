@@ -32,6 +32,9 @@ public:
 
 public slots:
     void beginTranslation(const QString &sourceText, const QString &targetName);
+    /// Replace the whole target text (post-stream clean-ups, e.g. the
+    /// unicode-escape safety net applied to the assembled answer).
+    void setTranslation(const QString &text);
     void appendChunk(const QString &chunk);
     void endTranslation();
     void translationFailed(const QString &reason);

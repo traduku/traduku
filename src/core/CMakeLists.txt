@@ -5,6 +5,7 @@ add_library(lt_core STATIC
     settings.cpp
     doublepressdetector.cpp
     sseparser.cpp
+    unicodeescapes.cpp
     llmstreamclient.cpp
     translationengine.cpp
     soundplayer.cpp
@@ -12,4 +13,4 @@ add_library(lt_core STATIC
 )
 add_library(lt::core ALIAS lt_core)
 target_include_directories(lt_core PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/..)
-target_link_libraries(lt_core PUBLIC Qt6::Core Qt6::Network lt::interfaces)
+target_link_libraries(lt_core PUBLIC Qt6::Core Qt6::Network Qt6::Core5Compat lt::interfaces)

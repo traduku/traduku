@@ -11,21 +11,27 @@ using namespace lt;
 
 namespace {
 // Records invocations, returns canned output. No real processes spawn.
+// Understands the wl-paste protocol: `-l` lists offered types, `-t X`
+// returns the payload offered under type X.
 struct FakeRunner
 {
     QList<QPair<QString, QStringList>> calls;
-    QByteArray stdoutData;
+    QByteArray stdoutData;                       // payload for -t
+    QList<QByteArray> responses;                 // -l first, -t second
+    int responseIndex = 0;
     int rc = 0;
+
     WlClipboard::ToolRunner runner()
     {
         return [this](const QString &prog, const QStringList &args,
                       const QByteArray &in, QByteArray *out) {
             calls.append({prog, args});
-            if (!in.isNull() && !in.isEmpty() && out) {
-                *out = QByteArray("echo:") + in;   // unused path
-            }
+            Q_UNUSED(in);
             if (out) {
-                *out = stdoutData;
+                *out = responses.isEmpty() ? stdoutData
+                                           : responses.at(qMin(responseIndex,
+                                                                responses.size() - 1));
+                ++responseIndex;
             }
             return rc;
         };
@@ -44,15 +50,82 @@ class TestClipboards : public QObject
 {
     Q_OBJECT
 private slots:
-    void wlReadParsesToolOutput()
+    void wlReadNegotiatesBestType()
     {
         FakeRunner r;
-        r.stdoutData = QByteArray("clipboard content");
+        r.responses << QByteArray("text/html\ntext/plain;charset=utf-8\nUTF8_STRING\n")
+                    << QByteArray("Привет мир");
+        WlClipboard cb(r.runner(), finderWith({"wl-paste", "wl-copy"}));
+        QCOMPARE(cb.text(), QString("Привет мир"));
+        // First call lists offers, second fetches the BEST one (utf-8),
+        // never bare "text/plain" when a charset-tagged offer exists.
+        QCOMPARE(r.calls.size(), 2);
+        QVERIFY(r.calls.at(0).second.contains(QStringLiteral("-l")));
+        QCOMPARE(r.calls.at(1).second,
+                 (QStringList{"-n", "-t", QStringLiteral("text/plain;charset=utf-8")}));
+    }
+
+    void wlReadPrefersCharsetVariant()
+    {
+        // The lib.ru scenario: browser offers a windows-1251 text target;
+        // the bytes must be decoded per the charset in the type name.
+        FakeRunner r;
+        r.responses << QByteArray("text/html\ntext/plain;charset=windows-1251\n")
+                    << QByteArray("\xCF\xF0\xE8\xE2\xE5\xF2");   // "Привет" cp1251
+        WlClipboard cb(r.runner(), finderWith({"wl-paste", "wl-copy"}));
+        QCOMPARE(cb.text(), QString("Привет"));
+    }
+
+    void pickBestTypeRules()
+    {
+        QCOMPARE(WlClipboard::pickBestType({"text/html", "text/plain;charset=utf-8",
+                                            "UTF8_STRING"}),
+                 QString("text/plain;charset=utf-8"));
+        QCOMPARE(WlClipboard::pickBestType({"text/plain", "text/html"}),
+                 QString("text/plain"));
+        QCOMPARE(WlClipboard::pickBestType({"text/html", "UTF8_STRING"}),
+                 QString("UTF8_STRING"));
+        QCOMPARE(WlClipboard::pickBestType({"text/html", "text/plain;charset=windows-1251"}),
+                 QString("text/plain;charset=windows-1251"));
+        // utf-8 wins over a legacy charset
+        QCOMPARE(WlClipboard::pickBestType({"text/plain;charset=windows-1251",
+                                            "text/plain;charset=utf-8"}),
+                 QString("text/plain;charset=utf-8"));
+        QVERIFY(WlClipboard::pickBestType({"text/html", "image/png"}).isEmpty());
+    }
+
+    void decodePerCharset()
+    {
+        QCOMPARE(WlClipboard::decodeWithCharset(
+                     QByteArray("plain ascii"), QStringLiteral("text/plain")),
+                 QString("plain ascii"));
+        QCOMPARE(WlClipboard::decodeWithCharset(
+                     QString::fromUtf8("Привет").toUtf8(),
+                     QStringLiteral("text/plain;charset=utf-8")),
+                 QString("Привет"));
+        QCOMPARE(WlClipboard::decodeWithCharset(
+                     QByteArray("\xCF\xF0\xE8\xE2\xE5\xF2"),
+                     QStringLiteral("text/plain;charset=windows-1251")),
+                 QString("Привет"));
+        QCOMPARE(WlClipboard::decodeWithCharset(
+                     QByteArray("caf\xe9"),
+                     QStringLiteral("text/plain;charset=iso-8859-1")),
+                 QString("café"));
+        // unknown charset -> UTF-8 with replacement chars, never a crash
+        QVERIFY(!WlClipboard::decodeWithCharset(QByteArray("x"),
+                                                QStringLiteral("text/plain;charset=bogus-9000"))
+                     .isEmpty());
+    }
+
+    void wlReadBareTextPlainWhenNoCharsetOffered()
+    {
+        FakeRunner r;
+        r.responses << QByteArray("text/plain\ntext/html\n")
+                    << QByteArray("clipboard content");
         WlClipboard cb(r.runner(), finderWith({"wl-paste", "wl-copy"}));
         QCOMPARE(cb.text(), QString("clipboard content"));
-        QCOMPARE(r.calls.size(), 1);
-        QCOMPARE(r.calls.at(0).first, QString("wl-paste"));
-        QVERIFY(r.calls.at(0).second.contains(QStringLiteral("-n")));
+        QCOMPARE(r.calls.at(1).second,
+                 (QStringList{"-n", "-t", QStringLiteral("text/plain")}));
     }
 
     void wlWriteSendsTextOnStdin()
@@ -96,15 +169,12 @@ private slots:
         auto none = finderWith({});
         auto *qcb = QGuiApplication::clipboard();
 
-        // Wayland with wl-clipboard installed -> tool backend
         auto c1 = createClipboard(QStringLiteral("wayland"), both, qcb, r.runner());
         QCOMPARE(c1->backendName(), QString("wl-clipboard"));
 
-        // Wayland without the tools -> Qt fallback (will warn at runtime)
         auto c2 = createClipboard(QStringLiteral("wayland"), none, qcb, r.runner());
         QCOMPARE(c2->backendName(), QString("qt"));
 
-        // X11 / anything else -> Qt
         auto c3 = createClipboard(QStringLiteral("xcb"), both, qcb, r.runner());
         QCOMPARE(c3->backendName(), QString("qt"));
     }

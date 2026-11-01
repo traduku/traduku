@@ -95,6 +95,11 @@ void TranslatorWindow::beginTranslation(const QString &sourceText,
     m_status->setText(QStringLiteral("Translating to %1 …").arg(targetName));
 }
 
+void TranslatorWindow::setTranslation(const QString &text)
+{
+    m_target->setPlainText(text);
+}
+
 void TranslatorWindow::appendChunk(const QString &chunk)
 {
     if (!m_streaming) {

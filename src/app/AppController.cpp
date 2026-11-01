@@ -1,6 +1,7 @@
 #include "AppController.h"
 
 #include "core/languages.h"
+#include "core/unicodeescapes.h"
 #include "core/settings.h"
 #include "core/soundplayer.h"
 #include "core/translationengine.h"
@@ -30,7 +31,13 @@ AppController::AppController(const Backends &b, QObject *parent)
     connect(m_b.engine, &TranslationEngine::delta,
             m_b.window, &TranslatorWindow::appendChunk);
     connect(m_b.engine, &TranslationEngine::finished, m_b.window, [this]() {
-        const QString t = m_b.engine->translation();
+        // Safety net: some clipboard providers hand over text whose letters
+        // arrived as literal \uXXXX JSON escapes (cp1251 pages, Klipper
+        // history). Decode only demonstrably double-encoded strings.
+        QString t = decodeIfEscaped(m_b.engine->translation());
+        if (t != m_b.engine->translation()) {
+            m_b.window->setTranslation(t);
+        }
         m_b.window->endTranslation();
         m_b.sound->play(SoundEvent::Finished);
         QString clipboardNote;
@@ -103,7 +110,7 @@ void AppController::translateNow()
     if (m_b.engine->isBusy()) {
         return;
     }
-    const QString text = m_b.clipboard->text().trimmed();
+    QString text = decodeIfEscaped(m_b.clipboard->text().trimmed());
     if (text.isEmpty()) {
         m_b.notifier->notify(QStringLiteral("LLM Translate"),
                              QStringLiteral("Clipboard is empty."));
