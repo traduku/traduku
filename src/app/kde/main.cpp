@@ -26,6 +26,7 @@
 #include <QCommandLineParser>
 #include <QFile>
 #include <QFileSystemWatcher>
+#include <QMessageBox>
 #include <QTextStream>
 #include <QTimer>
 #include <memory>
@@ -188,17 +189,30 @@ int main(int argc, char **argv)
                          }
                      });
 
-    // Window -> hotkey interval follow + first-run welcome.
+    // First run (fresh install / first launch): greet, ask about
+    // autostart, open settings - a new user must not need a terminal.
     QTimer::singleShot(0, &app, [&]() {
-        if (!settings.firstRunDone()) {
-            settings.setFirstRunDone(true);
-            settings.save();
-            notifier.notify(QStringLiteral("LLM Translate"),
-                            QStringLiteral("Press Ctrl+C twice quickly to "
-                                           "translate the clipboard (a single "
-                                           "copy is left alone). Set your LLM "
-                                           "endpoint in Settings\u2026"));
+        if (settings.firstRunDone()) {
+            return;
         }
+        settings.setFirstRunDone(true);
+        settings.save();
+        notifier.notify(QStringLiteral("LLM Translate is installed"),
+                        QStringLiteral("Press Ctrl+C twice quickly to "
+                                       "translate the clipboard (a single "
+                                       "copy is left alone). Configure your "
+                                       "LLM endpoint in the settings dialog."));
+        const auto answer = QMessageBox::question(
+            &window, QStringLiteral("Welcome to LLM Translate"),
+            QStringLiteral("Copy text anywhere, press Ctrl+C twice - the "
+                           "translation window opens.\n\n"
+                           "Start LLM Translate automatically at login?"),
+            QMessageBox::Yes | QMessageBox::No, QMessageBox::Yes);
+        if (answer == QMessageBox::Yes && !autostart.isEnabled()) {
+            autostart.setEnabled(true);
+        }
+        SettingsDialog dlg(&settings);
+        dlg.exec();
     });
 
     return app.exec();

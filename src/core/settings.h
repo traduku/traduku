@@ -57,6 +57,8 @@ public:
     void setFirstRunDone(bool on);
 
     bool save();
+    /// True once the config file exists on disk - first-run detection.
+    bool configFileExists() const;
     void reload();
 
 Q_SIGNALS:
@@ -67,6 +69,7 @@ private:
     void setValue(const char *key, const QVariant &v);
 
     QString m_path;
+    bool m_existed = false;
     QVariantMap m_values;   // flat "General.Key" -> string
 };
 

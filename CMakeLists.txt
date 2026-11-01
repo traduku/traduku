@@ -22,3 +22,12 @@ option(LT_BUILD_KDE "Build the KDE Platform backend and the tray application" ON
 
 add_subdirectory(src)
 add_subdirectory(tests)
+
+# ---- install rules (used by the distro packages) --------------------------
+if(TARGET kde-llm-translate)
+    install(TARGETS kde-llm-translate RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
+    install(FILES llm-translate.desktop DESTINATION ${CMAKE_INSTALL_DATADIR}/applications)
+    install(FILES llm-translate.notifyrc DESTINATION ${CMAKE_INSTALL_DATADIR}/knotifications6)
+    install(FILES LICENSE DESTINATION ${CMAKE_INSTALL_DATADIR}/licenses/${PROJECT_NAME}
+            OPTIONAL)
+endif()

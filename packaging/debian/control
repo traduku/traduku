@@ -1,0 +1,30 @@
+Source: kde-llm-translate
+Section: utils
+Priority: optional
+Maintainer: LLM Translate contributors <dev@localhost>
+Build-Depends: debhelper-compat (= 13),
+               cmake,
+               ninja-build,
+               extra-cmake-modules,
+               qt6-base-dev,
+               qt6-multimedia-dev,
+               libqt6core5compat6-dev,
+               libkf6statusnotifieritem-dev,
+               libkf6notifications-dev,
+               libkf6globalaccel-dev,
+               libkf6dbusaddons-dev,
+               libx11-dev,
+               libxi-dev,
+               libxtst-dev
+Standards-Version: 4.6.2
+Rules-Requires-Root: no
+
+Package: kde-llm-translate
+Architecture: any
+Depends: ${shlibs:Depends}, ${misc:Depends}, qt6-multimedia, gstreamer1.0-plugins-good
+Recommends: wl-clipboard
+Description-
+ Clipboard translator powered by any OpenAI-compatible LLM.
+  Press Ctrl+C twice to translate the clipboard into the configured target
+  language. Streams responses, translates interactively, runs on KDE Plasma
+  and any other desktop (X11 and Wayland via XWayland).

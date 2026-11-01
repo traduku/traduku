@@ -36,6 +36,16 @@ private slots:
         QCOMPARE(r.autoTranslateDelay(), 5.0);
     }
 
+    void configFileExistsReflectsDisk()
+    {
+        const QString fresh = m_dir.path() + QStringLiteral("/fresh.ini");
+        QFile::remove(fresh);
+        Settings s(fresh);
+        QCOMPARE(s.configFileExists(), false);
+        s.save();
+        QCOMPARE(s.configFileExists(), true);
+    }
+
     void defaultsWhenNoFile()
     {
         Settings s(path());

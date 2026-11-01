@@ -1,0 +1,7 @@
+kde-llm-translate (0.1) unstable; urgency=medium
+
+  * First release: double Ctrl+C clipboard translation with streaming,
+    interactive window, incremental retranslation, sounds, tray,
+    first-run guided setup (autostart question + settings dialog).
+
+ -- LLM Translate contributors <dev@localhost>  Mon, 01 Nov 2026 12:00:00 +0300

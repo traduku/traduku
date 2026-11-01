@@ -1,3 +1,15 @@
+## Installation
+
+For end users install the package (tray app + desktop entry + sounds;
+the app asks about autostart and opens settings on first launch):
+
+- Arch/CachyOS: `packaging/arch/mkrelease.sh` builds
+  `release-out/kde-llm-translate-0.1-1-x86_64.pkg.tar.zst`; install with
+  `pacman -U`.
+- Debian/Ubuntu: recipes in `packaging/debian/` (debhelper, cmake+ninja).
+
+For development use `./install.sh` (~/.local, no root).
+
 # llm-translate
 
 A modular, streaming clipboard translator for Linux desktops, powered by any

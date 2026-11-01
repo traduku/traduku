@@ -51,6 +51,9 @@ Settings::Settings(const QString &filePath, QObject *parent)
     : QObject(parent)
     , m_path(filePath)
 {
+    // Snapshot BEFORE QSettings touches the disk (its first sync() creates
+    // an empty file): the app uses this for first-run detection.
+    m_existed = QFileInfo::exists(filePath);
     reload();
 }
 
@@ -74,9 +77,15 @@ void Settings::reload()
     }
 }
 
+bool Settings::configFileExists() const
+{
+    return m_existed;
+}
+
 bool Settings::save()
 {
     QDir().mkpath(QFileInfo(m_path).absolutePath());
+    m_existed = true;
     QByteArray out;
     out += '[';
     out += Section;
