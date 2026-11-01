@@ -18,11 +18,11 @@ KdeTray::KdeTray(Settings *settings, IAutostart *autostart, QObject *parent)
     , m_settings(settings)
     , m_autostart(autostart)
 {
-    m_tray = new KStatusNotifierItem(QStringLiteral("llm-translate"), this);
-    m_tray->setTitle(QStringLiteral("LLM Translate"));
+    m_tray = new KStatusNotifierItem(QStringLiteral("traduku"), this);
+    m_tray->setTitle(QStringLiteral("Traduku"));
     m_tray->setIconByName(QStringLiteral("accessories-dictionary"));
     m_tray->setToolTipIconByName(QStringLiteral("accessories-dictionary"));
-    m_tray->setToolTipTitle(QStringLiteral("LLM Translate"));
+    m_tray->setToolTipTitle(QStringLiteral("Traduku"));
     m_tray->setToolTipSubTitle(QStringLiteral("Press Ctrl+C twice to translate "
                                               "the clipboard"));
     m_tray->setStandardActionsEnabled(false);

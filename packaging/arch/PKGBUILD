@@ -1,10 +1,10 @@
-# Maintainer: LLM Translate contributors <dev@localhost>
-pkgname=kde-llm-translate
-pkgver=0.1
+# Maintainer: Traduku contributors <dev@localhost>
+pkgname=traduku
+pkgver=0.2
 pkgrel=1
 pkgdesc='Clipboard translator powered by any OpenAI-compatible LLM (streaming; KDE Plasma, any DE)'
 arch=('x86_64')
-url='https://github.com/localhost/kde-llm-translate'
+url='https://github.com/localhost/traduku'
 license=('GPL3')
 # KF6 component packages: un-prefixed names resolve on Arch (kf6-* Provides)
 # and on CachyOS (installed as bare names).
@@ -13,7 +13,7 @@ depends=('qt6-base' 'qt6-multimedia' 'qt6-5compat'
          'kdbusaddons' 'libx11' 'libxi' 'libxtst')
 makedepends=('cmake' 'ninja')
 optdepends=('wl-clipboard: clipboard access on pure Wayland')
-source=("kde-llm-translate-${pkgver}.tar.gz")
+source=("traduku-${pkgver}.tar.gz")
 sha256sums=('SKIP')
 
 build() {

@@ -4,13 +4,13 @@ For end users install the package (tray app + desktop entry + sounds;
 the app asks about autostart and opens settings on first launch):
 
 - Arch/CachyOS: `packaging/arch/mkrelease.sh` builds
-  `release-out/kde-llm-translate-0.1-1-x86_64.pkg.tar.zst`; install with
+  `release-out/traduku-0.1-1-x86_64.pkg.tar.zst`; install with
   `pacman -U`.
 - Debian/Ubuntu: recipes in `packaging/debian/` (debhelper, cmake+ninja).
 
 For development use `./install.sh` (~/.local, no root).
 
-# llm-translate
+# traduku
 
 A modular, streaming clipboard translator for Linux desktops, powered by any
 OpenAI-compatible LLM endpoint (vLLM, llama.cpp server, Ollama, LM Studio,
@@ -42,10 +42,10 @@ a GNOME shell only needs to implement the small backend interfaces.
   without watching the screen.
 - **Configurable endpoint** (address / API key / model), destination
   language, double-press window, clipboard behaviour — stored as a plain
-  INI in `~/.config/llm-translate/config.ini`, editable from any DE.
+  INI in `~/.config/traduku/config.ini`, editable from any DE.
 - **Clipboard**: Qt (X11) / `wl-clipboard` (Wayland) selected at runtime.
 - **Launch on Login** via XDG autostart (KDE, GNOME, XFCE all honour it).
-- One-shot CLI: `kde-llm-translate --translate [--text "..."]` streams the
+- One-shot CLI: `traduku --translate [--text "..."]` streams the
   translation to stdout — scripts, pipes, tests.
 
 ## Architecture
@@ -63,7 +63,7 @@ src/platform/kde/ KdeTray (KStatusNotifierItem) · KdeNotifier
                  (KNotification) · KdeGlobalShortcut (KGlobalAccel)
 src/ui/          TranslatorWindow · SettingsDialog   (Qt Widgets only)
 src/app/         AppController (composition root, DE-agnostic) · SelfTest
-src/app/kde/     kde-llm-translate main (wiring, CLI, single instance)
+src/app/kde/     traduku main (wiring, CLI, single instance)
 ```
 
 `AppController` connects the lifecycle — gesture → clipboard read → engine
@@ -89,11 +89,11 @@ packages). X11/KDE layers are optional at configure time
 Every module was written test-first (see PLAN.md and the commit history):
 unit tests for each core piece, integration tests over an in-process
 fragmented mock SSE server, offscreen UI tests, plus
-`kde-llm-translate --selftest [--live]` for users to verify an install.
+`traduku --selftest [--live]` for users to verify an install.
 
 ## Usage
 
-1. `kde-llm-translate &` → tray icon appears.
+1. `traduku &` → tray icon appears.
 2. Tray → *Settings…* → API address (e.g. `http://localhost:11434/v1`),
    model, destination language. *Test API* checks reachability.
 3. Copy foreign text → press **Ctrl+C twice quickly** → the window opens
@@ -106,14 +106,14 @@ fragmented mock SSE server, offscreen UI tests, plus
 
 ```bash
 ./tools/mock-openai.py 8931 &          # streaming OpenAI-compatible mock
-kde-llm-translate --selftest --live    # after pointing config.ini at :8931
-kde-llm-translate --translate --text "Hello"
+traduku --selftest --live    # after pointing config.ini at :8931
+traduku --translate --text "Hello"
 ```
 
 ## Troubleshooting (inherited from the prototype)
 
 - **Wayland, "Clipboard is empty"**: install `wl-clipboard`.
-- **Double Ctrl+C dead on Wayland**: `journalctl --user | grep llm-translate`
+- **Double Ctrl+C dead on Wayland**: `journalctl --user | grep traduku`
   should show `XI2 raw key listener active on :0`; without XWayland the
   global-shortcut fallback engages automatically (its shortcut appears in
   the tooltip).

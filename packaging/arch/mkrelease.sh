@@ -8,8 +8,8 @@ VER="$(sed -n 's/^pkgver=\(.*\)$/\1/p' "$HERE/PKGBUILD")"
 OUT="${1:-$ROOT/release-out}"
 rm -rf "$OUT"; mkdir -p "$OUT"
 git -C "$ROOT" archive --format=tar.gz \
-    --prefix="kde-llm-translate-${VER}/" HEAD \
-    -o "$OUT/kde-llm-translate-${VER}.tar.gz"
+    --prefix="traduku-${VER}/" HEAD \
+    -o "$OUT/traduku-${VER}.tar.gz"
 cp "$HERE/PKGBUILD" "$OUT/"
 (cd "$OUT" && makepkg -sf --noconfirm --needed)
 echo

@@ -1,4 +1,4 @@
-// kde-llm-translate: KDE Plasma shell around the platform-agnostic core.
+// traduku: KDE Plasma shell around the platform-agnostic core.
 //
 // Composition only: settings, backends (clipboard/hotkey/notifier/sounds/
 // autostart), the AppController and the tray. No business logic here.
@@ -26,6 +26,7 @@
 #include <QCommandLineParser>
 #include <QFile>
 #include <QFileSystemWatcher>
+#include <QStandardPaths>
 #include <QMessageBox>
 #include <QTextStream>
 #include <QTimer>
@@ -41,8 +42,8 @@ using namespace lt;
 int main(int argc, char **argv)
 {
     QApplication app(argc, argv);
-    QApplication::setApplicationName(QStringLiteral("llm-translate"));
-    QApplication::setApplicationDisplayName(QStringLiteral("LLM Translate"));
+    QApplication::setApplicationName(QStringLiteral("traduku"));
+    QApplication::setApplicationDisplayName(QStringLiteral("Traduku"));
     QApplication::setQuitOnLastWindowClosed(false);   // tray-only app
 
     QCommandLineParser parser;
@@ -123,7 +124,21 @@ int main(int argc, char **argv)
     // second copy automatically).
     KDBusService service(KDBusService::Unique);
 
-    XdgAutostart autostart(QStringLiteral("llm-translate"),
+    // Rename migration (v0.1 llm-translate -> v0.2 traduku): move the
+    // config, carry the autostart preference over.
+    Settings::migrateLegacyConfig(QStandardPaths::writableLocation(
+        QStandardPaths::GenericConfigLocation));
+    {
+        XdgAutostart legacy(QStringLiteral("llm-translate"), {});
+        if (legacy.isEnabled()) {
+            legacy.setEnabled(false);
+            XdgAutostart(QStringLiteral("traduku"),
+                         QCoreApplication::applicationFilePath())
+                .setEnabled(true);
+        }
+    }
+
+    XdgAutostart autostart(QStringLiteral("traduku"),
                            QCoreApplication::applicationFilePath());
     KdeNotifier notifier;
     SoundPlayer sound(&settings);
@@ -197,16 +212,16 @@ int main(int argc, char **argv)
         }
         settings.setFirstRunDone(true);
         settings.save();
-        notifier.notify(QStringLiteral("LLM Translate is installed"),
+        notifier.notify(QStringLiteral("Traduku is installed"),
                         QStringLiteral("Press Ctrl+C twice quickly to "
                                        "translate the clipboard (a single "
                                        "copy is left alone). Configure your "
                                        "LLM endpoint in the settings dialog."));
         const auto answer = QMessageBox::question(
-            &window, QStringLiteral("Welcome to LLM Translate"),
+            &window, QStringLiteral("Welcome to Traduku"),
             QStringLiteral("Copy text anywhere, press Ctrl+C twice - the "
                            "translation window opens.\n\n"
-                           "Start LLM Translate automatically at login?"),
+                           "Start Traduku automatically at login?"),
             QMessageBox::Yes | QMessageBox::No, QMessageBox::Yes);
         if (answer == QMessageBox::Yes && !autostart.isEnabled()) {
             autostart.setEnabled(true);

@@ -38,7 +38,7 @@ bool XdgAutostart::setEnabled(bool on)
     QTextStream ts(&f);
     ts << "[Desktop Entry]\n"
           "Type=Application\n"
-          "Name=LLM Translate\n"
+          "Name=Traduku\n"
           "GenericName=Clipboard translator\n"
           "Comment=Translate the clipboard with an LLM (double Ctrl+C)\n"
        << "Exec=" << m_execPath << "\n"

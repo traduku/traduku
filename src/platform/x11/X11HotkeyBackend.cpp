@@ -57,7 +57,7 @@ bool X11HotkeyBackend::start()
     }
     Display *probe = XOpenDisplay(nullptr);
     if (!probe) {
-        qInfo("llm-translate: no X display (DISPLAY=%s) - X listener disabled",
+        qInfo("traduku: no X display (DISPLAY=%s) - X listener disabled",
               qPrintable(QString::fromLocal8Bit(qgetenv("DISPLAY"))));
         return false;
     }
@@ -142,7 +142,7 @@ void X11HotkeyBackend::runWorker()
         XISetMask(bits, XI_RawKeyRelease);
         XISelectEvents(dpy, root, &mask, 1);
         XSync(dpy, 0);
-        qInfo("llm-translate: XI2 raw key listener active on %s - "
+        qInfo("traduku: XI2 raw key listener active on %s - "
               "listening for double Ctrl+C",
               XDisplayString(dpy));
 
@@ -186,7 +186,7 @@ void X11HotkeyBackend::runRecord(Display *dpy)
 {
     int major = 0, minor = 0;
     if (!XRecordQueryVersion(dpy, &major, &minor)) {
-        qWarning("llm-translate: display %s has no RECORD/XInput support",
+        qWarning("traduku: display %s has no RECORD/XInput support",
                  XDisplayString(dpy));
         return;
     }
@@ -203,7 +203,7 @@ void X11HotkeyBackend::runRecord(Display *dpy)
         return;
     }
     m_recordContext = ctx;
-    qInfo("llm-translate: RECORD context active (v%d.%d) - listening for "
+    qInfo("traduku: RECORD context active (v%d.%d) - listening for "
           "double Ctrl+C",
           major, minor);
     XRecordEnableContext(dpy, ctx, &X11HotkeyBackend::recordCallback,

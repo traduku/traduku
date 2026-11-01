@@ -1,4 +1,5 @@
 #include <QtTest>
+#include <QTemporaryDir>
 #include <QLocale>
 #include "core/settings.h"
 
@@ -45,6 +46,32 @@ private slots:
                  QString("ru"));
         QCOMPARE(Settings::defaultTargetLanguageForLocale(QStringLiteral("quz_PE")),
                  QString("en"));   // unsupported locale -> neutral English
+    }
+
+    void legacyConfigMigration()
+    {
+        // Old traduku config in a temp XDG tree migrates to traduku.
+        QTemporaryDir dir;
+        QVERIFY(dir.isValid());
+        const QString base = dir.path();
+        const QString legacyDir = base + QStringLiteral("/llm-translate");
+        const QString newDir = base + QStringLiteral("/traduku");
+        QVERIFY(QDir().mkpath(legacyDir));
+        QFile legacy(legacyDir + QStringLiteral("/config.ini"));
+        QVERIFY(legacy.open(QIODevice::WriteOnly));
+        legacy.write("[General]\nTargetLanguage=de\n");
+        legacy.close();
+
+        QCOMPARE(Settings::migrateLegacyConfig(base), true);
+        QFile fresh(newDir + QStringLiteral("/config.ini"));
+        QVERIFY(fresh.open(QIODevice::ReadOnly));
+        QCOMPARE(QString(fresh.readAll()), QString("[General]\nTargetLanguage=de\n"));
+        QCOMPARE(QFile::exists(legacyDir + QStringLiteral("/config.ini")), false);
+
+        // No legacy file: no-op, no crash.
+        QCOMPARE(Settings::migrateLegacyConfig(base), false);
+        // Idempotent.
+        QCOMPARE(Settings::migrateLegacyConfig(base), false);
     }
 
     void configFileExistsReflectsDisk()

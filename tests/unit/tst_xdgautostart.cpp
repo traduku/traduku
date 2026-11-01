@@ -19,29 +19,29 @@ private slots:
 
     void disabledByDefault()
     {
-        XdgAutostart a(QStringLiteral("llm-translate"),
-                       QStringLiteral("/usr/bin/llm-translate"));
+        XdgAutostart a(QStringLiteral("traduku"),
+                       QStringLiteral("/usr/bin/traduku"));
         QVERIFY(!a.isEnabled());
     }
 
     void enablingWritesDesktopEntry()
     {
-        XdgAutostart a(QStringLiteral("llm-translate"),
-                       QStringLiteral("/usr/bin/llm-translate"));
+        XdgAutostart a(QStringLiteral("traduku"),
+                       QStringLiteral("/usr/bin/traduku"));
         QVERIFY(a.setEnabled(true));
         QVERIFY(a.isEnabled());
         QFile f(QDir(qEnvironmentVariable("XDG_CONFIG_HOME"))
-                    .filePath(QStringLiteral("autostart/llm-translate.desktop")));
+                    .filePath(QStringLiteral("autostart/traduku.desktop")));
         QVERIFY(f.open(QIODevice::ReadOnly));
         const QString data = QString::fromUtf8(f.readAll());
         QVERIFY(data.contains(QStringLiteral("[Desktop Entry]")));
-        QVERIFY(data.contains(QStringLiteral("Exec=/usr/bin/llm-translate")));
+        QVERIFY(data.contains(QStringLiteral("Exec=/usr/bin/traduku")));
         QVERIFY(data.contains(QStringLiteral("Type=Application")));
     }
 
     void disablingRemovesIt()
     {
-        XdgAutostart a(QStringLiteral("llm-translate"), QStringLiteral("/x"));
+        XdgAutostart a(QStringLiteral("traduku"), QStringLiteral("/x"));
         a.setEnabled(true);
         QVERIFY(a.setEnabled(false));
         QVERIFY(!a.isEnabled());
@@ -49,7 +49,7 @@ private slots:
 
     void idempotent()
     {
-        XdgAutostart a(QStringLiteral("llm-translate"), QStringLiteral("/x"));
+        XdgAutostart a(QStringLiteral("traduku"), QStringLiteral("/x"));
         QVERIFY(a.setEnabled(true));
         QVERIFY(a.setEnabled(true));
         QVERIFY(a.isEnabled());

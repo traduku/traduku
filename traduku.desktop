@@ -1,12 +1,12 @@
 [Desktop Entry]
 Type=Application
-Name=LLM Translate
+Name=Traduku
 GenericName=Clipboard translator
 Comment=Translate the clipboard with an LLM (double Ctrl+C, streaming)
-Exec=kde-llm-translate
+Exec=traduku
 Icon=accessories-dictionary
 Terminal=false
 Categories=Utility;Translation;Qt;KDE;
 X-KDE-autostart-after=panel
-X-DBus-ServiceName=org.kde.kde-llm-translate
+X-DBus-ServiceName=org.kde.traduku
 StartupNotify=false

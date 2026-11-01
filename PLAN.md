@@ -1,4 +1,4 @@
-# llm-translate — план переписывания
+# traduku — план переписывания
 
 Переписываем `~/Projects/kde_translate` (C++/Qt6/KF6, прототип) с нуля как
 модульное приложение. Прототип остаётся эталоном поведения; новый код
@@ -135,7 +135,7 @@ tools/mock-openai.py  стриминговый mock для ручной пров
       fallback-цепочка хоткеев, live-reload конфига). Полная интеграция
       (tst_appcontroller) + живой CLI прогон против streaming-mock.
 - [x] M11 полировка: SelfTest (--selftest/--live, 13 проверок),
-      XdgAutostart+тест, llm-translate.desktop, llm-translate.notifyrc,
+      XdgAutostart+тест, traduku.desktop, traduku.notifyrc,
       install.sh (~/.local, kwin-prompter workaround), README с планом
       переносимости на GNOME. Финальный прогон: 15 ctest-наборов +
       selftest + live-стрим через CLI — всё зелёное.
