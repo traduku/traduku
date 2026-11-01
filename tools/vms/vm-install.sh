@@ -24,6 +24,9 @@ $SSH vm@127.0.0.1 "mkdir -p build && echo vm | sudo -S rm -rf build/* 2>/dev/nul
 $SSH vm@127.0.0.1 "rm -rf build/traduku-$VER" 
 cat "$STAGE/traduku-$VER.tar.gz" | $SSH vm@127.0.0.1 "tar -xz -C build"
 
+echo "== syncing build deps on $VM"
+$SSH vm@127.0.0.1 'C5=libqt6coreaddons-dev; . /etc/os-release; [ "$ID" = ubuntu ] && C5=qt6-5compat-dev || C5=libqt6core5compat6-dev; echo vm | sudo -S env DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends build-essential cmake ninja-build pkg-config debhelper extra-cmake-modules qt6-base-dev qt6-multimedia-dev $C5 libkf6coreaddons-dev libkf6i18n-dev libkf6statusnotifieritem-dev libkf6notifications-dev libkf6globalaccel-dev libkf6dbusaddons-dev libx11-dev libxi-dev libxtst-dev 2>&1 | tail -1'
+
 echo "== building .deb on $VM (dpkg-buildpackage, this takes a few minutes)"
 $SSH vm@127.0.0.1 "cd build/traduku-$VER && cp -r packaging/debian debian && echo vm | sudo -S dpkg-buildpackage -us -uc -b 2>&1 | tail -20"
 
@@ -34,3 +37,4 @@ echo "== gate: selftest on $VM"
 $SSH vm@127.0.0.1 "QT_QPA_PLATFORM=offscreen traduku --selftest 2>&1 | tail -4"
 $SSH vm@127.0.0.1 "which traduku && dpkg -l traduku | tail -1"
 [ "${2:-}" = --shell ] && $SSH -t vm@127.0.0.1 bash
+exit 0
