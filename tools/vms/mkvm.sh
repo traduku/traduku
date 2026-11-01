@@ -24,6 +24,8 @@ if [ "$DISTRO" = arch ]; then
   [ "$DE" = kde ] || { echo "arch base is kde-only (extend mkarchbase for gnome)" >&2; exit 2; }
   qemu-img create -f qcow2 -F qcow2 -b "$BASE" "$DIR/disk.qcow2" >/dev/null
   qemu-img resize "$DIR/disk.qcow2" 30G >/dev/null
+  echo arch > "$DIR/distro"
+  chmod a+r "$VMS_HOME/images/arch-boot/"* 2>/dev/null || true
   echo "vm $VM created (base=$BASE de=$DE seed=none)"
   exit 0
 fi

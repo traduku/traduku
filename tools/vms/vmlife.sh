@@ -23,9 +23,17 @@ case "$cmd" in
     i=$(idx_of "$VM")
     SEED=""
     [ -f "$d/seed.iso" ] && SEED="-cdrom $d/seed.iso"
+    KERN=()
+    # Arch base has no bootloader: QEMU boots the kernel exported by
+    # mkarchbase.sh (arch-boot/), root by UUID baked into the image.
+    if [ "$(cat "$d/distro" 2>/dev/null)" = arch ]; then
+      KERN=(-kernel "$VMS_HOME/images/arch-boot/vmlinuz-linux"
+            -initrd "$VMS_HOME/images/arch-boot/initramfs-linux.img"
+            -append "root=UUID=$(cat "$VMS_HOME/images/arch-boot/root.uuid") rw console=ttyS0 loglevel=3 quiet")
+    fi
     qemu-system-x86_64 -enable-kvm -m 4096 -smp 4 -cpu max \
       -drive if=virtio,file="$d/disk.qcow2" \
-      $SEED \
+      $SEED "${KERN[@]}" \
       -netdev "user,id=n0,hostfwd=tcp::220$i-:22" -device virtio-net-pci,netdev=n0 \
       -device virtio-gpu-pci -display none -vnc ":$i" \
       -serial "file:$d/serial.log" \

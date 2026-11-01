@@ -11,7 +11,7 @@ git -C "$ROOT" archive --format=tar.gz \
     --prefix="traduku-${VER}/" HEAD \
     -o "$OUT/traduku-${VER}.tar.gz"
 cp "$HERE/PKGBUILD" "$OUT/"
-(cd "$OUT" && makepkg -sf --noconfirm --needed)
+(cd "$OUT" && makepkg -sf --noconfirm --needed "$@")
 echo
 echo "Release artifacts in $OUT:"
 ls -1 "$OUT"
