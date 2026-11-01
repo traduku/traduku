@@ -3,6 +3,7 @@
 add_library(lt_core STATIC
     languages.cpp
     chunker.cpp
+    translationledger.cpp
     settings.cpp
     doublepressdetector.cpp
     sseparser.cpp

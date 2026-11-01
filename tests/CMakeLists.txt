@@ -72,3 +72,6 @@ lt_add_test(tst_unicodeescapes SOURCES unit/tst_unicodeescapes.cpp LIBS lt::core
 
 # M12: core chunker (translation units, join==identity)
 lt_add_test(tst_chunker SOURCES unit/tst_chunker.cpp LIBS lt::core)
+
+# M13: translation ledger (chunk states, incremental re-edit diff)
+lt_add_test(tst_translationledger SOURCES unit/tst_translationledger.cpp LIBS lt::core)
