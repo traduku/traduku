@@ -9,7 +9,7 @@ namespace lt {
 /*!
  * Application settings stored as a plain INI file (portable across DEs:
  * no KConfig, no QSettings cache quirks - we control the bytes).
- * Default location: $XDG_CONFIG_HOME/llm-translate/config.ini
+ * Default location: $XDG_CONFIG_HOME/traduku/config.ini
  *
  * Format: UTF-8, `[General]` section, `Key=Value` lines, `;`/`#` comments.
  * Setters stage values; save() writes atomically and emits changed().
@@ -23,11 +23,6 @@ public:
     explicit Settings(const QString &filePath, QObject *parent = nullptr);
 
     static QString defaultFilePath();
-    /// Move a pre-rename <configBase>/llm-translate/config.ini to
-    /// <configBase>/traduku/config.ini (file is MOVED). Returns true when
-    /// a migration happened. configBase is injectable for tests; the app
-    /// calls it with the standard config location.
-    static bool migrateLegacyConfig(const QString &configBase);
     /// Default target language for a system locale name (testable seam:
     /// targetLanguage() feeds it QLocale::system().name()).
     static QString defaultTargetLanguageForLocale(const QString &localeName);
