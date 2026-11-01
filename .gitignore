@@ -3,4 +3,5 @@ build/
 .cache/
 compile_commands.json
 release-out/
-tests/e2e/__pycache__/
+tests/e2e/__pycache__/__pycache__/
+.pytest_cache/
