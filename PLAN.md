@@ -106,4 +106,8 @@ tools/mock-openai.py  стриминговый mock для ручной пров
       (кросс-DE) + app/kde/main.cpp (CLI --translate со стримом в stdout,
       fallback-цепочка хоткеев, live-reload конфига). Полная интеграция
       (tst_appcontroller) + живой CLI прогон против streaming-mock.
-- [ ] M11.
+- [x] M11 полировка: SelfTest (--selftest/--live, 12 проверок),
+      XdgAutostart+тест, llm-translate.desktop, llm-translate.notifyrc,
+      install.sh (~/.local, kwin-prompter workaround), README с планом
+      переносимости на GNOME. Финальный прогон: 15 ctest-наборов +
+      selftest + live-стрим через CLI — всё зелёное.

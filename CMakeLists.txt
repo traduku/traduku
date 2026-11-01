@@ -12,13 +12,13 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 set(QT_MIN_VERSION "6.4.0")
 find_package(Qt6 ${QT_MIN_VERSION} REQUIRED
     COMPONENTS Core Gui Widgets Network Multimedia Test)
-
+find_package(PkgConfig REQUIRED)
 include(CTest)
 include(GNUInstallDirs)
-find_package(PkgConfig REQUIRED)
-add_subdirectory(tests)
 
+# Declared before any add_subdirectory so tests see the switches.
 option(LT_BUILD_X11 "Build the X11 (XI2/RECORD) passive hotkey backend" ON)
 option(LT_BUILD_KDE "Build the KDE Platform backend and the tray application" ON)
 
 add_subdirectory(src)
+add_subdirectory(tests)

@@ -8,3 +8,9 @@ if(LT_BUILD_X11)
     target_compile_definitions(kde-llm-translate PRIVATE LT_HAVE_X11)
 endif()
 install(TARGETS kde-llm-translate RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
+
+install(FILES ${CMAKE_SOURCE_DIR}/llm-translate.desktop
+        DESTINATION ${CMAKE_INSTALL_DATADIR}/applications)
+install(FILES ${CMAKE_SOURCE_DIR}/llm-translate.notifyrc
+        DESTINATION ${CMAKE_INSTALL_DATADIR}/knotifications6
+        RENAME llm-translate.notifyrc)

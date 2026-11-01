@@ -1,0 +1,29 @@
+[Global]
+IconName=accessories-dictionary
+DesktopEntry=llm-translate
+Comment=LLM Translate clipboard translator
+
+[Event llm-translate-notify]
+Name=Translation progress
+Description=Status messages from the clipboard translator
+Sound=
+Action=Popup
+PreserveConfig=true
+
+[Event Translating]
+Name=Translating clipboard
+Action=Sound
+Sound=bell.oga
+PreserveConfig=true
+
+[Event Translated]
+Name=Translation finished
+Action=Sound
+Sound=complete.oga
+PreserveConfig=true
+
+[Event TranslationFailed]
+Name=Translation failed
+Action=Sound
+Sound=dialog-error.oga
+PreserveConfig=true

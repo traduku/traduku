@@ -4,6 +4,7 @@
 // autostart), the AppController and the tray. No business logic here.
 
 #include "app/AppController.h"
+#include "app/SelfTest.h"
 #include "core/llmstreamclient.h"
 #include "core/settings.h"
 #include "core/shortcutmonitor.h"
@@ -59,7 +60,23 @@ int main(int argc, char **argv)
         QStringLiteral("Text to translate (default: clipboard)."),
         QStringLiteral("text"));
     parser.addOption(textOpt);
+    const QCommandLineOption selftestOpt(
+        QStringLiteral("selftest"),
+        QStringLiteral("Run the built-in smoke test (headless-safe) and exit. "
+                       "Add --live to also translate once via the configured "
+                       "endpoint."));
+    parser.addOption(selftestOpt);
+    const QCommandLineOption liveOpt(
+        QStringLiteral("live"),
+        QStringLiteral("With --selftest: include a live request to the "
+                       "configured API."));
+    parser.addOption(liveOpt);
     parser.process(app);
+
+    if (parser.isSet(selftestOpt)) {
+        QTextStream out(stdout);
+        return lt::runSelfTest(out, parser.isSet(liveOpt)) == 0 ? 0 : 1;
+    }
 
     Settings settings;
 
