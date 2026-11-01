@@ -76,6 +76,11 @@ class Grid:
     def sudo(self, cmd):
         return self.run(f"echo vm | sudo -S {cmd}")
 
+    def clipset(self, text):
+        """Seed the DE (Wayland) clipboard. wl-copy is a daemon holding
+        stdout — redirect it, ssh would block on the open channel."""
+        return self.ses(f"printf %s '{text}' | timeout 10 wl-copy >/dev/null 2>&1")
+
     def ses(self, script, timeout=120):
         """Run a snippet inside the captured graphical session."""
         return self.run(f"source /tmp/session.env; {script}", timeout=timeout)

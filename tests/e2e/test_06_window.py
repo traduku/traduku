@@ -24,7 +24,7 @@ def test_window_appears_after_gesture(env):
 
     vm.ses("setsid xterm -e sleep 300 >/dev/null 2>&1 & sleep 1;"
            "xdotool windowactivate $(xdotool search -name xterm | head -1) 2>/dev/null; true")
-    vm.ses(f"printf '{SEED}' | wl-copy")
+    vm.clipset(SEED)
     vm.keyseq("ctrl c;250;ctrl c")
     frac = 0.0
     for _ in range(15):

@@ -19,6 +19,7 @@ case "$cmd" in
     done;;
   start)
     d=$VMS_HOME/run/$VM; [ -d "$d" ] || { echo "no vm $VM" >&2; exit 1; }
+    chmod a+rwX "$d" 2>/dev/null || true
     [ -f "$d/qemu.pid" ] && kill -0 "$(cat "$d/qemu.pid")" 2>/dev/null && { echo "already running"; exit 0; }
     i=$(idx_of "$VM")
     SEED=""
@@ -51,7 +52,7 @@ case "$cmd" in
     tail -30 "$VMS_HOME/run/$VM/serial.log" 2>/dev/null || echo "no serial log";;
   shot)
     d=$VMS_HOME/run/$VM; n=${3:-$(date +%s)}
-    mkdir -p "$d/shots"
+    mkdir -p "$d/shots"; chmod a+rwX "$d/shots"
     python3 /tools/qmp.py "$d/qmp.sock" screendump "$d/shots/$n.ppm"
     chmod a+rw "$d/shots/$n.ppm"
     chmod a+rw "$d/qmp.sock" 2>/dev/null || true

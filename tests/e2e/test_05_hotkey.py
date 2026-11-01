@@ -20,7 +20,7 @@ SEED = "Translate me 12345"
 
 
 def _fire_gesture(vm, n=2, gap=250):
-    vm.ses(f"printf '{SEED}' | wl-copy")
+    vm.clipset(SEED)
     vm.ses("wmctrl -a xterm 2>/dev/null; xdotool windowactivate $(xdotool search -name xterm | head -1) 2>/dev/null; true")
     time.sleep(0.5)
     vm.keyseq(";".join(["ctrl c"] * n + [str(gap)] * (n - 1)) if n > 1 else "ctrl c")
@@ -29,11 +29,12 @@ def _fire_gesture(vm, n=2, gap=250):
 def test_double_ctrl_c_starts_translation(env):
     vm = env
     vm.ses("setsid xterm -title focusterm -e sleep 300 >/dev/null 2>&1 & sleep 1; true")
-    _, log = vm.ses("grep -c 'listener active' /tmp/traduku.log")
-    assert int(log.strip() or 0) > 0, f"passive listener not active: {vm.run('tail -5 /tmp/traduku.log')[1]}"
+    # qInfo lands in the user journal (setid'ed app), not the stdout log
+    _, log = vm.ses("journalctl --user --no-pager --since -10min | grep -c 'listener active'")
+    assert int(log.strip() or 0) > 0, "passive listener not active in the last 10 min"
 
     # single press: passive mode must NOT fire
-    vm.ses("printf 'single press no fire' | wl-copy")
+    vm.clipset("single press no fire")
     vm.keyseq("ctrl c")
     time.sleep(1.5)
     _, clip = vm.ses("wl-paste 2>/dev/null")
@@ -55,7 +56,7 @@ def test_double_ctrl_c_starts_translation(env):
     vm.ses("rm -f ~/.config/traduku/config.ini; setsid nohup traduku >/tmp/traduku.log 2>&1 </dev/null &")
     time.sleep(1)  # config is not FirstRunDone -> welcome dialog appears: answer Yes
     vm.keyseq("ret"); time.sleep(1); vm.keyseq("esc")
-    vm.ses("printf 'ru layout text 67890' | wl-copy")
+    vm.clipset("ru layout text 67890")
     vm.ses("setxkbmap -display :0 -layout ru 2>/dev/null; sleep 0.3; true")
     vm.ses("xdotool windowactivate $(xdotool search -name focusterm | head -1) 2>/dev/null; true")
     vm.keyseq("ctrl c;250;ctrl c")

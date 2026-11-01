@@ -15,7 +15,7 @@ case "$DE" in kde|gnome) ;; *) echo "de?" >&2; exit 2;;
 esac
 [ -f "$BASE" ] || { echo "missing base image $BASE" >&2; exit 1; }
 DIR=$VMS_HOME/run/$VM
-rm -rf "$DIR"; mkdir -p "$DIR"
+rm -rf "$DIR"; mkdir -p "$DIR"; chmod a+rwX "$DIR"
 SSHKEY=$(cat "$VMS_HOME/id_ed25519.pub")
 
 # The Arch base image (mkarchbase.sh) ships the vm user, sddm autologin and
