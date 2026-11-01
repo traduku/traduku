@@ -36,7 +36,7 @@ case "$cmd" in
       -drive if=virtio,file="$d/disk.qcow2" \
       $SEED "${KERN[@]}" \
       -netdev "user,id=n0,hostfwd=tcp::220$i-:22" -device virtio-net-pci,netdev=n0 \
-      -device virtio-gpu-pci -display none -vnc ":$i" \
+      -vga none -device virtio-gpu-pci -display none -vnc ":$i" \
       -serial "file:$d/serial.log" \
       -qmp "unix:$d/qmp.sock,server,nowait" \
       -pidfile "$d/qemu.pid" -daemonize
