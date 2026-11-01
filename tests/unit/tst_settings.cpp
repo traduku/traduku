@@ -10,6 +10,19 @@ class TestSettings : public QObject
     QString path() const { return m_dir.path() + QStringLiteral("/config.ini"); }
 
 private slots:
+    void documentModeSettings()
+    {
+        Settings s(path());
+        QCOMPARE(s.maxWholeTextChars(), 6000);      // one-request threshold
+        QCOMPARE(s.maxParallel(), 4);               // chunk-mode pool
+        s.setMaxWholeTextChars(-5);                 // clamp: 0 = document mode off
+        s.setMaxParallel(99);                       // clamp to 8
+        s.save();
+        Settings r(path());
+        QCOMPARE(r.maxWholeTextChars(), 0);
+        QCOMPARE(r.maxParallel(), 8);
+    }
+
     void autoTranslateDefaults()
     {
         Settings s(path());

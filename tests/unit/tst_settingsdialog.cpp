@@ -45,12 +45,18 @@ private slots:
                      ->isChecked(), false);
         s.setAutoTranslate(false);
         s.setAutoTranslateDelay(1.2);
+        s.setMaxWholeTextChars(9000);
+        s.setMaxParallel(6);
         s.save();
         SettingsDialog d2(&s);
         QCOMPARE(d2.findChild<QCheckBox *>(QStringLiteral("m_autoTranslate"))
                      ->isChecked(), false);
         QCOMPARE(d2.findChild<QDoubleSpinBox *>(QStringLiteral("m_autoTranslateDelay"))
                      ->value(), 1.2);
+        QCOMPARE(d2.findChild<QSpinBox *>(QStringLiteral("m_maxWholeText"))
+                     ->value(), 9000);
+        QCOMPARE(d2.findChild<QSpinBox *>(QStringLiteral("m_maxParallel"))
+                     ->value(), 6);
     }
 
     void acceptPersistsEdits()
@@ -70,6 +76,10 @@ private slots:
                 ->setText(QStringLiteral("Ctrl+Alt+T"));
             d.findChild<QDoubleSpinBox *>(QStringLiteral("m_autoTranslateDelay"))
                 ->setValue(2.5);
+            d.findChild<QSpinBox *>(QStringLiteral("m_maxWholeText"))
+                ->setValue(12000);
+            d.findChild<QSpinBox *>(QStringLiteral("m_maxParallel"))
+                ->setValue(3);
             d.findChild<QDialogButtonBox *>(QStringLiteral("m_buttons"))
                 ->button(QDialogButtonBox::Ok)
                 ->click();
@@ -83,6 +93,8 @@ private slots:
         // autoTranslate stayed at the value loaded from disk (false, set by
         // loadsCurrentValues on this shared file); accept must not flip it.
         QCOMPARE(reread.autoTranslate(), false);
+        QCOMPARE(reread.maxWholeTextChars(), 12000);
+        QCOMPARE(reread.maxParallel(), 3);
     }
 
     void cancelKeepsOldValues()
@@ -121,6 +133,10 @@ private slots:
                      ->isChecked(), true);
         QCOMPARE(d.findChild<QDoubleSpinBox *>(QStringLiteral("m_autoTranslateDelay"))
                      ->value(), 0.6);
+        QCOMPARE(d.findChild<QSpinBox *>(QStringLiteral("m_maxWholeText"))
+                     ->value(), 6000);
+        QCOMPARE(d.findChild<QSpinBox *>(QStringLiteral("m_maxParallel"))
+                     ->value(), 4);
     }
 
     void testApiButtonChecksEndpoint()

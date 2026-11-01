@@ -212,6 +212,14 @@ private slots:
         QVERIFY(m_clip.writes > w);
     }
 
+    void paragraphsKeepBlankLinesInWindow()
+    {
+        m_clip.m_text = QStringLiteral("hello world\n\nsecond paragraph");
+        Q_EMIT m_hotkey->activated();
+        QTRY_VERIFY_WITH_TIMEOUT(status().contains(QStringLiteral("Done")), 10000);
+        QCOMPARE(target(), QString("HELLO WORLD\n\nSECOND PARAGRAPH"));
+    }
+
     void emptyClipboardWarns()
     {
         Q_EMIT m_hotkey->activated();

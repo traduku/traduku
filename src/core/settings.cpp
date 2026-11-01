@@ -168,6 +168,32 @@ bool Settings::copyResult() const
 }
 LT_DEFINE_SETTER(setCopyResult, copyResult, bool, "CopyResult")
 
+int Settings::maxWholeTextChars() const
+{
+    return value("MaxWholeTextChars", 6000).toInt();
+}
+void Settings::setMaxWholeTextChars(int chars)
+{
+    const int v = std::clamp(chars, 0, 200000);
+    if (maxWholeTextChars() == v) {
+        return;
+    }
+    setValue("MaxWholeTextChars", v);
+}
+
+int Settings::maxParallel() const
+{
+    return value("MaxParallel", 4).toInt();
+}
+void Settings::setMaxParallel(int n)
+{
+    const int v = std::clamp(n, 1, 8);
+    if (maxParallel() == v) {
+        return;
+    }
+    setValue("MaxParallel", v);
+}
+
 bool Settings::autoTranslate() const
 {
     return value("AutoTranslate", true).toBool();

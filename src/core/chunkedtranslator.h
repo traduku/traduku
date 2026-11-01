@@ -54,14 +54,21 @@ private:
         int row;
     };
     void startQueued();
-    void startRow(int row);
+    void startRow(int slot);
+    /// Slot -> display row map: paragraph separators occupy a blank row.
+    int displayRow(int slot) const;
+    void startDocument();
+    void finalizeDocument(const QString &result);
     void abortAll();
 
     TranslationLedger m_ledger;
     Settings *m_settings;
     QQueue<int> m_queue;
+    QVector<int> m_slotToRow;
     QVector<Job> m_active;
-    int m_maxParallel = 2;
+    TranslationEngine *m_docEngine = nullptr;   // whole-text mode
+    QString m_docResult;
+    bool m_docTruncated = false;
 };
 
 } // namespace lt
