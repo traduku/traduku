@@ -133,6 +133,7 @@ SDDM
 Name=eno* enp* eth*
 [Network]
 DHCP=yes
+DNS=10.0.2.3
 NET
 
   mkdir -p "$TARGET/etc/sudoers.d"
@@ -154,7 +155,7 @@ NET
     printf "[Daemon]\nAutostart=false\n" > /home/vm/.config/kscreenlockerrc
     printf "export LANG=C.UTF-8\n" > /home/vm/.profile
     chown -R vm:vm /home/vm
-    systemctl enable sddm sshd systemd-networkd
+    systemctl enable sddm sshd systemd-networkd systemd-resolved
     true
   '
   done_phase config

@@ -22,13 +22,18 @@ def session(vm):
     rc, out = vm.run("pgrep -u vm -x kwin_wayland || pgrep -u vm -x kwin_x11")
     assert rc == 0, "no KDE session in the guest (autologin broken?)"
     vm.run(
-        "echo vm | sudo -S cat /proc/$(pgrep -u vm -x kwin_wayland | head -1)"
-        " | true; P=$(pgrep -u vm -x kwin_wayland | head -1);"
-        " [ -z \"$P\" ] && P=$(pgrep -u vm -x kwin_x11 | head -1);"
+        "P=$(pgrep -u vm -x kwin_wayland | head -1); [ -z \"$P\" ] && P=$(pgrep -u vm -x kwin_x11 | head -1);"
         " echo vm | sudo -S cat /proc/$P/environ | tr '\\0' '\\n'"
-        " | grep -E '^(DISPLAY|WAYLAND_DISPLAY|XAUTHORITY|DBUS_SESSION_BUS_ADDRESS|XDG_RUNTIME_DIR|XDG_SESSION_TYPE)='"
+        " | grep -E '^(DISPLAY|XAUTHORITY|DBUS_SESSION_BUS_ADDRESS|XDG_RUNTIME_DIR|XDG_SESSION_TYPE)='"
         " | sed 's/^/export /' > /tmp/session.env;"
-        " grep -q WAYLAND_DISPLAY /tmp/session.env || echo 'export WAYLAND_DISPLAY=wayland-0' >> /tmp/session.env;"
+        # the compositor publishes its socket under the runtime dir — trust
+        # the socket (kwin does not put WAYLAND_DISPLAY in its own environ)
+        " W=$(ls /run/user/1000/ 2>/dev/null | grep -E '^wayland-[0-9]+$' | head -1);"
+        " [ -n \"$W\" ] && echo \"export WAYLAND_DISPLAY=$W\" >> /tmp/session.env;"
+        # XWayland (KDE: screenless, :1) provides DISPLAY/XAUTHORITY from its env
+        " X=$(echo vm | sudo -S cat /proc/$(pgrep -u vm -x Xwayland | head -1)/environ 2>/dev/null"
+        " | tr '\\0' '\\n' | grep -E '^(DISPLAY|XAUTHORITY)=' | sed 's/^/export /');"
+        " [ -n \"$X\" ] && echo \"$X\" >> /tmp/session.env;"
         " grep -q XDG_RUNTIME_DIR /tmp/session.env || echo 'export XDG_RUNTIME_DIR=/run/user/1000' >> /tmp/session.env"
     )
     vm.sudo("loginctl unlock-sessions")

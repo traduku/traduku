@@ -28,9 +28,16 @@ case "$VM" in
       "$ROOT/packaging/arch/mkrelease.sh" "$ROOT/release-out" --nocheck
     fi
     echo "== push + pacman -U on $VM"
-    Q "rm -f ~/traduku-*.pkg.tar.zst"
-    SCP "$PKG" vm@127.0.0.1:~/
-    Q "echo vm | sudo -S sh -c 'sed s/^SigLevel.*/SigLevel\\ =\\ Never/ /etc/pacman.conf > /tmp/pacman-grid.conf && pacman -U --noconfirm --config /tmp/pacman-grid.conf /home/vm/traduku-${VER}-1-x86_64.pkg.tar.zst 2>&1 | tail -3'"
+    # trust the dev-channel signing key (once); real releases are signed
+    SCP "$ROOT/packaging/arch/traduku-dev-pub.asc" vm@127.0.0.1:~/
+    SCP "$HERE/vm-trust-key.sh" vm@127.0.0.1:~/
+    Q "bash ~/vm-trust-key.sh"
+    Q "rm -f ~/traduku-*.pkg.tar.zst*"
+    # push the release artifacts exactly as a user would download them
+    for art in "$PKG" "$PKG.sig"; do
+      [ -f "$art" ] && SCP "$art" vm@127.0.0.1:~/
+    done
+    Q "echo vm | sudo -S pacman -U --noconfirm ~/traduku-${VER}-1-x86_64.pkg.tar.zst 2>&1 | tail -3"
     ;;
   *-kde|*-gnome)
     # .deb built inside the debian:13 container (dpkg toolchain), installed via apt
@@ -56,6 +63,6 @@ esac
 
 echo "== gate: selftest on $VM"
 Q "QT_QPA_PLATFORM=offscreen traduku --selftest 2>&1 | tail -3"
-Q "traduku --version"
+Q "traduku --help | head -3"
 [ "$REBUILD" = --shell ] && $SSH -t vm@127.0.0.1 bash
 exit 0
