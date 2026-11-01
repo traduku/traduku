@@ -16,6 +16,10 @@ const QVector<Language> &languages();
 /// Native name for a code, empty string when unknown.
 QString languageName(const QString &code);
 
+/// Map a UI locale ("ru_RU", "de", ...) onto a languages() code;
+/// "en" when the locale has no supported language (neutral default).
+QString languageCodeForLocale(const QString &localeName);
+
 /// languageName() falling back to the raw code (never empty).
 QString languageNameOrCode(const QString &code);
 

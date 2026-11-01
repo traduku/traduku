@@ -49,6 +49,18 @@ const QVector<Language> &languages()
     return table;
 }
 
+QString languageCodeForLocale(const QString &localeName)
+{
+    QString wanted = localeName.section(QLatin1Char('_'), 0, 0).toLower();
+    wanted.replace(QLatin1Char('-'), QLatin1Char('_'));
+    for (const Language &lang : languages()) {
+        if (lang.code.compare(wanted, Qt::CaseInsensitive) == 0) {
+            return lang.code;
+        }
+    }
+    return QStringLiteral("en");
+}
+
 QString languageName(const QString &code)
 {
     if (code.isEmpty()) {

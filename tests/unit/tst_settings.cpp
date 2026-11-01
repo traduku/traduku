@@ -1,4 +1,5 @@
 #include <QtTest>
+#include <QLocale>
 #include "core/settings.h"
 
 using namespace lt;
@@ -36,6 +37,16 @@ private slots:
         QCOMPARE(r.autoTranslateDelay(), 5.0);
     }
 
+    void defaultTargetLanguageFollowsLocale()
+    {
+        QCOMPARE(Settings::defaultTargetLanguageForLocale(QStringLiteral("de_DE")),
+                 QString("de"));
+        QCOMPARE(Settings::defaultTargetLanguageForLocale(QStringLiteral("ru_RU")),
+                 QString("ru"));
+        QCOMPARE(Settings::defaultTargetLanguageForLocale(QStringLiteral("quz_PE")),
+                 QString("en"));   // unsupported locale -> neutral English
+    }
+
     void configFileExistsReflectsDisk()
     {
         const QString fresh = m_dir.path() + QStringLiteral("/fresh.ini");
@@ -51,7 +62,8 @@ private slots:
         Settings s(path());
         QCOMPARE(s.apiUrl(), QString("http://localhost:11434/v1"));
         QCOMPARE(s.model(), QString("llama3.1"));
-        QCOMPARE(s.targetLanguage(), QString("ru"));   // changed from prototype's 'de'
+        QCOMPARE(s.targetLanguage(),
+                   Settings::defaultTargetLanguageForLocale(QLocale::system().name()));   // changed from prototype's 'de'
         QCOMPARE(s.pressInterval(), 0.5);
         QCOMPARE(s.copyResult(), true);
         QCOMPARE(s.soundsEnabled(), true);

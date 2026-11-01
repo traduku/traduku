@@ -1,3 +1,4 @@
+#include "languages.h"
 #include "settings.h"
 
 #include <QDir>
@@ -55,6 +56,11 @@ Settings::Settings(const QString &filePath, QObject *parent)
     // an empty file): the app uses this for first-run detection.
     m_existed = QFileInfo::exists(filePath);
     reload();
+}
+
+QString Settings::defaultTargetLanguageForLocale(const QString &localeName)
+{
+    return languageCodeForLocale(localeName);
 }
 
 QString Settings::defaultFilePath()
@@ -154,7 +160,9 @@ LT_DEFINE_SETTER(setModel, model, const QString &, "Model")
 
 QString Settings::targetLanguage() const
 {
-    return value("TargetLanguage", QStringLiteral("ru")).toString();
+    return value("TargetLanguage",
+                 defaultTargetLanguageForLocale(QLocale::system().name()))
+        .toString();
 }
 LT_DEFINE_SETTER(setTargetLanguage, targetLanguage, const QString &, "TargetLanguage")
 

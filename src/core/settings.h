@@ -23,6 +23,9 @@ public:
     explicit Settings(const QString &filePath, QObject *parent = nullptr);
 
     static QString defaultFilePath();
+    /// Default target language for a system locale name (testable seam:
+    /// targetLanguage() feeds it QLocale::system().name()).
+    static QString defaultTargetLanguageForLocale(const QString &localeName);
     QString filePath() const;
 
     QString apiUrl() const;             // base of an OpenAI-compatible API
