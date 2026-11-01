@@ -134,8 +134,21 @@ tools/mock-openai.py  стриминговый mock для ручной пров
       (кросс-DE) + app/kde/main.cpp (CLI --translate со стримом в stdout,
       fallback-цепочка хоткеев, live-reload конфига). Полная интеграция
       (tst_appcontroller) + живой CLI прогон против streaming-mock.
-- [x] M11 полировка: SelfTest (--selftest/--live, 12 проверок),
+- [x] M11 полировка: SelfTest (--selftest/--live, 13 проверок),
       XdgAutostart+тест, llm-translate.desktop, llm-translate.notifyrc,
       install.sh (~/.local, kwin-prompter workaround), README с планом
       переносимости на GNOME. Финальный прогон: 15 ctest-наборов +
       selftest + live-стрим через CLI — всё зелёное.
+
+- [x] M12 core chunker: splitChunks (строки/абзацы/предложения/hard-split),
+      инвариант join(split(x))==x, 17 тестов.
+- [x] M13 core TranslationLedger: состояние чанка (Pending/Translating/
+      Translated/Passthrough), LCS-диф при правке — нетронутые переводы
+      сохраняются, частичный стрим виден в середине документа.
+- [x] M14 интерактивное окно: редактируемый источник (Ctrl+V, печать),
+      Ctrl+Enter = перевод, целевая панель = слоты-строки (showTargetRows/
+      streamIntoRow/commitRow), настройки AutoTranslate + idle-delay.
+- [x] M15 инкрементальный конвейер: ChunkedTranslator (ledger + пул из 2
+      TranslationEngine), AppController: debounce таймер, applyEdit по
+      правке, отмена in-flight при relayout; echo-mode mock-сервера.
+      Итог: 19 ctest-наборов + selftest (15 проверок) зелёные.

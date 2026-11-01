@@ -9,6 +9,7 @@
 #include "core/settings.h"
 #include "core/shortcutmonitor.h"
 #include "core/soundplayer.h"
+#include "core/chunkedtranslator.h"
 #include "core/translationengine.h"
 #include "platform/kde/KdeGlobalShortcut.h"
 #include "platform/kde/KdeNotifier.h"
@@ -128,9 +129,9 @@ int main(int argc, char **argv)
     auto clipboard = createClipboard(QGuiApplication::platformName(), {},
                                      QApplication::clipboard());
     TranslatorWindow window;
-    TranslationEngine engine(&settings);
+    ChunkedTranslator pipeline(&settings);
     AppController controller({&settings, clipboard.get(), &notifier, &sound,
-                              &window, &engine});
+                              &window, &pipeline});
     KdeTray tray(&settings, &autostart);
 
     // Hotkeys: passive X11/XWayland monitor first (needs no permission,

@@ -1,16 +1,17 @@
 #include "AppController.h"
 
+#include "core/chunkedtranslator.h"
 #include "core/languages.h"
-#include "core/unicodeescapes.h"
 #include "core/settings.h"
 #include "core/soundplayer.h"
-#include "core/translationengine.h"
+#include "core/unicodeescapes.h"
 #include "interfaces/iclipboard.h"
 #include "interfaces/ihotkeybackend.h"
 #include "interfaces/inotifier.h"
 #include "ui/TranslatorWindow.h"
 
 #include <QDebug>
+#include <QTimer>
 
 namespace lt {
 
@@ -18,10 +19,9 @@ AppController::AppController(const Backends &b, QObject *parent)
     : QObject(parent)
     , m_b(b)
 {
-    connect(m_b.engine, &TranslationEngine::started, m_b.window,
+    connect(m_b.pipeline, &ChunkedTranslator::startedDocument, m_b.window,
             [this](const QString &source, const QString &targetName) {
                 m_b.window->setSourceText(source);
-                m_b.window->showTargetRows({source});
                 m_b.window->statusTranslating(targetName);
                 m_b.window->showForeground();
                 m_b.sound->play(SoundEvent::Started);
@@ -30,18 +30,16 @@ AppController::AppController(const Backends &b, QObject *parent)
                       qPrintable(m_b.settings->apiUrl()),
                       qPrintable(m_b.settings->model()));
             });
-    connect(m_b.engine, &TranslationEngine::delta, m_b.window,
-            [this](const QString &) {
-                m_b.window->streamIntoRow(0, m_b.engine->translation());
-            });
-    connect(m_b.engine, &TranslationEngine::finished, m_b.window, [this]() {
-        // Safety net: some clipboard providers hand over text whose letters
-        // arrived as literal \uXXXX JSON escapes (cp1251 pages, Klipper
-        // history). Decode only demonstrably double-encoded strings.
-        QString t = decodeIfEscaped(m_b.engine->translation());
-        m_b.window->commitRow(0, t);
+    connect(m_b.pipeline, &ChunkedTranslator::rowLayoutChanged, m_b.window,
+            &TranslatorWindow::showTargetRows);
+    connect(m_b.pipeline, &ChunkedTranslator::rowStreaming, m_b.window,
+            &TranslatorWindow::streamIntoRow);
+    connect(m_b.pipeline, &ChunkedTranslator::rowCommitted, m_b.window,
+            &TranslatorWindow::commitRow);
+    connect(m_b.pipeline, &ChunkedTranslator::allDone, m_b.window, [this]() {
         m_b.window->statusDone();
         m_b.sound->play(SoundEvent::Finished);
+        const QString t = m_b.pipeline->targetText();
         QString clipboardNote;
         if (m_b.settings->copyResult()) {
             m_b.clipboard->setText(t);
@@ -57,15 +55,8 @@ AppController::AppController(const Backends &b, QObject *parent)
                 .arg(languageNameOrCode(m_b.settings->targetLanguage()),
                      clipboardNote, preview));
     });
-    connect(m_b.engine, &TranslationEngine::failed, m_b.window,
+    connect(m_b.pipeline, &ChunkedTranslator::failed, m_b.window,
             [this](const QString &reason) {
-                if (reason == QLatin1String("empty")) {
-                    m_b.notifier->notify(QStringLiteral("LLM Translate"),
-                                         QStringLiteral("The model returned an "
-                                                        "empty translation."));
-                    m_b.sound->play(SoundEvent::Failed);
-                    return;
-                }
                 m_b.window->statusFailed(reason);
                 m_b.sound->play(SoundEvent::Failed);
                 m_b.notifier->notify(QStringLiteral("LLM Translate"),
@@ -73,6 +64,24 @@ AppController::AppController(const Backends &b, QObject *parent)
                                          .arg(reason));
                 qWarning("llm-translate: %s", qUtf8Printable(reason));
             });
+
+    // Interactive source pane: typing debounces into an incremental
+    // applyEdit; Ctrl+Enter fires it immediately.
+    m_debounce = new QTimer(this);
+    m_debounce->setSingleShot(true);
+    connect(m_debounce, &QTimer::timeout, this, [this]() {
+        if (m_b.settings->autoTranslate()) {
+            m_b.pipeline->applyEdit(m_b.window->sourceText());
+        }
+    });
+    connect(m_b.window, &TranslatorWindow::sourceEdited, this, [this]() {
+        const int ms = qMax(50, int(m_b.settings->autoTranslateDelay() * 1000));
+        m_debounce->start(ms);
+    });
+    connect(m_b.window, &TranslatorWindow::translateRequested, this, [this]() {
+        m_debounce->stop();
+        m_b.pipeline->applyEdit(m_b.window->sourceText());
+    });
 
     connect(m_b.window, &TranslatorWindow::copyRequested, this,
             [this](const QString &text) {
@@ -104,21 +113,18 @@ void AppController::setHotkey(IHotkeyBackend *hotkey)
 
 bool AppController::translating() const
 {
-    return m_b.engine->isBusy();
+    return !m_b.pipeline->isComplete();
 }
 
 void AppController::translateNow()
 {
-    if (m_b.engine->isBusy()) {
-        return;
-    }
     QString text = decodeIfEscaped(m_b.clipboard->text().trimmed());
     if (text.isEmpty()) {
         m_b.notifier->notify(QStringLiteral("LLM Translate"),
                              QStringLiteral("Clipboard is empty."));
         return;
     }
-    m_b.engine->translate(text);
+    m_b.pipeline->setSource(text);
 }
 
 } // namespace lt

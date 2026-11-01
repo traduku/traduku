@@ -5,7 +5,9 @@
 #include "core/settings.h"
 #include "core/sseparser.h"
 #include "core/unicodeescapes.h"
+#include "core/chunker.h"
 #include "core/translationengine.h"
+#include "core/translationledger.h"
 #include "platform/qt/XdgAutostart.h"
 #include "platform/wl/WlClipboard.h"
 #include "ui/TranslatorWindow.h"
@@ -60,6 +62,27 @@ int runSelfTest(QTextStream &out, bool doLive)
                 .contains(QStringLiteral("Russian"))
                 && languageName(QStringLiteral("zz")).isEmpty(),
             "languages: table + lookup");
+
+    {
+        const QString doc = QStringLiteral("alpha\nbeta\n\ngamma");
+        const auto chunks = splitChunks(doc, 60);
+        QString joined;
+        for (const Chunk &c : chunks) {
+            joined += c.text + c.sep;
+        }
+        r.check(joined == doc && chunks.size() == 3,
+                "chunker: split preserves the document");
+        TranslationLedger led;
+        led.setSource(doc);
+        led.setTranslation(0, QStringLiteral("ALPHA"), QString());
+        led.setTranslation(1, QStringLiteral("BETA"), QString());
+        led.setTranslation(2, QStringLiteral("GAMMA"), QString());
+        QVector<int> dirty = led.applyEdit(QStringLiteral("alpha\nbeta2\n\ngamma"));
+        r.check(dirty.size() == 1 && dirty.at(0) == 1
+                    && led.targetText() == QStringLiteral("ALPHA\nbeta2\n\nGAMMA"),
+                "ledger: edit keeps untouched translations");
+    }
+
 
     // 3. Double Ctrl+C detection (fake clock, no X server)
     {
@@ -123,9 +146,10 @@ int runSelfTest(QTextStream &out, bool doLive)
                           QStringLiteral("cd")});
         w.streamIntoRow(1, QStringLiteral("B"));
         w.commitRow(1, QStringLiteral("B"));
+        w.statusDone();
         auto *tgt = w.findChild<QTextEdit *>(QStringLiteral("m_target"));
         auto *status = w.findChild<QLabel *>(QStringLiteral("m_status"));
-        r.check(tgt && tgt->toPlainText() == QLatin1String("ab")
+        r.check(tgt && tgt->toPlainText() == QLatin1String("ab\nB\ncd")
                     && status->text().contains(QStringLiteral("Done")),
                 "window: source|translation streaming");
     }

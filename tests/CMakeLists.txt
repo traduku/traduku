@@ -75,3 +75,8 @@ lt_add_test(tst_chunker SOURCES unit/tst_chunker.cpp LIBS lt::core)
 
 # M13: translation ledger (chunk states, incremental re-edit diff)
 lt_add_test(tst_translationledger SOURCES unit/tst_translationledger.cpp LIBS lt::core)
+
+# M15: chunked incremental pipeline (streaming mock)
+lt_add_test(tst_chunkedtranslator
+    SOURCES integration/tst_chunkedtranslator.cpp integration/mocksseserver.h
+    LIBS lt::core Qt6::Network)

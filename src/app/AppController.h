@@ -2,6 +2,8 @@
 
 #include <QObject>
 
+class QTimer;
+
 namespace lt {
 
 class IHotkeyBackend;
@@ -9,7 +11,7 @@ class IClipboard;
 class INotifier;
 class SoundPlayer;
 class Settings;
-class TranslationEngine;
+class ChunkedTranslator;
 class TranslatorWindow;
 
 /*!
@@ -17,12 +19,13 @@ class TranslatorWindow;
  * clipboard, notifier and sounds. A KDE / GNOME / ... shell only has to
  * build the backends and construct this.
  *
- * Flow (mirrors the prototype, plus the streaming window):
- *   hotkey activated -> clipboard read -> engine.translate ->
- *   started:  show window (source|target), play "start" cue
- *   delta:    append to the live translation pane
- *   finished: mark done, copy to clipboard (if enabled), play "done" cue,
- *             notify with a preview
+ * Flow:
+ *   hotkey activated -> clipboard read -> pipeline.setSource ->
+ *     rows laid out, units stream row by row (rowStreaming/rowCommitted),
+ *     allDone: done cue + clipboard copy + preview notification
+ *   user types in the source pane -> debounced (AutoTranslateDelay) ->
+ *     pipeline.applyEdit: LCS diff, only touched rows retranslated
+ *   Ctrl+Enter -> applyEdit immediately (ignores the autoTranslate switch)
  *   failed:   status + error cue + notification
  */
 class AppController : public QObject
@@ -35,7 +38,7 @@ public:
         INotifier *notifier = nullptr;
         SoundPlayer *sound = nullptr;
         TranslatorWindow *window = nullptr;
-        TranslationEngine *engine = nullptr;
+        ChunkedTranslator *pipeline = nullptr;
     };
 
     explicit AppController(const Backends &b, QObject *parent = nullptr);
@@ -57,6 +60,7 @@ Q_SIGNALS:
 
 private:
     Backends m_b;
+    QTimer *m_debounce = nullptr;
 };
 
 } // namespace lt

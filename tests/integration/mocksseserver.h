@@ -7,10 +7,12 @@
 #include <QByteArray>
 #include <QJsonArray>
 #include <QJsonDocument>
+#include <QJsonDocument>
 #include <QJsonObject>
 #include <QList>
 #include <QTcpServer>
 #include <QTcpSocket>
+#include <QHash>
 
 namespace lt {
 namespace test {
@@ -48,6 +50,12 @@ public:
             + "\n\n";
     }
 
+    /// Echo mode: reply with the text following "### Original text" in the
+    /// request, uppercased, streamed word by word.
+    void setEchoMode(bool on) { m_echo = on; }
+
+    int requestCount() const { return m_requests.size(); }
+
     QList<QByteArray> m_requests;   // full request bytewise, in arrival order
 
 protected:
@@ -55,7 +63,9 @@ protected:
     {
         auto *sock = new QTcpSocket(this);
         sock->setSocketDescriptor(socketDescriptor);
+        connect(sock, &QTcpSocket::disconnected, sock, &QObject::deleteLater);
         connect(sock, &QTcpSocket::readyRead, this, [this, sock]() {
+            QByteArray &m_pending = m_buffers[sock];
             m_pending += sock->readAll();
             const int headEnd = m_pending.indexOf("\r\n\r\n");
             if (headEnd < 0) {
@@ -73,8 +83,13 @@ protected:
                 return;                       // body incomplete
             }
             m_requests.append(m_pending);
+            const QByteArray req = m_pending;
             m_pending.clear();
-            respond(sock);
+            if (m_echo) {
+                respondEcho(sock, req);
+            } else {
+                respond(sock);
+            }
         });
     }
 
@@ -94,9 +109,46 @@ private:
         sock->disconnectFromHost();
     }
 
+    void respondEcho(QTcpSocket *sock, const QByteArray &request)
+    {
+        QString text;
+        const int p = request.indexOf("<<<TEXT");
+        if (p >= 0) {
+            const QByteArray body = request.mid(request.indexOf("\r\n\r\n") + 4);
+            const QJsonDocument doc = QJsonDocument::fromJson(body);
+            const QString prompt = doc.object()
+                .value(QStringLiteral("messages")).toArray()
+                .at(0).toObject().value(QStringLiteral("content")).toString();
+            const int s = prompt.indexOf(QStringLiteral("<<<TEXT"));
+            if (s >= 0) {
+                text = prompt.mid(s + 7);
+                const int stop = text.lastIndexOf(QStringLiteral("TEXT"));
+                if (stop >= 0) {
+                    text = text.left(stop);
+                }
+                text = text.trimmed();
+            }
+        }
+        QByteArray head = QStringLiteral("HTTP/1.1 200 MOCK\r\n"
+                                         "Content-Type: text/event-stream\r\n"
+                                         "Connection: close\r\n\r\n").toUtf8();
+        sock->write(head);
+        const QStringList words = text.split(QLatin1Char(' '), Qt::SkipEmptyParts);
+        for (const QString &w : words) {
+            sock->write(sseEvent(w.toUpper() + QLatin1Char(' ')));
+            sock->flush();
+        }
+        sock->write(sseEvent(text.toUpper().isEmpty()
+                                 ? QString() : QStringLiteral("")));
+        sock->write("data: [DONE]\n\n");
+        sock->flush();
+        sock->disconnectFromHost();
+    }
+
+    bool m_echo = false;
     int m_status = 200;
     QList<QByteArray> m_bodyParts;
-    QByteArray m_pending;
+    QHash<QTcpSocket *, QByteArray> m_buffers;
 };
 
 } // namespace test
