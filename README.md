@@ -10,11 +10,11 @@ the app asks about autostart and opens settings on first launch):
 
 For development use `./install.sh` (~/.local, no root).
 
-# traduku
+# Traduku
 
 A modular, streaming clipboard translator for Linux desktops, powered by any
 OpenAI-compatible LLM endpoint (vLLM, llama.cpp server, Ollama, LM Studio,
-OpenAI, OpenRouter, …). Copy foreign text, press **Ctrl+C twice** — a
+OpenAI, OpenRouter, …). Select text, press **Ctrl+C twice** — a
 DeepL-style window opens and the translation **types itself out live** as
 the model streams it.
 
@@ -86,7 +86,7 @@ DBusAddons); X11 layer: Xlib + XInput + XRecord (`x11`, `xtst`, `xi` dev
 packages). X11/KDE layers are optional at configure time
 (`-DLT_BUILD_X11=OFF`, `-DLT_BUILD_KDE=OFF`).
 
-Every module was written test-first (see PLAN.md and the commit history):
+Every module was written test-first (see ARCHITECTURE.md and the commit history):
 unit tests for each core piece, integration tests over an in-process
 fragmented mock SSE server, offscreen UI tests, plus
 `traduku --selftest [--live]` for users to verify an install.
@@ -96,7 +96,7 @@ fragmented mock SSE server, offscreen UI tests, plus
 1. `traduku &` → tray icon appears.
 2. Tray → *Settings…* → API address (e.g. `http://localhost:11434/v1`),
    model, destination language. *Test API* checks reachability.
-3. Copy foreign text → press **Ctrl+C twice quickly** → the window opens
+3. Select text → press **Ctrl+C twice quickly** → the window opens
    and streams the translation; start/finish sounds mark the boundaries.
    When enabled, the finished translation also replaces the clipboard.
 4. Tray: translate now, destination language, autostart, settings, quit.
