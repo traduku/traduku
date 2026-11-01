@@ -122,6 +122,7 @@ write_files:
       apt-get install -y --no-install-recommends \
         build-essential cmake ninja-build pkg-config debhelper extra-cmake-modules \
         qt6-base-dev qt6-multimedia-dev $C5 \
+        libkf6coreaddons-dev libkf6i18n-dev \
         libkf6statusnotifieritem-dev libkf6notifications-dev \
         libkf6globalaccel-dev libkf6dbusaddons-dev \
         libx11-dev libxi-dev libxtst-dev \
@@ -129,6 +130,7 @@ write_files:
       apt-get install -y --no-install-recommends \
         build-essential cmake ninja-build pkg-config debhelper extra-cmake-modules \
         qt6-base-dev qt6-multimedia-dev $C5 \
+        libkf6coreaddons-dev libkf6i18n-dev \
         libkf6statusnotifieritem-dev libkf6notifications-dev \
         libkf6globalaccel-dev libkf6dbusaddons-dev \
         libx11-dev libxi-dev libxtst-dev

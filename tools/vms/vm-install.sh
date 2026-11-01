@@ -20,7 +20,7 @@ cp -a "$ROOT"/. "$TOP/traduku-$VER/"
 rm -rf "$TOP/traduku-$VER/build" "$TOP/traduku-$VER/release-out"
 tar -czf "$STAGE/traduku-$VER.tar.gz" -C "$TOP" "traduku-$VER"
 echo "== sending traduku-$VER.tar.gz to $VM"
-$SSH vm@127.0.0.1 "mkdir -p build && rm -rf build/*"
+$SSH vm@127.0.0.1 "mkdir -p build && echo vm | sudo -S rm -rf build/* 2>/dev/null; rm -rf build/*"
 $SSH vm@127.0.0.1 "rm -rf build/traduku-$VER" 
 cat "$STAGE/traduku-$VER.tar.gz" | $SSH vm@127.0.0.1 "tar -xz -C build"
 
