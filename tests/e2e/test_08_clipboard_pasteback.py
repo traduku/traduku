@@ -14,7 +14,7 @@ SEED = "Paste me back 77"
 
 def test_translation_written_back_to_clipboard(env):
     vm = env
-    vm.ses(f"printf '{SEED}' | wl-copy")
+    vm.clipset(SEED)
     vm.ses("setsid xterm -e sleep 300 >/dev/null 2>&1 & sleep 1;"
            "xdotool windowactivate $(xdotool search -name xterm | head -1) 2>/dev/null; true")
     vm.keyseq("ctrl c;250;ctrl c")

@@ -28,6 +28,10 @@ case "$VM" in
       "$ROOT/packaging/arch/mkrelease.sh" "$ROOT/release-out" --nocheck
     fi
     echo "== push + pacman -U on $VM"
+    # QEMU user-net needs a resolver (baked images predate the resolved patch)
+    Q "grep -q DNS /etc/systemd/network/99-dhcp.network 2>/dev/null || echo vm | sudo -S sh -c '
+        printf "[Match]\nName=eno* enp* eth*\n[Network]\nDHCP=yes\nDNS=10.0.2.3\n" > /etc/systemd/network/99-dhcp.network
+        systemctl enable systemd-resolved; systemctl restart systemd-networkd systemd-resolved' || true"
     # trust the dev-channel signing key (once); real releases are signed
     SCP "$ROOT/packaging/arch/traduku-dev-pub.asc" vm@127.0.0.1:~/
     SCP "$HERE/vm-trust-key.sh" vm@127.0.0.1:~/

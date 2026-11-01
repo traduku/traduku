@@ -17,7 +17,7 @@ SEED = "Klipper standard clipboard 99"
 
 def test_app_captures_de_clipboard(env):
     vm = env
-    vm.ses(f"printf '{SEED}' | wl-copy")
+    vm.clipset(SEED)
     _, clip = vm.ses("wl-paste")
     assert SEED in clip, f"wl-copy seed missing from DE clipboard: {clip!r}"
 

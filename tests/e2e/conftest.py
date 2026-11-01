@@ -16,11 +16,13 @@ def vm():
     return g
 
 
-@pytest.fixture(scope="session")
-def session(vm):
-    """Prepare the graphical session: env capture, no idle-lock, mock LLM, config."""
-    rc, out = vm.run("pgrep -u vm -x kwin_wayland || pgrep -u vm -x kwin_x11")
-    assert rc == 0, "no KDE session in the guest (autologin broken?)"
+def capture_sessionenv(vm):
+    """Refresh /tmp/session.env from the running compositor.
+
+    KWin is (re)startable per test (xkb layout changes need it), and a
+    restarted KWin publishes a new wayland socket number — the socket is
+    discovered from the runtime dir, never from kwin's own environ.
+    """
     vm.run(
         "P=$(pgrep -u vm -x kwin_wayland | head -1); [ -z \"$P\" ] && P=$(pgrep -u vm -x kwin_x11 | head -1);"
         " echo vm | sudo -S cat /proc/$P/environ | tr '\\0' '\\n'"
@@ -36,6 +38,14 @@ def session(vm):
         " [ -n \"$X\" ] && echo \"$X\" >> /tmp/session.env;"
         " grep -q XDG_RUNTIME_DIR /tmp/session.env || echo 'export XDG_RUNTIME_DIR=/run/user/1000' >> /tmp/session.env"
     )
+
+
+@pytest.fixture(scope="session")
+def session(vm):
+    """Prepare the graphical session: env capture, no idle-lock, mock LLM, config."""
+    rc, out = vm.run("pgrep -u vm -x kwin_wayland || pgrep -u vm -x kwin_x11")
+    assert rc == 0, "no KDE session in the guest (autologin broken?)"
+    capture_sessionenv(vm)
     vm.sudo("loginctl unlock-sessions")
     vm.run("rm -f ~/.config/traduku/config.ini; pkill -x traduku; true")
     return vm
@@ -80,10 +90,40 @@ def env(session):
 
 @pytest.fixture(autouse=True)
 def app_running(env):
-    """Every GUI test runs against a live app instance (tests may kill it)."""
-    if env.run("pgrep -x traduku")[0] != 0:
-        env.ses("setsid nohup traduku >/tmp/traduku.log 2>&1 </dev/null &")
-        import time
-        time.sleep(4)
-        assert env.run("pgrep -x traduku")[0] == 0, "app did not (re)start"
+    """Every GUI test starts from a fresh app instance.
+
+    A restart (not a liveness check) isolates the double-press detector:
+    key events from a previous/interrupted test must never pair with this
+    test's presses (observed: an interrupted run's keyseq polluted the
+    next single-press assertion).
+    """
+    capture_sessionenv(env)  # reboot/kwin restart rotates WAYLAND_DISPLAY/xauth
+    env.ses("pkill -x traduku; sleep 1; "
+            "setsid nohup traduku >/tmp/traduku.log 2>&1 </dev/null &")
+    import time
+    time.sleep(4)
+    assert env.run("pgrep -x traduku")[0] == 0, "app did not (re)start"
     return env
+
+
+def restart_kwin(vm, layouts):
+    """Set the KDE keyboard layouts and restart KWin (kxkb reads the list
+    at startup). The Wayland socket gets a new number -> re-capture."""
+    # kxkbrc is the file the kxkb KCM (and KWin) use; restarting KWin is
+    # mandatory: the layout list is read at compositor startup. The restart
+    # runs detached (ssh would block on the D-Bus job) and X readiness is
+    # polled, not slept on (XWayland comes back a moment after KWin).
+    vm.ses(" ".join([
+        f"kwriteconfig6 --file kxkbrc --group Layout --key LayoutList '{layouts}'",
+        "kwriteconfig6 --file kxkbrc --group Layout --key SwitchMode Keyboard",
+        "kwriteconfig6 --file kxkbrc --group Layout --key Options grp:alt_shift_toggle",
+        "kwriteconfig6 --file kxkbrc --group Layout --key Initial 0",
+        "setsid sh -c 'systemctl --user restart plasma-kwin_wayland.service' >/dev/null 2>&1 &"]))
+    import time
+    for _ in range(20):
+        time.sleep(2)
+        rc, _ = vm.ses("timeout 5 setxkbmap -display :0 -query")
+        if rc == 0:
+            break
+    time.sleep(1)
+    capture_sessionenv(vm)
