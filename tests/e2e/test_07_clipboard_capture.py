@@ -23,11 +23,19 @@ def test_app_captures_de_clipboard(env):
 
     vm.ses("setsid xterm -e sleep 300 >/dev/null 2>&1 & sleep 1;"
            "xdotool windowactivate $(xdotool search -name xterm | head -1) 2>/dev/null; true")
-    vm.keyseq("ctrl c;250;ctrl c")
+    # Gesture: the DE global-shortcut pair (KGlobalAccel). The XI2 passive
+    # Ctrl+C+C path is structurally dead on KDE/Wayland: KWin injects keys
+    # into XWayland per focused window, XI2 RAW events are never generated
+    # (verified: xinput --root sees 0 RAWKEY even for xdotool/XTEST keys).
+    # XI2 coverage belongs to the X11 session job (debian-kde X11).
+    vm.double_ctrl_alt_c()
     got = ""
     for _ in range(20):
         time.sleep(1)
         _, got = vm.ses("wl-paste")
         if "MOCK" in got:
             break
-    assert SEED in got, f"DE clipboard source not captured (result: {got!r})"
+    # Must be the RESULT (mock echo), not the untouched seed: asserting only
+    # SEED passes vacuously when the gesture never fires (observed).
+    assert "MOCK" in got and SEED in got, \
+        f"DE clipboard source not captured (result: {got!r})"

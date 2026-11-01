@@ -75,6 +75,13 @@ gdbus call -e -d org.kde.plasmashell -o /PlasmaShell -m org.kde.PlasmaShell.eval
         rc, _ = vm.ses("ls /run/user/1000/ | grep -E '^wayland-[0-9]+$' >/dev/null && pgrep -u vm -x kwin_wayland")
         if rc == 0:
             break
+    # env/app starts must not race the bounced KGA (see restart_kwin note)
+    for _ in range(20):
+        rc, _ = vm.ses("gdbus call -e -d org.kde.kglobalaccel -o /kglobalaccel"
+                       " -m org.freedesktop.DBus.Introspectable.Introspect")
+        if rc == 0:
+            break
+        time.sleep(1)
     time.sleep(2)
     capture_sessionenv(vm)
     vm.run("rm -f ~/.config/traduku/config.ini; pkill -x traduku; true")
@@ -86,13 +93,12 @@ def ses(vm, script, timeout=120):
     return vm.run(f"source /tmp/session.env; {script}", timeout=timeout)
 
 
-@pytest.fixture(scope="session")
-def env(session):
-    """Live GUI environment: mock LLM endpoint, config, app running in-session.
-
-    The app is the *installed* binary; the mock streams `[MOCK -> lang] <text>`.
+def start_mock(vm):
+    """(Re)start the mock LLM endpoint. Must run per-test, not per-session:
+    test_03 REBOOTS the VM and the mock dies with it (observed: every
+    post-reboot translation hit a dead 8931 -> Connection refused ->
+    translating logged, no MOCK, tests 5/7/8 red for the wrong reason).
     """
-    vm = session
     from grid import ROOT
     vm.push(ROOT / "tools" / "mock-openai.py", "~/mock-openai.py")
     # pkill/pgrep -f also match OUR OWN ssh shell argv (it contains the
@@ -105,11 +111,17 @@ def env(session):
     rc, out = vm.run("curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:8931/v1/models")
     assert rc == 0 and "200" in out, "mock endpoint is not serving"
 
-    vm.run("mkdir -p ~/.config/traduku; cat > ~/.config/traduku/config.ini <<'INI'\n"
-           "[General]\nApiUrl=http://127.0.0.1:8931/v1\nModel=mock\n"
-           "TargetLanguage=en\nPressInterval=0.8\nSoundsEnabled=false\n"
-           "CopyResult=true\nFirstRunDone=true\nINI\n"
-           "grep -c ApiUrl ~/.config/traduku/config.ini")
+
+@pytest.fixture(scope="session")
+def env(session):
+    """Live GUI environment: mock LLM endpoint, config, app running in-session.
+
+    The app is the *installed* binary; the mock streams `[MOCK -> lang] <text>`.
+    """
+    vm = session
+    start_mock(vm)
+
+    write_mock_config(vm)
 
     vm.ses("pkill -x traduku; sleep 0.5; setsid nohup traduku >/tmp/traduku.log 2>&1 </dev/null &")
     import time
@@ -118,18 +130,38 @@ def env(session):
     return vm
 
 
+def write_mock_config(vm):
+    """The harness config: mock endpoint, pair interval, CopyResult.
+
+    MUST be written while the app is stopped: the app rewrites
+    config.ini on exit (observed: test_02's first-run flow exited the
+    default-config app -> config.ini = defaults -> the rebooted autostart
+    app talked to localhost:11434, every MOCK-dependent assert died).
+    """
+    vm.run("mkdir -p ~/.config/traduku; cat > ~/.config/traduku/config.ini <<'INI'\n"
+           "[General]\nApiUrl=http://127.0.0.1:8931/v1\nModel=mock\n"
+           "TargetLanguage=en\nPressInterval=0.8\nSoundsEnabled=false\n"
+           "CopyResult=true\nFirstRunDone=true\nINI\n"
+           "grep -c ApiUrl ~/.config/traduku/config.ini")
+
+
 @pytest.fixture(autouse=True)
 def app_running(env):
-    """Every GUI test starts from a fresh app instance.
+    """Every GUI test starts from a fresh app instance on harness config.
 
     A restart (not a liveness check) isolates the double-press detector:
     key events from a previous/interrupted test must never pair with this
     test's presses (observed: an interrupted run's keyseq polluted the
     next single-press assertion).
+
+    The config is re-baked after EVERY stop, so a test that manipulated
+    it (first-run, CopyResult=false red-check) cannot leak into the next.
     """
     capture_sessionenv(env)  # reboot/kwin restart rotates WAYLAND_DISPLAY/xauth
-    env.ses("pkill -x traduku; sleep 1; "
-            "setsid nohup traduku >/tmp/traduku.log 2>&1 </dev/null &")
+    start_mock(env)          # test_03 reboots the VM; the mock must come back
+    env.ses("pkill -x traduku; sleep 1;")
+    write_mock_config(env)
+    env.ses("setsid nohup traduku >/tmp/traduku.log 2>&1 </dev/null &")
     import time
     time.sleep(4)
     assert env.run("pgrep -x traduku")[0] == 0, "app did not (re)start"
@@ -148,16 +180,31 @@ def restart_kwin(vm, layouts):
         "kwriteconfig6 --file kxkbrc --group Layout --key SwitchMode Keyboard",
         "kwriteconfig6 --file kxkbrc --group Layout --key Options grp:alt_shift_toggle",
         "kwriteconfig6 --file kxkbrc --group Layout --key Initial 0",
-        # KWin restarts leave stale KGlobalAccel registrations (a single
-        # press then arrives N times -> the pair detector fires instantly);
-        # bounce the KGA daemon so the app's re-registration is clean.
-        "setsid sh -c 'systemctl --user restart plasma-kglobalaccel.service plasma-kwin_wayland.service' >/dev/null 2>&1 &"]))
+        # KWin restarts leave stale KGlobalAccel mappings in the compositor
+        # (a single press then arrives N times -> the pair detector fires
+        # instantly). Bounce ONLY KWin: it refetches the (alive, per-app,
+        # single-entry) registry from KGA at startup. Restarting KGA too
+        # creates a registration race: the app (re)registers while the
+        # daemon is starting, and KWin - which polled the empty registry
+        # on boot - never learns about it (observed in-suite: gesture
+        # dead for the whole test, alive minutes later).)
+        "setsid sh -c 'systemctl --user restart plasma-kwin_wayland.service' >/dev/null 2>&1 &"]))
     import time
     for _ in range(20):
         time.sleep(2)
         rc, _ = vm.ses("timeout 5 setxkbmap -display :0 -query")
         if rc == 0:
             break
+    # KGA must be fully up BEFORE the app (re)registers: an app that
+    # registers while the bounced daemon is still starting has its
+    # registration silently dropped (observed in-suite: the pair gesture
+    # was dead for the whole test, alive minutes later).
+    for _ in range(20):
+        rc, _ = vm.ses("gdbus call -e -d org.kde.kglobalaccel -o /kglobalaccel"
+                       " -m org.freedesktop.DBus.Introspectable.Introspect")
+        if rc == 0:
+            break
+        time.sleep(1)
     time.sleep(1)
     capture_sessionenv(vm)
     # KWin restart kills the KGlobalAccel registrations of every app;
@@ -169,3 +216,22 @@ def restart_kwin(vm, layouts):
         rc, _ = vm.run("pgrep -x traduku")
         if rc == 0:
             break
+    # End-to-end readiness gate. On Plasma 6 kglobalaccel lives INSIDE
+    # kwin_wayland: a kwin restart drops the app's registration, and the
+    # KDE client library re-registers only when the bus name reappears -
+    # on a young session that lag exceeds any sane sleep (observed in
+    # suite: gesture dead for the whole test, alive ~30s later; kwin's
+    # KGA-registry D-Bus does not expose the ephemeral component, so
+    # probe the real path). Fire the pair gesture until it produces a
+    # FRESH journal line; the warm-up translation is harmless (the
+    # sliding-window journal checks in tests age it out; clipset reseeds).
+    for attempt in range(15):
+        cur = vm.cursor()
+        vm.clipset(f"restart_kwin warmup {attempt}")
+        vm.double_ctrl_alt_c()
+        for _ in range(4):
+            time.sleep(1)
+            if vm.journal_after(cur, grep="translating.*8931")[1].strip():
+                return
+        time.sleep(3)
+    raise RuntimeError("global shortcut never came back after the kwin restart")

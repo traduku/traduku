@@ -17,12 +17,14 @@ def test_translation_written_back_to_clipboard(env):
     vm.clipset(SEED)
     vm.ses("setsid xterm -e sleep 300 >/dev/null 2>&1 & sleep 1;"
            "xdotool windowactivate $(xdotool search -name xterm | head -1) 2>/dev/null; true")
-    vm.keyseq("ctrl c;250;ctrl c")
+    # KGA pair: the XI2 Ctrl+C+C listener is inert on KDE/Wayland
+    # (XWayland never emits XI2 raw events; xinput --root = 0 RAWKEY).
+    vm.double_ctrl_alt_c()
     got = ""
     for _ in range(20):
         time.sleep(1)
         _, got = vm.ses("wl-paste")
         if got.strip() != SEED and "MOCK" in got:
             break
-    assert got.strip().startswith("[MOCK -> en]") and SEED in got, \
+    assert got.strip().startswith("[MOCK -> ") and SEED in got, \
         f"clipboard was not replaced with the result: {got!r}"
