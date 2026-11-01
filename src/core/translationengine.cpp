@@ -29,6 +29,8 @@ TranslationEngine::TranslationEngine(Settings *settings, LlmStreamClient *client
             Q_EMIT finished(m_result);
         }
     });
+    connect(m_client, &LlmStreamClient::truncated, this,
+            &TranslationEngine::truncated);
     connect(m_client, &LlmStreamClient::failed, this, [this](const QString &reason) {
         m_busy = false;
         if (m_cancelled) {

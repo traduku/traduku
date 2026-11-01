@@ -116,6 +116,26 @@ private slots:
         p.append("data: {\"choices\":[{\"delta\":{\"content\":\"x\"}}]}\n\n");
         QCOMPARE(p.takeDeltas().join(QString()), QString("x"));
     }
+    void finishReasonExtracted()
+    {
+        SseParser p;
+        p.append(QByteArrayLiteral("data: {\"choices\":[{\"delta\":{\"content\":\"x\"},"
+                                   "\"finish_reason\":null}]}\n\n"));
+        p.append(QByteArrayLiteral("data: {\"choices\":[{\"delta\":{},"
+                                   "\"finish_reason\":\"length\"}]}\n\n"));
+        p.append(QByteArrayLiteral("data: [DONE]\n\n"));
+        QVERIFY(p.isDone());
+        QCOMPARE(p.finishReason(), QString("length"));
+    }
+
+    void finishReasonStop()
+    {
+        SseParser p;
+        p.append(QByteArrayLiteral("data: {\"choices\":[{\"delta\":{\"content\":\"y\"},"
+                                   "\"finish_reason\":\"stop\"}]}\n\n"));
+        QCOMPARE(p.finishReason(), QString("stop"));
+    }
+
 };
 
 QTEST_GUILESS_MAIN(TestSseParser)

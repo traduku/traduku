@@ -30,6 +30,9 @@ public:
     int takeErrorsSkipped();
 
     bool isDone() const { return m_done; }
+    /// Last seen choices[0].finish_reason ("stop", "length", ...) - empty
+    /// when the stream gave none. "length" means truncated generation.
+    QString finishReason() const { return m_finishReason; }
 
 private:
     void handleLine(const QByteArray &line);
@@ -40,6 +43,7 @@ private:
     QString m_error;
     int m_skipped = 0;
     bool m_done = false;
+    QString m_finishReason;
 };
 
 } // namespace lt

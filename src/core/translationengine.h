@@ -38,6 +38,7 @@ Q_SIGNALS:
     void started(const QString &sourceText, const QString &targetLanguageName);
     void delta(const QString &chunk);
     void finished(const QString &translation);
+    void truncated();   // stream hit the model's output limit (proxy)
     void failed(const QString &reason);
 
 private:

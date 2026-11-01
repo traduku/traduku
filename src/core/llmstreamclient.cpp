@@ -124,6 +124,9 @@ void LlmStreamClient::onFinished()
         Q_EMIT failed(reason);
         return;
     }
+    if (m_parser->finishReason() == QLatin1String("length")) {
+        Q_EMIT truncated();   // generation hit max_tokens: result is partial
+    }
     Q_EMIT completed();
 }
 
