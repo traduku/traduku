@@ -1,5 +1,6 @@
 #include <QtTest>
 #include <QSignalSpy>
+#include <QSet>
 
 #include "core/chunkedtranslator.h"
 #include "core/settings.h"
@@ -204,9 +205,14 @@ private slots:
         const QStringList want = {QStringLiteral("alpha here"), QString(),
                                   QStringLiteral("beta there")};
         QCOMPARE(last, want);
+        // Commits land in completion order (parallel pool), not slot order:
+        // assert the SET of display rows — slot 0 -> row 0, slot 1 -> row 2.
         QCOMPARE(committed.count(), 2);
-        QCOMPARE(committed.at(0).at(0).toInt(), 0);
-        QCOMPARE(committed.at(1).at(0).toInt(), 2);   // slot 1 -> display row 2
+        QSet<int> committedRows;
+        for (const auto &args : committed) {
+            committedRows.insert(args.at(0).toInt());
+        }
+        QCOMPARE(committedRows, (QSet<int>{0, 2}));
         QCOMPARE(t.targetText(), QString("ALPHA HERE\n\nBETA THERE"));
         // Streaming/commit row indices refer to DISPLAY rows (slot 1 -> row 2).
         bool sawRow2 = false;
