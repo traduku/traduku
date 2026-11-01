@@ -54,6 +54,14 @@ public:
     /// request, uppercased, streamed word by word.
     void setEchoMode(bool on) { m_echo = on; }
 
+    /// First request only: echo the first `words` words, then end the
+    /// stream with finish_reason == "length" (output-limit truncation).
+    void setTruncateFirstRequest(int words) { m_truncateFirst = words; }
+
+    /// Echo collapses all line breaks into spaces (structure-destroying
+    /// model behaviour -> alignment must fail -> chunk fallback).
+    void setEchoSquash(bool on) { m_squash = on; }
+
     int requestCount() const { return m_requests.size(); }
 
     QList<QByteArray> m_requests;   // full request bytewise, in arrival order
@@ -63,6 +71,9 @@ protected:
     {
         auto *sock = new QTcpSocket(this);
         sock->setSocketDescriptor(socketDescriptor);
+        connect(sock, &QTcpSocket::disconnected, this, [this, sock]() {
+            m_buffers.remove(sock);
+        });
         connect(sock, &QTcpSocket::disconnected, sock, &QObject::deleteLater);
         connect(sock, &QTcpSocket::readyRead, this, [this, sock]() {
             QByteArray &m_pending = m_buffers[sock];
@@ -82,11 +93,12 @@ protected:
             if (m_pending.size() < headEnd + 4 + clen) {
                 return;                       // body incomplete
             }
+            const int reqNo = m_requests.size() + 1;
             m_requests.append(m_pending);
             const QByteArray req = m_pending;
             m_pending.clear();
             if (m_echo) {
-                respondEcho(sock, req);
+                respondEcho(sock, req, m_requests.size() + 1);
             } else {
                 respond(sock);
             }
@@ -109,7 +121,7 @@ private:
         sock->disconnectFromHost();
     }
 
-    void respondEcho(QTcpSocket *sock, const QByteArray &request)
+    void respondEcho(QTcpSocket *sock, const QByteArray &request, int reqNo)
     {
         QString text;
         const int p = request.indexOf("<<<TEXT");
@@ -135,7 +147,11 @@ private:
         sock->write(head);
         const QStringList words = text.split(QLatin1Char(' '), Qt::SkipEmptyParts);
         for (const QString &w : words) {
-            sock->write(sseEvent(w.toUpper() + QLatin1Char(' ')));
+            QString piece = w.toUpper() + QLatin1Char(' ');
+            if (m_squash) {
+                piece.replace(QLatin1Char('\n'), QLatin1Char(' '));
+            }
+            sock->write(sseEvent(piece));
             sock->flush();
         }
         sock->write(sseEvent(text.toUpper().isEmpty()
@@ -146,6 +162,8 @@ private:
     }
 
     bool m_echo = false;
+    int m_truncateFirst = 0;
+    bool m_squash = false;
     int m_status = 200;
     QList<QByteArray> m_bodyParts;
     QHash<QTcpSocket *, QByteArray> m_buffers;

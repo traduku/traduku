@@ -7,6 +7,7 @@
 #include <QComboBox>
 #include <QDialogButtonBox>
 #include <QDoubleSpinBox>
+#include <QSpinBox>
 #include <QFormLayout>
 #include <QLabel>
 #include <QLineEdit>
@@ -83,6 +84,18 @@ SettingsDialog::SettingsDialog(Settings *settings, QWidget *parent)
     delay->setSuffix(QStringLiteral(" s"));
     form->addRow(QStringLiteral("Idle delay before auto-translate:"), delay);
 
+    auto *whole = new QSpinBox(this);
+    whole->setObjectName(QStringLiteral("m_maxWholeText"));
+    whole->setRange(0, 200000);
+    whole->setSingleStep(1000);
+    whole->setSpecialValueText(QStringLiteral("disabled (always chunked)"));
+    form->addRow(QStringLiteral("Translate whole text at once up to:"), whole);
+
+    auto *par = new QSpinBox(this);
+    par->setObjectName(QStringLiteral("m_maxParallel"));
+    par->setRange(1, 8);
+    form->addRow(QStringLiteral("Parallel chunk requests:"), par);
+
     m_globalShortcut = new QLineEdit(this);
     m_globalShortcut->setObjectName(QStringLiteral("m_globalShortcut"));
     m_globalShortcut->setPlaceholderText(QStringLiteral("Ctrl+Alt+C"));
@@ -131,6 +144,10 @@ void SettingsDialog::load()
         ->setChecked(m_settings->autoTranslate());
     findChild<QDoubleSpinBox *>(QStringLiteral("m_autoTranslateDelay"))
         ->setValue(m_settings->autoTranslateDelay());
+    findChild<QSpinBox *>(QStringLiteral("m_maxWholeText"))
+        ->setValue(m_settings->maxWholeTextChars());
+    findChild<QSpinBox *>(QStringLiteral("m_maxParallel"))
+        ->setValue(m_settings->maxParallel());
     m_globalShortcut->setText(m_settings->globalShortcut());
 }
 
@@ -152,6 +169,10 @@ void SettingsDialog::accept()
         findChild<QCheckBox *>(QStringLiteral("m_autoTranslate"))->isChecked());
     m_settings->setAutoTranslateDelay(
         findChild<QDoubleSpinBox *>(QStringLiteral("m_autoTranslateDelay"))->value());
+    m_settings->setMaxWholeTextChars(
+        findChild<QSpinBox *>(QStringLiteral("m_maxWholeText"))->value());
+    m_settings->setMaxParallel(
+        findChild<QSpinBox *>(QStringLiteral("m_maxParallel"))->value());
     m_settings->setGlobalShortcut(m_globalShortcut->text().trimmed());
     m_settings->save();
     QDialog::accept();
@@ -171,6 +192,8 @@ void SettingsDialog::restoreDefaults()
     findChild<QCheckBox *>(QStringLiteral("m_soundsEnabled"))->setChecked(true);
     findChild<QCheckBox *>(QStringLiteral("m_autoTranslate"))->setChecked(true);
     findChild<QDoubleSpinBox *>(QStringLiteral("m_autoTranslateDelay"))->setValue(0.6);
+    findChild<QSpinBox *>(QStringLiteral("m_maxWholeText"))->setValue(6000);
+    findChild<QSpinBox *>(QStringLiteral("m_maxParallel"))->setValue(4);
     m_globalShortcut->setText(QStringLiteral("Ctrl+Alt+C"));
 }
 

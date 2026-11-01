@@ -39,6 +39,9 @@ public:
 Q_SIGNALS:
     void delta(const QString &text);
     void completed();
+    /// Emitted right before completed() when the stream ended with
+    /// finish_reason == "length" (the model hit its output limit).
+    void truncated();
     void failed(const QString &reason);
 
 private:

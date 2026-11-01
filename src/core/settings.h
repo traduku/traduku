@@ -39,6 +39,10 @@ public:
     void setCopyResult(bool on);
     bool soundsEnabled() const;
     void setSoundsEnabled(bool on);
+    int maxWholeTextChars() const;       // <= this: one whole-text request
+    void setMaxWholeTextChars(int chars);
+    int maxParallel() const;             // concurrent chunk requests
+    void setMaxParallel(int n);
     bool autoTranslate() const;          // translate on source edits
     void setAutoTranslate(bool on);
     double autoTranslateDelay() const;   // s of idle typing before firing

@@ -160,6 +160,42 @@ private slots:
         QCOMPARE(fail.count(), 2);
         QVERIFY(c.busy() == false);
     }
+    void truncationSignalOnFinishReasonLength()
+    {
+        test::MockSseServer server;
+        server.setResponse(200, {
+            test::MockSseServer::sseEvent("half"),
+            QByteArrayLiteral("data: {\"choices\":[{\"delta\":{},\"finish_reason\":\"length\"}]}\n\n"),
+            QByteArrayLiteral("data: [DONE]\n\n"),
+        });
+        LlmStreamClient client;
+        QSignalSpy truncated(&client, &LlmStreamClient::truncated);
+        QSignalSpy completed(&client, &LlmStreamClient::completed);
+        ChatRequest r = request();
+        r.baseUrl = server.baseUrl();
+        client.send(r);
+        QVERIFY(completed.wait(5000));
+        QCOMPARE(truncated.count(), 1);
+    }
+
+    void noTruncationOnStop()
+    {
+        test::MockSseServer server;
+        server.setResponse(200, {
+            QByteArrayLiteral("data: {\"choices\":[{\"delta\":{\"content\":\"full\"},"
+                              "\"finish_reason\":\"stop\"}]}\n\n"),
+            QByteArrayLiteral("data: [DONE]\n\n"),
+        });
+        LlmStreamClient client;
+        QSignalSpy truncated(&client, &LlmStreamClient::truncated);
+        QSignalSpy completed(&client, &LlmStreamClient::completed);
+        ChatRequest r = request();
+        r.baseUrl = server.baseUrl();
+        client.send(r);
+        QVERIFY(completed.wait(5000));
+        QCOMPARE(truncated.count(), 0);
+    }
+
 };
 
 QTEST_GUILESS_MAIN(TestLlmStreamClient)

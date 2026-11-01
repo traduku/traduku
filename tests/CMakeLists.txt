@@ -80,3 +80,6 @@ lt_add_test(tst_translationledger SOURCES unit/tst_translationledger.cpp LIBS lt
 lt_add_test(tst_chunkedtranslator
     SOURCES integration/tst_chunkedtranslator.cpp integration/mocksseserver.h
     LIBS lt::core Qt6::Network)
+
+# M16: chunk aligner (whole-text result -> per-chunk mapping)
+lt_add_test(tst_aligner SOURCES unit/tst_aligner.cpp LIBS lt::core)

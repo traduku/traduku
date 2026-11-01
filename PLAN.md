@@ -152,3 +152,18 @@ tools/mock-openai.py  стриминговый mock для ручной пров
       TranslationEngine), AppController: debounce таймер, applyEdit по
       правке, отмена in-flight при relayout; echo-mode mock-сервера.
       Итог: 19 ctest-наборов + selftest (15 проверок) зелёные.
+
+## feature/document-mode (ветка) — M16..M18
+
+- [x] M16 core aligner: сопоставление чанков перевода с чанками источника
+      (DP: match=|ln(word-ratio)|/2, dropS .6, dropT .5, якорь хвоста,
+      ε-градиент blank'ов, порог avg .5 + sanity пустых) — мусор → пустой
+      результат → chunk-fallback.
+- [x] M17 finish_reason: SseParser::finishReason(), LlmStreamClient::
+      truncated() (finish_reason == "length"), прокси через Engine.
+- [x] M18 Document-режим: setSource <= MaxWholeTextChars (6000, 0=off) ->
+      ОДИН запрос полным контекстом; live-preview чанкует прибывающий
+      префикс; finalize -> aligner -> rowCommitted по строкам; truncation
+      -> хвост чанками; align-fail -> полный chunk-fallback; MaxParallel
+      (4) для очередей. Поля в SettingsDialog.
+      20 ctest-наборов + selftest (16 проверок) зелёные.

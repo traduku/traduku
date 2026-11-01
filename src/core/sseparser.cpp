@@ -59,12 +59,18 @@ void SseParser::handleData(const QByteArray &payload)
         return;
     }
 
-    const QString content = obj.value(QLatin1String("choices")).toArray()
-                              .at(0).toObject()
-                              .value(QLatin1String("delta")).toObject()
-                              .value(QLatin1String("content")).toString();
-    if (!content.isEmpty()) {
-        m_deltas.append(content);
+    const QJsonArray choices = obj.value(QLatin1String("choices")).toArray();
+    if (!choices.isEmpty()) {
+        const QJsonObject choice = choices.at(0).toObject();
+        const QString fr = choice.value(QLatin1String("finish_reason")).toString();
+        if (!fr.isEmpty()) {
+            m_finishReason = fr;
+        }
+        const QString content = choice.value(QLatin1String("delta")).toObject()
+                                  .value(QLatin1String("content")).toString();
+        if (!content.isEmpty()) {
+            m_deltas.append(content);
+        }
     }
 }
 

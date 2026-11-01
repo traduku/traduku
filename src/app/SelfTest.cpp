@@ -5,6 +5,7 @@
 #include "core/settings.h"
 #include "core/sseparser.h"
 #include "core/unicodeescapes.h"
+#include "core/aligner.h"
 #include "core/chunker.h"
 #include "core/translationengine.h"
 #include "core/translationledger.h"
@@ -81,6 +82,10 @@ int runSelfTest(QTextStream &out, bool doLive)
         r.check(dirty.size() == 1 && dirty.at(0) == 1
                     && led.targetText() == QStringLiteral("ALPHA\nbeta2\n\nGAMMA"),
                 "ledger: edit keeps untouched translations");
+        const auto ac = alignChunks(splitChunks(QStringLiteral("Hello world.\nBye now.")),
+                                    splitChunks(QStringLiteral("Hallo Welt.\nTschues.")));
+        r.check(ac.size() == 2 && ac.at(0) == QLatin1String("Hallo Welt."),
+                "aligner: whole-text result maps back to chunks");
     }
 
 

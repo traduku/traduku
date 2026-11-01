@@ -3,6 +3,7 @@
 add_library(lt_core STATIC
     languages.cpp
     chunker.cpp
+    aligner.cpp
     translationledger.cpp
     chunkedtranslator.cpp
     settings.cpp
