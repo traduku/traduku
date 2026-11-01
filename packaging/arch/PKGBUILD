@@ -6,10 +6,12 @@ pkgdesc='Clipboard translator powered by any OpenAI-compatible LLM (streaming; K
 arch=('x86_64')
 url='https://github.com/localhost/kde-llm-translate'
 license=('GPL3')
+# KF6 component packages: un-prefixed names resolve on Arch (kf6-* Provides)
+# and on CachyOS (installed as bare names).
 depends=('qt6-base' 'qt6-multimedia' 'qt6-5compat'
-         'kf6-kstatusnotifieritem' 'kf6-knotifications' 'kf6-kglobalaccel'
-         'kf6-kdbusaddons' 'libx11' 'libxi' 'libxtst')
-makedepends=('cmake' 'ninja' 'extra-cmake-modules')
+         'kstatusnotifieritem' 'knotifications' 'kglobalaccel'
+         'kdbusaddons' 'libx11' 'libxi' 'libxtst')
+makedepends=('cmake' 'ninja')
 optdepends=('wl-clipboard: clipboard access on pure Wayland')
 source=("kde-llm-translate-${pkgver}.tar.gz")
 sha256sums=('SKIP')
