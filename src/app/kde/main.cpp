@@ -26,7 +26,6 @@
 #include <QCommandLineParser>
 #include <QFile>
 #include <QFileSystemWatcher>
-#include <QStandardPaths>
 #include <QMessageBox>
 #include <QTextStream>
 #include <QTimer>
@@ -123,20 +122,6 @@ int main(int argc, char **argv)
     // Requires a session bus (standard on KDE/GNOME; the KF6 service exits a
     // second copy automatically).
     KDBusService service(KDBusService::Unique);
-
-    // Rename migration (v0.1 llm-translate -> v0.2 traduku): move the
-    // config, carry the autostart preference over.
-    Settings::migrateLegacyConfig(QStandardPaths::writableLocation(
-        QStandardPaths::GenericConfigLocation));
-    {
-        XdgAutostart legacy(QStringLiteral("llm-translate"), {});
-        if (legacy.isEnabled()) {
-            legacy.setEnabled(false);
-            XdgAutostart(QStringLiteral("traduku"),
-                         QCoreApplication::applicationFilePath())
-                .setEnabled(true);
-        }
-    }
 
     XdgAutostart autostart(QStringLiteral("traduku"),
                            QCoreApplication::applicationFilePath());
