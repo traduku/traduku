@@ -62,5 +62,10 @@ case "$cmd" in
     d=$VMS_HOME/run/$VM
     python3 /tools/qmp.py "$d/qmp.sock" "$cmd" "${3:-}"
     ;;
-  *) echo "commands: start stop status logs shot key keyseq" >&2; exit 2;;
+  mouse)
+    # Virtual mouse via QMP input-send-event (usb-tablet, absolute).
+    d=$VMS_HOME/run/$VM
+    python3 /tools/qmp.py "$d/qmp.sock" mouse "$@"
+    ;;
+  *) echo "commands: start stop status logs shot key keyseq mouse" >&2; exit 2;;
 esac

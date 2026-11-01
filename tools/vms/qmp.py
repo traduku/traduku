@@ -76,6 +76,19 @@ def main():
                 time.sleep(int(p) / 1000.0)
             else:
                 q.tap(p.split())
+    elif cmd == "mouse":
+        # mouse move X Y | mouse click X Y [button]
+        sub = sys.argv[3]
+        if sub == "move":
+            q.mouse_move(int(sys.argv[4]), int(sys.argv[5]))
+        elif sub == "click":
+            x, y = int(sys.argv[4]), int(sys.argv[5])
+            btn = sys.argv[6] if len(sys.argv) > 6 else "left"
+            q.mouse_move(x, y)
+            time.sleep(0.1)
+            q.mouse_click(btn)
+        else:
+            raise SystemExit("usage: mouse move X Y | mouse click X Y [button]")
     else:
         q.cmd(cmd)
     q.s.close()

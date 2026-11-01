@@ -29,7 +29,7 @@ case "$cmd" in
   mkvm)
     [ $# -eq 3 ] || { echo "usage: vmctl.sh mkvm <vm> <distro:arch|debian|ubuntu> <de:kde|gnome>" >&2; exit 2; }
     ensure_ctr; dexec "VMS_HOME=/vms bash /tools/mkvm.sh $*";;
-  start|stop|logs|shot|key|keyseq)
+  start|stop|logs|shot|key|keyseq|mouse)
     [ $# -ge 1 ] || { echo "usage: vmctl.sh $cmd <vm> [args]" >&2; exit 2; }
     ensure_ctr; dexec "VMS_HOME=/vms bash /tools/vmlife.sh $cmd $(printf '%q ' "$@")";;
   ssh)

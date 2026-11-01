@@ -138,6 +138,12 @@ print(s);
     def keyseq(self, seq):
         self.vmctl("keyseq", self.vm, seq)
 
+    def mouse_click(self, x, y, button="left"):
+        self.vmctl("mouse", self.vm, "click", str(x), str(y), button)
+
+    def mouse_move(self, x, y):
+        self.vmctl("mouse", self.vm, "move", str(x), str(y))
+
     def double_ctrl_c(self):
         self.keyseq("ctrl c;200;ctrl c")
 

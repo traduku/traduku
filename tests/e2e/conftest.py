@@ -63,6 +63,17 @@ gdbus call -e -d org.kde.plasmashell -o /PlasmaShell -m org.kde.PlasmaShell.eval
     # idle swallowed the window mid-test). kwin reads kwinidlerc at startup.
     vm.ses("kwriteconfig6 --file kwinidlerc --group ScreenLocker --key Enabled false; "
            "kwriteconfig6 --file kwinidlerc --group DPMS --key Enabled false; "
+           # X11 keyboard access on KWin 6.8 - measured facts, not folklore:
+           # the EIS pop-up/allowlist (XwaylandEisNoPrompt*) gates keyboard
+           # GRABS (XGrabKeyboard), and the current traduku (passive XI2
+           # raw, no grabs) never triggers it - the VM's allowlist stays
+           # empty on purpose. XI2 raw on rootless XWayland is structurally
+           # empty: KWin injects keys as send-events, which the raw stream
+           # filters out (xinput --root = 0 RAWKEY for QMP scancodes while
+           # xterm next door takes the SIGINT). Plain Ctrl+C+C therefore
+           # has no listener on Wayland; the gesture is exercised via the
+           # KGA shortcut pair (tests 05/07/08). Native XI2 coverage is an
+           # X11-session job (debian-kde, planned).
            "systemctl --user stop plasma-powerdevil.service; true")
     vm.ses("pkill -x powerdevil; true")
     # Bounce kwin so kwinidlerc takes effect (detached: ssh would block on
