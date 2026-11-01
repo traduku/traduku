@@ -23,7 +23,7 @@ Rules-Requires-Root: no
 
 Package: traduku
 Architecture: any
-Depends: ${shlibs:Depends}, ${misc:Depends}, qt6-multimedia, gstreamer1.0-plugins-good
+Depends: ${shlibs:Depends}, ${misc:Depends}, libqt6multimedia6
 Recommends: wl-clipboard
 Description: Clipboard translator powered by any OpenAI-compatible LLM
  Press Ctrl+C twice to translate the clipboard into the configured target
