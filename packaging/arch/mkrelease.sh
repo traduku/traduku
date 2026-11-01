@@ -11,7 +11,9 @@ git -C "$ROOT" archive --format=tar.gz \
     --prefix="traduku-${VER}/" HEAD \
     -o "$OUT/traduku-${VER}.tar.gz"
 cp "$HERE/PKGBUILD" "$OUT/"
-(cd "$OUT" && makepkg -sf --noconfirm --needed "$@")
+# --sign: detached .pkg.tar.zst.sig next to the package — pacman -U verifies
+# it automatically when installing (the release channel ships both files).
+(cd "$OUT" && makepkg -sf --noconfirm --needed --sign "$@")
 echo
 echo "Release artifacts in $OUT:"
 ls -1 "$OUT"
