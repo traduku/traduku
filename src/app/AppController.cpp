@@ -20,7 +20,9 @@ AppController::AppController(const Backends &b, QObject *parent)
 {
     connect(m_b.engine, &TranslationEngine::started, m_b.window,
             [this](const QString &source, const QString &targetName) {
-                m_b.window->beginTranslation(source, targetName);
+                m_b.window->setSourceText(source);
+                m_b.window->showTargetRows({source});
+                m_b.window->statusTranslating(targetName);
                 m_b.window->showForeground();
                 m_b.sound->play(SoundEvent::Started);
                 qInfo("llm-translate: translating %d chars -> %s via %s (%s)",
@@ -28,17 +30,17 @@ AppController::AppController(const Backends &b, QObject *parent)
                       qPrintable(m_b.settings->apiUrl()),
                       qPrintable(m_b.settings->model()));
             });
-    connect(m_b.engine, &TranslationEngine::delta,
-            m_b.window, &TranslatorWindow::appendChunk);
+    connect(m_b.engine, &TranslationEngine::delta, m_b.window,
+            [this](const QString &) {
+                m_b.window->streamIntoRow(0, m_b.engine->translation());
+            });
     connect(m_b.engine, &TranslationEngine::finished, m_b.window, [this]() {
         // Safety net: some clipboard providers hand over text whose letters
         // arrived as literal \uXXXX JSON escapes (cp1251 pages, Klipper
         // history). Decode only demonstrably double-encoded strings.
         QString t = decodeIfEscaped(m_b.engine->translation());
-        if (t != m_b.engine->translation()) {
-            m_b.window->setTranslation(t);
-        }
-        m_b.window->endTranslation();
+        m_b.window->commitRow(0, t);
+        m_b.window->statusDone();
         m_b.sound->play(SoundEvent::Finished);
         QString clipboardNote;
         if (m_b.settings->copyResult()) {
@@ -64,7 +66,7 @@ AppController::AppController(const Backends &b, QObject *parent)
                     m_b.sound->play(SoundEvent::Failed);
                     return;
                 }
-                m_b.window->translationFailed(reason);
+                m_b.window->statusFailed(reason);
                 m_b.sound->play(SoundEvent::Failed);
                 m_b.notifier->notify(QStringLiteral("LLM Translate"),
                                      QStringLiteral("Translation failed: %1")

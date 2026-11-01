@@ -10,6 +10,19 @@ class TestSettings : public QObject
     QString path() const { return m_dir.path() + QStringLiteral("/config.ini"); }
 
 private slots:
+    void autoTranslateDefaults()
+    {
+        Settings s(path());
+        QCOMPARE(s.autoTranslate(), true);
+        QCOMPARE(s.autoTranslateDelay(), 0.6);
+        s.setAutoTranslate(false);
+        s.setAutoTranslateDelay(99.0);      // clamp [0.1, 5.0]
+        s.save();
+        Settings r(path());
+        QCOMPARE(r.autoTranslate(), false);
+        QCOMPARE(r.autoTranslateDelay(), 5.0);
+    }
+
     void defaultsWhenNoFile()
     {
         Settings s(path());

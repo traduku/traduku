@@ -168,6 +168,25 @@ bool Settings::copyResult() const
 }
 LT_DEFINE_SETTER(setCopyResult, copyResult, bool, "CopyResult")
 
+bool Settings::autoTranslate() const
+{
+    return value("AutoTranslate", true).toBool();
+}
+LT_DEFINE_SETTER(setAutoTranslate, autoTranslate, bool, "AutoTranslate")
+
+double Settings::autoTranslateDelay() const
+{
+    return value("AutoTranslateDelay", 0.6).toDouble();
+}
+void Settings::setAutoTranslateDelay(double seconds)
+{
+    const double v = std::clamp(seconds, 0.1, 5.0);
+    if (autoTranslateDelay() == v) {
+        return;
+    }
+    setValue("AutoTranslateDelay", v);
+}
+
 bool Settings::soundsEnabled() const
 {
     return value("SoundsEnabled", true).toBool();

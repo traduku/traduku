@@ -31,6 +31,10 @@ TranslationEngine::TranslationEngine(Settings *settings, LlmStreamClient *client
     });
     connect(m_client, &LlmStreamClient::failed, this, [this](const QString &reason) {
         m_busy = false;
+        if (m_cancelled) {
+            m_cancelled = false;   // cancel() is user-intent, not a failure
+            return;
+        }
         Q_EMIT failed(reason);
     });
 }
@@ -46,6 +50,14 @@ QString TranslationEngine::buildPrompt(const QString &text,
                "If the text is already in %1, reply with it unchanged.\n\n"
                "<<<TEXT\n%2\nTEXT")
         .arg(targetName, text);
+}
+
+void TranslationEngine::cancel()
+{
+    if (m_busy) {
+        m_cancelled = true;
+        m_client->cancel();
+    }
 }
 
 void TranslationEngine::translate(const QString &text)

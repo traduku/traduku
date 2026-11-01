@@ -118,10 +118,11 @@ int runSelfTest(QTextStream &out, bool doLive)
     // 6. Result window streaming (offscreen)
     {
         TranslatorWindow w;
-        w.beginTranslation(QStringLiteral("src"), QStringLiteral("ru"));
-        w.appendChunk(QStringLiteral("a"));
-        w.appendChunk(QStringLiteral("b"));
-        w.endTranslation();
+        w.statusTranslating(QStringLiteral("ru"));
+        w.showTargetRows({QStringLiteral("ab"), QStringLiteral("mid"),
+                          QStringLiteral("cd")});
+        w.streamIntoRow(1, QStringLiteral("B"));
+        w.commitRow(1, QStringLiteral("B"));
         auto *tgt = w.findChild<QTextEdit *>(QStringLiteral("m_target"));
         auto *status = w.findChild<QLabel *>(QStringLiteral("m_status"));
         r.check(tgt && tgt->toPlainText() == QLatin1String("ab")

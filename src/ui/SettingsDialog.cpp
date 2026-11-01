@@ -71,6 +71,18 @@ SettingsDialog::SettingsDialog(Settings *settings, QWidget *parent)
     sounds->setObjectName(QStringLiteral("m_soundsEnabled"));
     form->addRow(QString(), sounds);
 
+    auto *autoTr = new QCheckBox(QStringLiteral("Auto-translate when editing the source text"), this);
+    autoTr->setObjectName(QStringLiteral("m_autoTranslate"));
+    form->addRow(QString(), autoTr);
+
+    auto *delay = new QDoubleSpinBox(this);
+    delay->setObjectName(QStringLiteral("m_autoTranslateDelay"));
+    delay->setRange(0.1, 5.0);
+    delay->setSingleStep(0.1);
+    delay->setDecimals(1);
+    delay->setSuffix(QStringLiteral(" s"));
+    form->addRow(QStringLiteral("Idle delay before auto-translate:"), delay);
+
     m_globalShortcut = new QLineEdit(this);
     m_globalShortcut->setObjectName(QStringLiteral("m_globalShortcut"));
     m_globalShortcut->setPlaceholderText(QStringLiteral("Ctrl+Alt+C"));
@@ -115,6 +127,10 @@ void SettingsDialog::load()
         ->setChecked(m_settings->copyResult());
     findChild<QCheckBox *>(QStringLiteral("m_soundsEnabled"))
         ->setChecked(m_settings->soundsEnabled());
+    findChild<QCheckBox *>(QStringLiteral("m_autoTranslate"))
+        ->setChecked(m_settings->autoTranslate());
+    findChild<QDoubleSpinBox *>(QStringLiteral("m_autoTranslateDelay"))
+        ->setValue(m_settings->autoTranslateDelay());
     m_globalShortcut->setText(m_settings->globalShortcut());
 }
 
@@ -132,6 +148,10 @@ void SettingsDialog::accept()
         findChild<QCheckBox *>(QStringLiteral("m_copyResult"))->isChecked());
     m_settings->setSoundsEnabled(
         findChild<QCheckBox *>(QStringLiteral("m_soundsEnabled"))->isChecked());
+    m_settings->setAutoTranslate(
+        findChild<QCheckBox *>(QStringLiteral("m_autoTranslate"))->isChecked());
+    m_settings->setAutoTranslateDelay(
+        findChild<QDoubleSpinBox *>(QStringLiteral("m_autoTranslateDelay"))->value());
     m_settings->setGlobalShortcut(m_globalShortcut->text().trimmed());
     m_settings->save();
     QDialog::accept();
@@ -149,6 +169,8 @@ void SettingsDialog::restoreDefaults()
     findChild<QDoubleSpinBox *>(QStringLiteral("m_pressInterval"))->setValue(0.5);
     findChild<QCheckBox *>(QStringLiteral("m_copyResult"))->setChecked(true);
     findChild<QCheckBox *>(QStringLiteral("m_soundsEnabled"))->setChecked(true);
+    findChild<QCheckBox *>(QStringLiteral("m_autoTranslate"))->setChecked(true);
+    findChild<QDoubleSpinBox *>(QStringLiteral("m_autoTranslateDelay"))->setValue(0.6);
     m_globalShortcut->setText(QStringLiteral("Ctrl+Alt+C"));
 }
 

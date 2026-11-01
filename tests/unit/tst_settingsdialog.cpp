@@ -43,6 +43,14 @@ private slots:
                      ->isChecked(), false);
         QCOMPARE(d.findChild<QCheckBox *>(QStringLiteral("m_soundsEnabled"))
                      ->isChecked(), false);
+        s.setAutoTranslate(false);
+        s.setAutoTranslateDelay(1.2);
+        s.save();
+        SettingsDialog d2(&s);
+        QCOMPARE(d2.findChild<QCheckBox *>(QStringLiteral("m_autoTranslate"))
+                     ->isChecked(), false);
+        QCOMPARE(d2.findChild<QDoubleSpinBox *>(QStringLiteral("m_autoTranslateDelay"))
+                     ->value(), 1.2);
     }
 
     void acceptPersistsEdits()
@@ -60,6 +68,8 @@ private slots:
                         ->findData(QStringLiteral("zh-CN")));
             d.findChild<QLineEdit *>(QStringLiteral("m_globalShortcut"))
                 ->setText(QStringLiteral("Ctrl+Alt+T"));
+            d.findChild<QDoubleSpinBox *>(QStringLiteral("m_autoTranslateDelay"))
+                ->setValue(2.5);
             d.findChild<QDialogButtonBox *>(QStringLiteral("m_buttons"))
                 ->button(QDialogButtonBox::Ok)
                 ->click();
@@ -69,6 +79,10 @@ private slots:
         QCOMPARE(reread.apiKey(), QString("key"));
         QCOMPARE(reread.targetLanguage(), QString("zh-CN"));
         QCOMPARE(reread.globalShortcut(), QString("Ctrl+Alt+T"));
+        QCOMPARE(reread.autoTranslateDelay(), 2.5);
+        // autoTranslate stayed at the value loaded from disk (false, set by
+        // loadsCurrentValues on this shared file); accept must not flip it.
+        QCOMPARE(reread.autoTranslate(), false);
     }
 
     void cancelKeepsOldValues()
@@ -103,6 +117,10 @@ private slots:
                  QString("http://localhost:11434/v1"));
         QCOMPARE(d.findChild<QComboBox *>(QStringLiteral("m_targetLanguage"))
                      ->currentData().toString(), QString("ru"));
+        QCOMPARE(d.findChild<QCheckBox *>(QStringLiteral("m_autoTranslate"))
+                     ->isChecked(), true);
+        QCOMPARE(d.findChild<QDoubleSpinBox *>(QStringLiteral("m_autoTranslateDelay"))
+                     ->value(), 0.6);
     }
 
     void testApiButtonChecksEndpoint()

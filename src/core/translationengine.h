@@ -32,6 +32,7 @@ public:
 
     QString sourceText() const { return m_source; }
     QString translation() const { return m_result; }
+    void cancel();   // abort in-flight request, suppress the failed() signal
 
 Q_SIGNALS:
     void started(const QString &sourceText, const QString &targetLanguageName);
@@ -44,6 +45,7 @@ private:
     LlmStreamClient *m_client = nullptr;
     bool m_ownsClient = false;
     bool m_busy = false;
+    bool m_cancelled = false;
     QString m_source;
     QString m_result;
 };

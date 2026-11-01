@@ -39,6 +39,10 @@ public:
     void setCopyResult(bool on);
     bool soundsEnabled() const;
     void setSoundsEnabled(bool on);
+    bool autoTranslate() const;          // translate on source edits
+    void setAutoTranslate(bool on);
+    double autoTranslateDelay() const;   // s of idle typing before firing
+    void setAutoTranslateDelay(double seconds);
     QString globalShortcut() const;     // fallback shortcut (Qt sequence)
     void setGlobalShortcut(const QString &seq);
     bool useInputCapture() const;       // Wayland portal opt-in

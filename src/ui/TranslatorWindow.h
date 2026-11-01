@@ -1,25 +1,30 @@
 #pragma once
 
+#include <QVector>
 #include <QWidget>
 
 class QComboBox;
 class QLabel;
 class QPushButton;
 class QTextEdit;
+class QShortcut;
 
 namespace lt {
 
 /*!
- * The DeepL-style result window: original text on the left, the live
- * translation stream on the right. A window (not a tray widget) because
- * translations can be long, need scrolling/selection and must work on
- * any desktop - KDE, GNOME, plain X11.
+ * DeepL-style interactive translation window: the left pane is an
+ * editable source (paste with Ctrl+V, type freely), the right pane shows
+ * the translation as a list of row slots so the engine can stream a new
+ * answer into the MIDDLE of an already translated document.
  *
- * Lifecycle driven by the app layer:
- *   beginTranslation(source, targetName) -> appendChunk()* ->
- *   endTranslation()  or  translationFailed(reason)
- * Clipboard / settings / language persistence are delegated to signals -
- * the window owns no state beyond what it displays.
+ * Rendering model (no state of its own beyond display):
+ *   showTargetRows(rows)      - lay out the document (placeholders first)
+ *   streamIntoRow(i, partial) - live-replace row i (neighbour rows intact)
+ *   commitRow(i, text)        - finalise row i
+ *
+ * User interactions surface as signals: sourceEdited() (typing/paste,
+ * never from setSourceText), translateRequested() (Ctrl+Enter),
+ * copyRequested(), targetLanguagePicked(), settingsRequested().
  */
 class TranslatorWindow : public QWidget
 {
@@ -30,31 +35,40 @@ public:
     void setTargetLanguage(const QString &code);
     QString targetLanguage() const;
 
+    QString sourceText() const;
+    /// Programmatic fill (clipboard gesture) - does NOT emit sourceEdited.
+    void setSourceText(const QString &text);
+
 public slots:
-    void beginTranslation(const QString &sourceText, const QString &targetName);
-    /// Replace the whole target text (post-stream clean-ups, e.g. the
-    /// unicode-escape safety net applied to the assembled answer).
-    void setTranslation(const QString &text);
-    void appendChunk(const QString &chunk);
-    void endTranslation();
-    void translationFailed(const QString &reason);
-    /// Normal window flow: show + raise + focus (used on every activation).
+    void statusTranslating(const QString &targetName);
+    void statusDone();
+    void statusFailed(const QString &reason);
+    void showTargetRows(const QStringList &rows);
+    void streamIntoRow(int row, const QString &partial);
+    void commitRow(int row, const QString &text);
     void showForeground();
 
 Q_SIGNALS:
+    void sourceEdited();
+    void translateRequested();
     void copyRequested(const QString &translation);
     void targetLanguagePicked(const QString &code);
     void settingsRequested();
 
 private:
+    void renderTarget();
+    void updateCopyEnabled();
+
     QTextEdit *m_source;
     QTextEdit *m_target;
     QComboBox *m_language;
     QLabel *m_status;
     QPushButton *m_copy;
-    bool m_programmatic = false;   // guard: setTargetLanguage() must not echo
-    bool m_streaming = false;
-    bool m_hasResult = false;
+    QShortcut *m_translateShortcut;
+    QVector<QString> m_rows;
+    QVector<bool> m_committed;
+    bool m_programmaticSource = false;
+    bool m_programmaticLang = false;
 };
 
 } // namespace lt
