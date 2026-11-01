@@ -86,6 +86,14 @@ class Grid:
         return self.run(f"source /tmp/session.env; {script}", timeout=timeout)
 
     # ---- input (QMP scancodes: physical keys, layout-independent) ----
+    def clipget(self):
+        # wl-paste can block forever when the clipboard owner died (ssh-owned
+        # wl-copy daemons die with the session); always bound it.
+        return self.ses("timeout 10 wl-paste 2>/dev/null")[1]
+
+    def journal(self, since="--since -10min", grep="traduku"):
+        return self.ses(f"journalctl --user --no-pager {since} | grep -i --color=never '{grep}' | tail -30")
+
     def keyseq(self, seq):
         self.vmctl("keyseq", self.vm, seq)
 

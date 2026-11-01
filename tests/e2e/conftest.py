@@ -118,7 +118,10 @@ def restart_kwin(vm, layouts):
         "kwriteconfig6 --file kxkbrc --group Layout --key SwitchMode Keyboard",
         "kwriteconfig6 --file kxkbrc --group Layout --key Options grp:alt_shift_toggle",
         "kwriteconfig6 --file kxkbrc --group Layout --key Initial 0",
-        "setsid sh -c 'systemctl --user restart plasma-kwin_wayland.service' >/dev/null 2>&1 &"]))
+        # KWin restarts leave stale KGlobalAccel registrations (a single
+        # press then arrives N times -> the pair detector fires instantly);
+        # bounce the KGA daemon so the app's re-registration is clean.
+        "setsid sh -c 'systemctl --user restart plasma-kglobalaccel.service plasma-kwin_wayland.service' >/dev/null 2>&1 &"]))
     import time
     for _ in range(20):
         time.sleep(2)
@@ -127,3 +130,12 @@ def restart_kwin(vm, layouts):
             break
     time.sleep(1)
     capture_sessionenv(vm)
+    # KWin restart kills the KGlobalAccel registrations of every app;
+    # bring the translator back so its shortcut exists in the new KWin.
+    vm.ses("pkill -x traduku; sleep 1; "
+           "setsid nohup traduku >/tmp/traduku.log 2>&1 </dev/null &")
+    for _ in range(10):
+        time.sleep(1)
+        rc, _ = vm.run("pgrep -x traduku")
+        if rc == 0:
+            break

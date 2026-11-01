@@ -30,10 +30,14 @@ def _clip(vm):
 
 
 def _wait_mock(vm, seconds=25):
+    """Authoritative signal: a translation was logged inside a sliding
+    20s window (stale entries from earlier phases age out); the clipboard
+    check is the user-visible half of the effect."""
     for _ in range(seconds):
         time.sleep(1)
-        if "MOCK" in _clip(vm):
-            return True
+        rc, out = vm.journal("--since -20s", grep="translating")
+        if out.strip():
+            return "MOCK" in _clip(vm)
     return False
 
 
