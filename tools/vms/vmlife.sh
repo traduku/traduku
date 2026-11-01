@@ -40,19 +40,14 @@ case "$cmd" in
   logs)
     tail -30 "$VMS_HOME/run/$VM/serial.log" 2>/dev/null || echo "no serial log (attach: socat)";;
   shot)
-    # shot <vm> [name]  -> writes $d/shots/<name>.png (ppm converted via PIL)
+    # QMP framebuffer capture (console ttyS0: diagnostics, not test evidence)
     d=$VMS_HOME/run/$VM; n=${3:-$(date +%s)}
     mkdir -p "$d/shots"
     python3 /tools/qmp.py "$d/qmp.sock" screendump "$d/shots/$n.ppm"
-    python3 - "$d/shots/$n.ppm" "$d/shots/$n.png" <<'PY'
-import sys
-from PIL import Image
-Image.open(sys.argv[1]).save(sys.argv[2])
-print(sys.argv[2])
-PY
+    chmod a+rw "$d/shots/$n.ppm"
     ;;
   key|keyseq)
-    # key <vm> <qemu-key>... ; keyseq <vm> "ctrl c;150;ctrl c" (ms between)
+    # Virtual keyboard via QMP input-send-event (input layer -> ps2 kbd).
     d=$VMS_HOME/run/$VM; shift 2
     python3 /tools/qmp.py "$d/qmp.sock" "$cmd" "$*";;
   *) echo "usage: vmlife.sh {start|stop|status|logs|shot|key|keyseq} [vm]" >&2; exit 2;;

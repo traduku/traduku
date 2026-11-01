@@ -31,7 +31,7 @@ case "$cmd" in
     ensure_ctr; dexec "VMS_HOME=/vms bash /tools/mkvm.sh $*";;
   start|stop|logs|shot|key|keyseq)
     [ $# -ge 1 ] || { echo "usage: vmctl.sh $cmd <vm> [args]" >&2; exit 2; }
-    ensure_ctr; dexec "VMS_HOME=/vms bash /tools/vmlife.sh $cmd $*";;
+    ensure_ctr; dexec "VMS_HOME=/vms bash /tools/vmlife.sh $cmd $(printf '%q ' "$@")";;
   ssh)
     vm=$1; shift
     ssh -i "$VMS_HOME/id_ed25519" -p $((2200+$(idx_of "$vm"))) \
