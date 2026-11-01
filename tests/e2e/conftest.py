@@ -44,3 +44,46 @@ def session(vm):
 def ses(vm, script, timeout=120):
     """Run a snippet inside the graphical session."""
     return vm.run(f"source /tmp/session.env; {script}", timeout=timeout)
+
+
+@pytest.fixture(scope="session")
+def env(session):
+    """Live GUI environment: mock LLM endpoint, config, app running in-session.
+
+    The app is the *installed* binary; the mock streams `[MOCK -> lang] <text>`.
+    """
+    vm = session
+    from grid import ROOT
+    vm.push(ROOT / "tools" / "mock-openai.py", "~/mock-openai.py")
+    # pkill/pgrep -f also match OUR OWN ssh shell argv (it contains the
+    # script path); exclude our pid — only the real server dies.
+    vm.run("for p in $(pgrep -f mock-openai.py 2>/dev/null; true); do "
+           "[ \"$p\" != \"$$\" ] && kill \"$p\" 2>/dev/null; done; sleep 0.5; "
+           "setsid nohup python3 /home/vm/mock-openai.py 8931 >/tmp/mock.log 2>&1 </dev/null &")
+    import time
+    time.sleep(1)
+    rc, out = vm.run("curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:8931/v1/models")
+    assert rc == 0 and "200" in out, "mock endpoint is not serving"
+
+    vm.run("mkdir -p ~/.config/traduku; cat > ~/.config/traduku/config.ini <<'INI'\n"
+           "[General]\nApiUrl=http://127.0.0.1:8931/v1\nModel=mock\n"
+           "TargetLanguage=en\nPressInterval=0.8\nSoundsEnabled=false\n"
+           "CopyResult=true\nFirstRunDone=true\nINI\n"
+           "grep -c ApiUrl ~/.config/traduku/config.ini")
+
+    vm.ses("pkill -x traduku; sleep 0.5; setsid nohup traduku >/tmp/traduku.log 2>&1 </dev/null &")
+    import time
+    time.sleep(4)
+    assert vm.run("pgrep -x traduku")[0] == 0, "app not running in session"
+    return vm
+
+
+@pytest.fixture(autouse=True)
+def app_running(env):
+    """Every GUI test runs against a live app instance (tests may kill it)."""
+    if env.run("pgrep -x traduku")[0] != 0:
+        env.ses("setsid nohup traduku >/tmp/traduku.log 2>&1 </dev/null &")
+        import time
+        time.sleep(4)
+        assert env.run("pgrep -x traduku")[0] == 0, "app did not (re)start"
+    return env
