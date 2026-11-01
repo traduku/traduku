@@ -94,6 +94,47 @@ class Grid:
     def journal(self, since="--since -10min", grep="traduku"):
         return self.ses(f"journalctl --user --no-pager {since} | grep -i --color=never '{grep}' | tail -30")
 
+    # ---- journal cursor: FRESH entries only (a test must never accept a
+    # line produced by a previous test's gesture) ----
+    def cursor(self):
+        rc, out = self.ses("journalctl --user --show-cursor -n0 -o cat 2>/dev/null | tail -1")
+        # last line: 'cursor: @19fa...'
+        for line in out.strip().splitlines():
+            line = line.removeprefix("-- ")
+            if line.startswith("cursor: "):
+                return line[len("cursor: "):]
+        raise RuntimeError(f"no journal cursor in: {out!r}")
+
+    def journal_after(self, cursor, grep="traduku"):
+        # journalctl: --since and --after-cursor are mutually exclusive;
+        # the cursor alone defines the read position.
+        return self.ses(
+            f"journalctl --user --no-pager --after-cursor='{cursor}'"
+            f" | grep -i --color=never '{grep}' | tail -20")
+
+    # ---- KWin window list via the scripting D-Bus API (Plasma 6:
+    # loadScript + start; print() lands in kwin's journal stream) ----
+    def kwin_windows(self, tag="gridwl"):
+        js = f"""var s="{tag}: ";
+for (const w of workspace.windowList()) {{
+  try {{
+    var cap = (w.caption || "").replace(/\\n/g, " ");
+    s += "[" + cap + " " + w.width + "x" + w.height + " @" + w.x + "," + w.y
+       + " min=" + w.minimized + " act=" + w.active + "] ";
+  }} catch (e) {{ s += "[shell] "; }}
+}}
+print(s);
+"""
+        self.run(f"cat > /tmp/grid-winlist.js <<'JS'\n{js}JS")
+        self.ses("gdbus call -e -d org.kde.KWin -o /Scripting"
+                 " -m org.kde.kwin.Scripting.unloadScript gridwl >/dev/null 2>&1; true")
+        self.ses("gdbus call -e -d org.kde.KWin -o /Scripting"
+                 " -m org.kde.kwin.Scripting.loadScript /tmp/grid-winlist.js gridwl")
+        self.ses("gdbus call -e -d org.kde.KWin -o /Scripting"
+                 " -m org.kde.kwin.Scripting.start")
+        time.sleep(1.5)
+        return self.journal("--since -10s", grep=tag)[1]
+
     def keyseq(self, seq):
         self.vmctl("keyseq", self.vm, seq)
 

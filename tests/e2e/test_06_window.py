@@ -1,36 +1,68 @@
 """E2E-6: the translation window appears on the gesture.
 
-QMP screendump = the compositor's framebuffer (works on native Wayland).
-A mapped Traduku window changes a visible area of the screen; the test
-asserts the changed-area fraction and keeps pre/post shots as evidence.
+Assertions (the task asks for "window appears"; the app has NO auto-hide
+— nothing in src/ hides the window, and KWin's window list confirms it
+stays mapped — so do not assert disappearing pixels):
 
-Red check: with no gesture, two shots of an idle session must NOT differ
-by the threshold.
+1. The gesture fires *this* run: a "translating" journal line taken with
+   a journal cursor captured BEFORE the keyseq (the 15:24 failure:
+   --since -20s matched test_05's gesture, the test screenshotted 2.5 s
+   in and caught the window mid-map — only the taskbar entry differed).
+2. The framebuffer changes by a large fraction (QMP screendump = the
+   compositor's scanout; the session fixture bakes a static color
+   wallpaper, so the diff is the window, not fireworks animation).
+3. KWin's own window list (scripting D-Bus) shows a Traduku toplevel of
+   plausible size — the compositor agrees, independent of pixels.
+
+Red-check A: don't fire the gesture -> assertion 1 must fail (verified:
+no fresh line -> FAIL -> restore -> PASS).
+Red-check B: a lock screen appearing between the idle shots -> the guard
+in step 0 must fail (verified: ScreenSaver.Lock -> frac=1.000 -> trips).
+The real framebuffer-noise source in this VM is the idle LOCK SCREEN
+(observed ~19:15), not the wallpaper (its "fireworks" are a static
+image); the session fixture disables the lock and bakes a plain color
+desktop for deterministic pixels.
 """
 import time
 
-SEED = "Window appears 42"
+SEED = "window probe 4242"
 
 
 def test_window_appears_after_gesture(env):
     vm = env
-    vm.ses("pkill -x xterm; wmctrl -c Traduku 2>/dev/null; true")
     time.sleep(1)
-    vm.shot("e2-win-pre")
-    # idle: no spontaneous change
-    vm.shot("e2-win-idle")
-    idle = vm.diff_frac("e2-win-pre", "e2-win-idle")
-    assert idle < 0.02, f"idle screen changed by {idle:.2f} (noise breaks the test)"
+    vm.shot("06-a")
+    time.sleep(1.5)
+    vm.shot("06-b")
+    # Guard: the session must be quiescent before we measure. (A lock
+    # screen appearing between the shots is the observed noise source.)
+    idle = vm.diff_frac("06-a", "06-b")
+    assert idle < 0.01, f"idle screen changes by {idle:.3f} (wallpaper/lock noise)"
 
-    vm.ses("setsid xterm -e sleep 300 >/dev/null 2>&1 & sleep 1;"
-           "xdotool windowactivate $(xdotool search -name xterm | head -1) 2>/dev/null; true")
+    cur = vm.cursor()
     vm.clipset(SEED)
-    vm.keyseq("ctrl c;250;ctrl c")
+    vm.double_ctrl_alt_c()
+    fired = False
+    for _ in range(20):
+        time.sleep(1)
+        if vm.journal_after(cur, grep="translating")[1].strip():
+            fired = True
+            break
+    assert fired, "gesture produced no FRESH 'translating' journal line"
+
+    # The window animates in; poll the framebuffer, the change must be big
+    # (980x560 on 1280x800 ≈ half the screen), not a taskbar blink.
     frac = 0.0
     for _ in range(15):
         time.sleep(1)
-        vm.shot("e2-win-post")
-        frac = vm.diff_frac("e2-win-pre", "e2-win-post")
-        if frac > 0.05:
+        vm.shot("06-open")
+        frac = vm.diff_frac("06-a", "06-open")
+        if frac > 0.10:
             break
-    assert frac > 0.05, f"no visible window after gesture (changed area {frac:.3f})"
+    assert frac > 0.10, f"screen changed by only {frac:.3f} after the gesture"
+
+    # Compositor-side truth: KWin lists the Traduku window, mapped and big.
+    wl = vm.kwin_windows()
+    assert "Traduku" in wl, f"KWin window list lacks the app window:\n{wl}"
+    # frame size (resize(980,560) + server-side decoration titlebar)
+    assert "Traduku 980x" in wl, f"window present with unexpected size:\n{wl}"
