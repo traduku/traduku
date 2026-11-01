@@ -1,9 +1,9 @@
 [Global]
 IconName=accessories-dictionary
-DesktopEntry=llm-translate
-Comment=LLM Translate clipboard translator
+DesktopEntry=traduku
+Comment=Traduku clipboard translator
 
-[Event llm-translate-notify]
+[Event traduku-notify]
 Name=Translation progress
 Description=Status messages from the clipboard translator
 Sound=

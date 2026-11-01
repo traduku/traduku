@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.21)
 
-project(llm-translate VERSION 0.1.0 DESCRIPTION
+project(traduku VERSION 0.2.0 DESCRIPTION
     "Clipboard translator powered by any OpenAI-compatible LLM (streaming)"
     LANGUAGES CXX)
 
@@ -24,10 +24,10 @@ add_subdirectory(src)
 add_subdirectory(tests)
 
 # ---- install rules (used by the distro packages) --------------------------
-if(TARGET kde-llm-translate)
-    install(TARGETS kde-llm-translate RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
-    install(FILES llm-translate.desktop DESTINATION ${CMAKE_INSTALL_DATADIR}/applications)
-    install(FILES llm-translate.notifyrc DESTINATION ${CMAKE_INSTALL_DATADIR}/knotifications6)
+if(TARGET traduku)
+    install(TARGETS traduku RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
+    install(FILES traduku.desktop DESTINATION ${CMAKE_INSTALL_DATADIR}/applications)
+    install(FILES traduku.notifyrc DESTINATION ${CMAKE_INSTALL_DATADIR}/knotifications6)
     install(FILES LICENSE DESTINATION ${CMAKE_INSTALL_DATADIR}/licenses/${PROJECT_NAME}
             OPTIONAL)
 endif()

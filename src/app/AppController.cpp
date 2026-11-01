@@ -25,7 +25,7 @@ AppController::AppController(const Backends &b, QObject *parent)
                 m_b.window->statusTranslating(targetName);
                 m_b.window->showForeground();
                 m_b.sound->play(SoundEvent::Started);
-                qInfo("llm-translate: translating %d chars -> %s via %s (%s)",
+                qInfo("traduku: translating %d chars -> %s via %s (%s)",
                       int(source.size()), qPrintable(targetName),
                       qPrintable(m_b.settings->apiUrl()),
                       qPrintable(m_b.settings->model()));
@@ -50,7 +50,7 @@ AppController::AppController(const Backends &b, QObject *parent)
             preview = preview.left(300) + QStringLiteral(" …");
         }
         m_b.notifier->notify(
-            QStringLiteral("LLM Translate"),
+            QStringLiteral("Traduku"),
             QStringLiteral("Translated to %1%2:\n%3")
                 .arg(languageNameOrCode(m_b.settings->targetLanguage()),
                      clipboardNote, preview));
@@ -59,10 +59,10 @@ AppController::AppController(const Backends &b, QObject *parent)
             [this](const QString &reason) {
                 m_b.window->statusFailed(reason);
                 m_b.sound->play(SoundEvent::Failed);
-                m_b.notifier->notify(QStringLiteral("LLM Translate"),
+                m_b.notifier->notify(QStringLiteral("Traduku"),
                                      QStringLiteral("Translation failed: %1")
                                          .arg(reason));
-                qWarning("llm-translate: %s", qUtf8Printable(reason));
+                qWarning("traduku: %s", qUtf8Printable(reason));
             });
 
     // Interactive source pane: typing debounces into an incremental
@@ -86,7 +86,7 @@ AppController::AppController(const Backends &b, QObject *parent)
     connect(m_b.window, &TranslatorWindow::copyRequested, this,
             [this](const QString &text) {
                 m_b.clipboard->setText(text);
-                m_b.notifier->notify(QStringLiteral("LLM Translate"),
+                m_b.notifier->notify(QStringLiteral("Traduku"),
                                      QStringLiteral("Translation copied to "
                                                     "clipboard."));
             });
@@ -120,7 +120,7 @@ void AppController::translateNow()
 {
     QString text = decodeIfEscaped(m_b.clipboard->text().trimmed());
     if (text.isEmpty()) {
-        m_b.notifier->notify(QStringLiteral("LLM Translate"),
+        m_b.notifier->notify(QStringLiteral("Traduku"),
                              QStringLiteral("Clipboard is empty."));
         return;
     }

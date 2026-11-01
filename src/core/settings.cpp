@@ -63,10 +63,26 @@ QString Settings::defaultTargetLanguageForLocale(const QString &localeName)
     return languageCodeForLocale(localeName);
 }
 
+bool Settings::migrateLegacyConfig(const QString &configBase)
+{
+    const QString legacy = configBase + QStringLiteral("/llm-translate")
+                     + QStringLiteral("/config.ini");
+    if (!QFile::exists(legacy)) {
+        return false;
+    }
+    const QString targetDir = configBase + QStringLiteral("/traduku");
+    const QString target = targetDir + QStringLiteral("/config.ini");
+    if (QFile::exists(target)) {
+        return false;   // new config already wins
+    }
+    QDir().mkpath(targetDir);
+    return QFile::rename(legacy, target);
+}
+
 QString Settings::defaultFilePath()
 {
     return QStandardPaths::writableLocation(QStandardPaths::GenericConfigLocation)
-        + QStringLiteral("/llm-translate/config.ini");
+        + QStringLiteral("/traduku/config.ini");
 }
 
 QString Settings::filePath() const

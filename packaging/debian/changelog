@@ -1,7 +1,15 @@
-kde-llm-translate (0.1) unstable; urgency=medium
+traduku (0.2) unstable; urgency=medium
+
+  * Renamed project: llm-translate -> Traduku (binary `traduku`, config
+    ~/.config/traduku/config.ini with automatic migration from the old
+    location, autostart entry migrated, DBus name org.kde.traduku).
+
+ -- Traduku contributors <dev@localhost>  Mon, 02 Nov 2026 12:00:00 +0300
+
+traduku (0.1) unstable; urgency=medium
 
   * First release: double Ctrl+C clipboard translation with streaming,
     interactive window, incremental retranslation, sounds, tray,
     first-run guided setup (autostart question + settings dialog).
 
- -- LLM Translate contributors <dev@localhost>  Mon, 01 Nov 2026 12:00:00 +0300
+ -- Traduku contributors <dev@localhost>  Mon, 01 Nov 2026 12:00:00 +0300

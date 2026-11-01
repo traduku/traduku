@@ -7,9 +7,9 @@ namespace lt {
 void KdeNotifier::notify(const QString &title, const QString &body,
                          const QString &iconName, int ms)
 {
-    auto *n = new KNotification(QStringLiteral("llm-translate-notify"),
+    auto *n = new KNotification(QStringLiteral("traduku-notify"),
                                 KNotification::CloseOnTimeout, this);
-    n->setComponentName(QStringLiteral("llm-translate"));
+    n->setComponentName(QStringLiteral("traduku"));
     n->setTitle(title);
     n->setText(body);
     n->setIconName(iconName.isEmpty() ? QStringLiteral("accessories-dictionary")

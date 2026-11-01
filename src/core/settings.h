@@ -23,6 +23,11 @@ public:
     explicit Settings(const QString &filePath, QObject *parent = nullptr);
 
     static QString defaultFilePath();
+    /// Move a pre-rename <configBase>/llm-translate/config.ini to
+    /// <configBase>/traduku/config.ini (file is MOVED). Returns true when
+    /// a migration happened. configBase is injectable for tests; the app
+    /// calls it with the standard config location.
+    static bool migrateLegacyConfig(const QString &configBase);
     /// Default target language for a system locale name (testable seam:
     /// targetLanguage() feeds it QLocale::system().name()).
     static QString defaultTargetLanguageForLocale(const QString &localeName);

@@ -190,7 +190,7 @@ int runSelfTest(QTextStream &out, bool doLive)
         QTemporaryDir dir;
         const QByteArray old = qgetenv("XDG_CONFIG_HOME");
         qputenv("XDG_CONFIG_HOME", (dir.path() + "/config").toUtf8());
-        XdgAutostart a(QStringLiteral("llm-translate-selftest"),
+        XdgAutostart a(QStringLiteral("traduku-selftest"),
                        QStringLiteral("/bin/true"));
         bool ok = !a.isEnabled() && a.setEnabled(true) && a.isEnabled()
                && a.setEnabled(false) && !a.isEnabled();

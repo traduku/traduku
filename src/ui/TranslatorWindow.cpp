@@ -16,7 +16,7 @@ namespace lt {
 TranslatorWindow::TranslatorWindow(QWidget *parent)
     : QWidget(parent)
 {
-    setWindowTitle(QStringLiteral("LLM Translate"));
+    setWindowTitle(QStringLiteral("Traduku"));
     resize(980, 560);
 
     auto *grid = new QGridLayout(this);
