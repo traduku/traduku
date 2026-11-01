@@ -47,6 +47,36 @@ def session(vm):
     assert rc == 0, "no KDE session in the guest (autologin broken?)"
     capture_sessionenv(vm)
     vm.sudo("loginctl unlock-sessions")
+    # Deterministic pixels for framebuffer diffs: bake a static color
+    # background (the session fixture also kills the real noise source -
+    # the idle lock screen, see below).
+    vm.ses("""cat > /tmp/grid-wall.js <<'JS'
+var d = desktops[0];
+d.plugin = "color";
+d.currentConfigGroup = ["Background"];
+d.writeConfig("color", "#2b3e50ff");
+d.currentConfigGroup = [];
+JS
+gdbus call -e -d org.kde.plasmashell -o /PlasmaShell -m org.kde.PlasmaShell.evaluateScript "$(cat /tmp/grid-wall.js)"
+""")
+    # No idle lock, no DPMS during the suite (observed: lock screen at +10min
+    # idle swallowed the window mid-test). kwin reads kwinidlerc at startup.
+    vm.ses("kwriteconfig6 --file kwinidlerc --group ScreenLocker --key Enabled false; "
+           "kwriteconfig6 --file kwinidlerc --group DPMS --key Enabled false; "
+           "systemctl --user stop plasma-powerdevil.service; true")
+    vm.ses("pkill -x powerdevil; true")
+    # Bounce kwin so kwinidlerc takes effect (detached: ssh would block on
+    # the D-Bus job; KGA bounce keeps shortcut registrations clean, cf.
+    # restart_kwin notes).
+    vm.ses("setsid sh -c 'systemctl --user restart plasma-kglobalaccel.service plasma-kwin_wayland.service' >/dev/null 2>&1 &")
+    import time
+    for _ in range(20):
+        time.sleep(2)
+        rc, _ = vm.ses("ls /run/user/1000/ | grep -E '^wayland-[0-9]+$' >/dev/null && pgrep -u vm -x kwin_wayland")
+        if rc == 0:
+            break
+    time.sleep(2)
+    capture_sessionenv(vm)
     vm.run("rm -f ~/.config/traduku/config.ini; pkill -x traduku; true")
     return vm
 
