@@ -37,10 +37,25 @@ case "$cmd" in
     ssh -i "$VMS_HOME/id_ed25519" -p $((2200+$(idx_of "$vm"))) \
         -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
         -o ConnectTimeout=10 "vm@127.0.0.1" "$@";;
+  vnc)
+    # live view of the VM screen: the QEMU VNC server (:5900+idx) is on the
+    # host network; the same display QMP screendump/keyseq drive, so the
+    # e2e tests are fully visible (gestures, windows, notifications).
+    vm=$1
+    port=$((5900+$(idx_of "$vm")))
+    for v in vncviewer tigervncviewer remmina vinagre; do
+      command -v "$v" >/dev/null 2>&1 || continue
+      case "$v" in
+        remmina)   exec remmina -c "vnc://127.0.0.1:$port";;
+        vinagre)   exec vinagre "vnc://127.0.0.1:$port";;
+        *)         exec "$v" "127.0.0.1:$port";;
+      esac
+    done
+    echo "no VNC client found; connect manually to 127.0.0.1:$port";;
   status)
     ensure_ctr; dexec "VMS_HOME=/vms bash /tools/vmlife.sh status";;
   all)
     shift
     for v in "${VMS[@]}"; do echo "== $v"; $0 "$@" "$v" 2>&1 | sed 's/^/   /' || true; done;;
-  *) echo "commands: up mkarchbase mkvm start stop logs shot key keyseq ssh status all" >&2; exit 2;;
+  *) echo "commands: up mkarchbase mkvm start stop logs shot key keyseq ssh vnc status all" >&2; exit 2;;
 esac
