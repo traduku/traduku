@@ -78,14 +78,28 @@ gdbus call -e -d org.kde.plasmashell -o /PlasmaShell -m org.kde.PlasmaShell.eval
     vm.ses("pkill -x powerdevil; true")
     # Bounce kwin so kwinidlerc takes effect (detached: ssh would block on
     # the D-Bus job; KGA bounce keeps shortcut registrations clean, cf.
-    # restart_kwin notes).
-    vm.ses("setsid sh -c 'systemctl --user restart plasma-kglobalaccel.service plasma-kwin_wayland.service' >/dev/null 2>&1 &")
+    # restart_kwin notes). Plasma 6.8 (arch-kde) only: on Debian's Plasma
+    # 6.3 the session is started by sddm/startplasma-wayland, NOT by the
+    # user unit, so restarting plasma-kwin_wayland.service can never
+    # resurrect the compositor - the unit's wrapper picks its backend from
+    # the environment (nested wayland/x11), the DRM master stays held by
+    # the dying instance, and the whole session deadlocks (measured:
+    # plasmashell/kded units time out, orphaned /tmp/.X11-unix/X0, every
+    # wl/X client hangs). Bouncing KGA alone is safe and is all the idle
+    # guards need here (powerdevil is stopped outright, kwinidlerc is a
+    # Plasma 6.4+ file). Same rule applies to restart_kwin (test_05):
+    # layout-reload-by-restart is arch-kde-only for now.
+    if "arch" in vm.vm:
+        vm.ses("setsid sh -c 'systemctl --user restart plasma-kglobalaccel.service plasma-kwin_wayland.service' >/dev/null 2>&1 &")
+    else:
+        vm.ses("setsid sh -c 'systemctl --user restart plasma-kglobalaccel.service' >/dev/null 2>&1 &")
     import time
-    for _ in range(20):
-        time.sleep(2)
-        rc, _ = vm.ses("ls /run/user/1000/ | grep -E '^wayland-[0-9]+$' >/dev/null && pgrep -u vm -x kwin_wayland")
-        if rc == 0:
-            break
+    if "arch" in vm.vm:
+        for _ in range(20):
+            time.sleep(2)
+            rc, _ = vm.ses("ls /run/user/1000/ | grep -E '^wayland-[0-9]+$' >/dev/null && pgrep -u vm -x kwin_wayland")
+            if rc == 0:
+                break
     # env/app starts must not race the bounced KGA (see restart_kwin note)
     for _ in range(20):
         rc, _ = vm.ses("gdbus call -e -d org.kde.kglobalaccel -o /kglobalaccel"
@@ -134,6 +148,13 @@ def env(session):
 
     write_mock_config(vm)
 
+    if vm.run("command -v traduku")[0] != 0:
+        # Platform without an installable package yet (e.g. debian-kde
+        # before the .deb phase): start nothing and assert nothing here -
+        # the per-test body asserts (tray/journal/clipboard) will fail
+        # with the real reason instead of every test erroring identically
+        # in the fixture.
+        return vm
     vm.ses("pkill -x traduku; sleep 0.5; setsid nohup traduku >/tmp/traduku.log 2>&1 </dev/null &")
     import time
     time.sleep(4)
@@ -172,6 +193,8 @@ def app_running(env):
     start_mock(env)          # test_03 reboots the VM; the mock must come back
     env.ses("pkill -x traduku; sleep 1;")
     write_mock_config(env)
+    if env.run("command -v traduku")[0] != 0:
+        return env           # see the env-fixture note (uninstalled platform)
     env.ses("setsid nohup traduku >/tmp/traduku.log 2>&1 </dev/null &")
     import time
     time.sleep(4)
@@ -199,7 +222,13 @@ def restart_kwin(vm, layouts):
         # daemon is starting, and KWin - which polled the empty registry
         # on boot - never learns about it (observed in-suite: gesture
         # dead for the whole test, alive minutes later).)
-        "setsid sh -c 'systemctl --user restart plasma-kwin_wayland.service' >/dev/null 2>&1 &"]))
+        # Plasma 6.3 (debian-kde): the user unit does not own the session
+        # (sddm/startplasma-wayland does) - restarting it deadlocks the
+        # whole session (see session-fixture note). Layouts stay written
+        # to kxkbrc; on 6.3 they apply only at next login, and test_05's
+        # ru-layout leg fails there BY DESIGN until the .deb phase.
+        "setsid sh -c 'systemctl --user restart plasma-kwin_wayland.service' >/dev/null 2>&1 &"
+        if "arch" in vm.vm else "true"]))
     import time
     for _ in range(20):
         time.sleep(2)
@@ -218,6 +247,9 @@ def restart_kwin(vm, layouts):
         time.sleep(1)
     time.sleep(1)
     capture_sessionenv(vm)
+    if vm.run("command -v traduku")[0] != 0:
+        return               # nothing to register: the test body fails on its
+                             # own asserts with the real (no-app) reason
     # KWin restart kills the KGlobalAccel registrations of every app;
     # bring the translator back so its shortcut exists in the new KWin.
     vm.ses("pkill -x traduku; sleep 1; "
