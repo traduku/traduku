@@ -44,38 +44,33 @@ case "$VM" in
     Q "echo vm | sudo -S pacman -U --noconfirm ~/traduku-${VER}-1-x86_64.pkg.tar.zst 2>&1 | tail -3"
     ;;
   *-kde|*-gnome)
-    # .deb built inside the debian:13 container (dpkg toolchain), installed via apt
-    echo "== building .deb in the debian:13 container"
+    # .deb built inside the traduku-deb-builder container (dpkg toolchain
+    # + Qt6/KF6 deps baked by tools/vms/deb-builder/Dockerfile). Baked
+    # ONCE: an in-run apt-get hung on a trixie mirror stall once, and
+    # rebuilds must not depend on the network. timeout is the last-resort
+    # ceiling for any future container-side wedge.
+    echo "== building .deb in the traduku-deb-builder container"
+    IMG=traduku-deb-builder:trixie
+    docker image inspect "$IMG" >/dev/null 2>&1 || \
+      docker build -t "$IMG" "$HERE/deb-builder"
     STAGE=$(mktemp -d); trap 'rm -rf "$STAGE"' EXIT
-    docker run --rm -v "$ROOT:/src:ro" -v "$STAGE:/out" debian:13 bash -c '
+    timeout 1200 docker run --rm -v "$ROOT:/src:ro" -v "$STAGE:/out" "$IMG" bash -c '
       set -e
-      apt-get update -qq >/dev/null && apt-get install -y -qq --no-install-recommends \
-        build-essential cmake ninja-build pkg-config debhelper dpkg-dev \
-        extra-cmake-modules \
-        qt6-base-dev qt6-multimedia-dev libqt6core5compat6-dev \
-        libkf6coreaddons-dev libkf6i18n-dev libkf6statusnotifieritem-dev \
-        libkf6notifications-dev libkf6globalaccel-dev libkf6dbusaddons-dev \
-        libx11-dev libxi-dev libxtst-dev >/dev/null
       cp -a /src /work; cd /work
       cp -r packaging/debian debian
       # nocheck: debhelper cmake would configure -DBUILD_TESTING=OFF and
       # run nothing; the suite therefore runs as the explicit gate below
-      # (old-Qt corner of the matrix). One exclusion: tst_llmstreamclient
-      # asserts the Qt header CASE in raw bytes - Qt 6.8 puts
-      # "authorization:" on the wire lowercase, 6.12 title-cases it
-      # (product-test bug, pending upstream decision; the header itself
-      # is sent correctly, and the host ctest gate in the arch path runs
-      # the FULL suite on modern Qt). Drop the -E when the test lands.
+      # (old-Qt corner of the matrix: Qt 6.8.2 of debian 13). No exclusions,
+      # no repeats - the two old-Qt casualties are fixed in-tree: header-
+      # CASE asserts (neighbor 7f82696) and the chunkedtranslator commit-
+      # order race (neighbor 7d37663). A red here is a real regression.
+      # NOTE: this block lives inside bash -c single quotes: no apostrophes.
       DEB_BUILD_OPTIONS=nocheck dpkg-buildpackage -us -uc -b >/dev/null 2>&1 \
         || DEB_BUILD_OPTIONS=nocheck dpkg-buildpackage -us -uc -b
       cmake -B gatebuild -G Ninja -DCMAKE_BUILD_TYPE=Release >/dev/null
       cmake --build gatebuild >/dev/null
       cd gatebuild
-      # until-pass:3 absorbs the known product flake (tst_chunkedtranslator
-      # commit-order race, documented in the tracker); a real failure
-      # still goes red after 3 attempts.
-      QT_QPA_PLATFORM=offscreen ctest -E tst_llmstreamclient \
-        --repeat until-pass:3 --output-on-failure
+      QT_QPA_PLATFORM=offscreen ctest --output-on-failure
       cp /traduku_*.deb /out/'
     DEB=$(ls "$STAGE"/traduku_*.deb | head -1)
     echo "== push + apt install on $VM"
