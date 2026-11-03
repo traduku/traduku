@@ -41,7 +41,9 @@ case "$VM" in
     for art in "$PKG" "$PKG.sig"; do
       [ -f "$art" ] && SCP "$art" vm@127.0.0.1:~/
     done
-    Q "echo vm | sudo -S pacman -U --noconfirm ~/traduku-${VER}-1-x86_64.pkg.tar.zst 2>&1 | tail -3"
+    # rc was once swallowed by '| tail -3': a lock-blocked pacman left the
+    # VM uninstalled and the suite ran 8-red on a phantom product.
+    Q "echo vm | sudo -S pacman -U --noconfirm ~/traduku-${VER}-1-x86_64.pkg.tar.zst >/tmp/pacman-install.log 2>&1 || true; tail -3 /tmp/pacman-install.log; pacman -Q traduku-${VER}"
     ;;
   *-kde|*-gnome)
     # .deb built inside the traduku-deb-builder container (dpkg toolchain
@@ -76,7 +78,11 @@ case "$VM" in
     echo "== push + apt install on $VM"
     Q "rm -f ~/traduku_*.deb"
     SCP "$DEB" vm@127.0.0.1:~/
-    Q "echo vm | sudo -S DEBIAN_FRONTEND=noninteractive apt-get install -y --reinstall ~/traduku_*.deb 2>&1 | tail -3"
+    # unattended-upgrades grabs the dpkg lock right after test_03's reboot;
+    # an install hitting it used to die silently behind '| tail -3' (the
+    # all-red suite after rebuild). Stop the timer, wait for the lock, and
+    # VERIFY the package state afterwards - install is a gate, not a hint.
+    Q "echo vm | sudo -S sh -c 'systemctl stop unattended-upgrades apt-daily.service apt-daily-upgrade.timer apt-daily-upgrade.service 2>/dev/null || true; i=0; while fuser /var/lib/dpkg/lock-frontend >/dev/null 2>&1 && [ \$i -lt 60 ]; do sleep 2; i=\$((i+1)); done; DEBIAN_FRONTEND=noninteractive apt-get install -y --reinstall /home/vm/traduku_*.deb >/tmp/apt-install.log 2>&1' ; tail -3 /tmp/apt-install.log; grep -q '^Setting up traduku' /tmp/apt-install.log && dpkg -l traduku | grep -aq '^ii.*traduku'"
     ;;
 esac
 
