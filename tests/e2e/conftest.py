@@ -155,7 +155,7 @@ def env(session):
         # with the real reason instead of every test erroring identically
         # in the fixture.
         return vm
-    vm.ses("pkill -x traduku; sleep 0.5; setsid nohup traduku >/tmp/traduku.log 2>&1 </dev/null &")
+    vm.start_app()
     import time
     time.sleep(4)
     assert vm.run("pgrep -x traduku")[0] == 0, "app not running in session"
@@ -195,7 +195,7 @@ def app_running(env):
     write_mock_config(env)
     if env.run("command -v traduku")[0] != 0:
         return env           # see the env-fixture note (uninstalled platform)
-    env.ses("setsid nohup traduku >/tmp/traduku.log 2>&1 </dev/null &")
+    env.start_app()
     import time
     time.sleep(4)
     assert env.run("pgrep -x traduku")[0] == 0, "app did not (re)start"
@@ -252,8 +252,7 @@ def restart_kwin(vm, layouts):
                              # own asserts with the real (no-app) reason
     # KWin restart kills the KGlobalAccel registrations of every app;
     # bring the translator back so its shortcut exists in the new KWin.
-    vm.ses("pkill -x traduku; sleep 1; "
-           "setsid nohup traduku >/tmp/traduku.log 2>&1 </dev/null &")
+    vm.start_app()
     for _ in range(10):
         time.sleep(1)
         rc, _ = vm.run("pgrep -x traduku")

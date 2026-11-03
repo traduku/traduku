@@ -23,6 +23,7 @@ The real framebuffer-noise source in this VM is the idle LOCK SCREEN
 image); the session fixture disables the lock and bakes a plain color
 desktop for deterministic pixels.
 """
+import re
 import time
 
 SEED = "window probe 4242"
@@ -64,5 +65,13 @@ def test_window_appears_after_gesture(env):
     # Compositor-side truth: KWin lists the Traduku window, mapped and big.
     wl = vm.kwin_windows()
     assert "Traduku" in wl, f"KWin window list lacks the app window:\n{wl}"
-    # frame size (resize(980,560) + server-side decoration titlebar)
-    assert "Traduku 980x" in wl, f"window present with unexpected size:\n{wl}"
+    # frame size (resize(980,560) + server-side decoration titlebar).
+    # KWin versions measure the frame differently (6.8: '980x588',
+    # 6.3: '982x589' - decoration/border extents), so compare the width
+    # numerically with a small tolerance instead of pinning one compositor's
+    # string: the intent is 'the real window, roughly its designed size',
+    # not a panel/1x1 placeholder (which is how a missing window shows up).
+    m = re.search(r"Traduku (\d+)x(\d+) @", wl)
+    assert m, f"window present with unexpected size:\n{wl}"
+    assert 970 <= int(m.group(1)) <= 992 and 550 <= int(m.group(2)) <= 610, \
+        f"window size out of expected band: {m.group(0)}\n{wl}"
