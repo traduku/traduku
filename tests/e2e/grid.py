@@ -81,6 +81,29 @@ class Grid:
         stdout — redirect it, ssh would block on the open channel."""
         return self.ses(f"printf %s '{text}' | timeout 10 wl-copy >/dev/null 2>&1")
 
+    def start_app(self):
+        """(Re)launch the packaged app as a transient user unit.
+
+        systemd-run, NOT `setsid nohup >file`: journal_after() (gesture
+        freshness in tests 05/06 and the KGA warm-up gate) reads
+        journalctl, and a file-redirected app silently loses every
+        'translating' line there - arch only ever looked green because
+        the autostart-unit instance (journal-captured) also runs in the
+        session and produced the lines. One unit, both distros, one
+        logging truth. --collect removes the unit on exit so the next
+        start is clean; --setenv forwards the session trio captured by
+        capture_sessionenv.
+        """
+        self.ses("systemctl --user stop traduku-e2e.service >/dev/null 2>&1; true")
+        self.ses("pkill -x traduku; sleep 1; true")
+        # full session environment through the wrapper: KWindowSystem /
+        # the KGA backends branch on XDG_SESSION_TYPE/XDG_CURRENT_DESKTOP,
+        # --setenv of the display trio alone silently picked the wrong
+        # (x11) path on arch and global shortcuts stopped arriving.
+        self.ses(
+            "systemd-run --user --collect --unit=traduku-e2e.service "
+            "sh -c '. /tmp/session.env; exec /usr/bin/traduku'")
+
     def ses(self, script, timeout=120):
         """Run a snippet inside the captured graphical session."""
         return self.run(f"source /tmp/session.env; {script}", timeout=timeout)
