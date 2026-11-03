@@ -78,7 +78,10 @@ private slots:
         QVERIFY(!m_server.m_requests.isEmpty());
         const QByteArray &raw = m_server.m_requests.last();
         QVERIFY(raw.contains("POST /v1/chat/completions HTTP/1.1"));
-        QVERIFY(raw.contains("Authorization: Bearer sekrit"));
+        // HTTP field names are case-insensitive (RFC 7230); Qt 6.8 normalises
+        // them to lowercase, Qt 6.12 keeps the submitted case — assert on the wire,
+        // not on the case of the encoder.
+        QVERIFY(raw.toLower().contains("authorization: bearer sekrit"));
         QVERIFY(raw.contains("\"stream\":true"));
         QVERIFY(raw.contains("\"model\":\"test-model\""));
         QVERIFY(raw.contains("translate me"));
@@ -91,7 +94,7 @@ private slots:
         QSignalSpy done(&c, &LlmStreamClient::completed);
         c.send(request());
         QVERIFY(done.wait(5000));
-        QVERIFY(!m_server.m_requests.last().contains("Authorization"));
+        QVERIFY(!m_server.m_requests.last().toLower().contains("authorization"));
     }
 
     void trailingSlashInBaseUrl()
