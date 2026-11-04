@@ -42,13 +42,44 @@
 | Qt6/KF6 dev | не установлены | §8 |
 | qemu на хосте | нет; docker есть; `~/vms` пуст (мы в Ubuntu, грид жил на Arch-стороне) | грид поднимается заново: `vmctl.sh up` + `mkvm` |
 
-Неубедительно и **не** принято как факт: попытки прочитать буфер из фонового
-GTK3-клиента (`request_text`, `wait_for_text`, несколько вариантов, включая
-клиент, который сам только что записал текст) вернули `None` — но и
-«фокусный» GTK-клиент вернул `None`, то есть подозрение на сам GTK-спайк, а
-не на муттер. Вопрос «можно ли читать буфер на GNOME Wayland без фокуса»
-закрывается Qt-спайком Stage 0 (§9), а не догадками: от него зависит, какой
-из путей D2 становится основным.
+### 0b. Результаты Stage 0 (замерено 2026-11-04, `tools/spike/`)
+
+**Буфер на GNOME 50 Wayland — вопрос закрыт** (`clip-spike probe`, в буфере
+лежал реальный текст, скопированный пользователем из браузера):
+
+| путь | результат | что значит |
+|---|---|---|
+| A `QClipboard::text()` из фонового wayland-клиента | **ПУСТО** (251 мс) | Qt-путь на муттере для фонового приложения мёртв |
+| B то же после `show()+requestActivate()` | **ПУСТО** (351 мс) | фон не получает фокус → focus-window трюк бесполезен |
+| C `wl-paste` / `wl-paste -l` | **OK**, 13–18 мс, типы `text/plain text/plain;charset=utf-8 STRING TEXT` | **`WlClipboard` (уже есть в дереве) работает на GNOME** |
+| C2 `wl-copy` из фона | **OK** — selection принадлежит фоновому процессу | запись результата тоже работает без фокуса |
+| E `XConvertSelection` (raw Xlib к XWayland `:0`) | **OK**, 10 мс | запасной путь без внешних пакетов |
+| D Qt на `QT_QPA_PLATFORM=xcb` | **OK** (A и B работают) | XWayland-клиент читает буфер из фона — X11-семантика |
+
+Отсюда D2 решается без расширения Shell и без focus-трюка: **основной
+`WlClipboard` + `wl-clipboard` в зависимостях, `X11Clipboard` как запас, к
+фоновому чтению `QClipboard` на wayland не возвращаемся**.
+
+**Портал GlobalShortcuts — для нас закрыт** (`portal-spike check`, все
+попытки: `CreateSession` → `GDBus.Error.org.freedesktop.portal.Error.NotAllowed:
+An app id is required`):
+
+| попытка | итог |
+|---|---|
+| 1. вызов «как есть» | FAIL (app id is required) |
+| 2. + владение именем `dev.traduku.Traduku` и экспорт `org.freedesktop.Application.ApplicationId` | FAIL |
+| 3. + `app_id` в options вызова | FAIL |
+| 4. + установленный `dev.traduku.Traduku.desktop` | FAIL |
+| 5. + запуск настоящего приложения через `gio launch` (cgroup `app-…`, как у нормальных приложений) | FAIL |
+
+Вывод: `xdg-desktop-portal` 1.21.1 + `xdg-desktop-portal-gnome` 50 даёт
+GlobalShortcuts только **sandboxed** вызывающим (flatpak/snap). Правило
+решения 3 сработало: **`GsettingsGlobalShortcut` пишем сразу**, портал —
+отдельная ветка «если когда-нибудь разблокируют» (пере-проверить спайком).
+
+**evdev — ждёт разрешения**: 24 устройства `/dev/input/event*`, все
+`Permission denied` (группы `input` нет). Команды и повторный прогон —
+`./tools/spike/stage0.sh`.
 
 ---
 
@@ -103,28 +134,28 @@ native keycode).
 **Кандидат 2: XI2 passive (есть)** — работает только на X11-сессиях;
 держим ради старых ОС и X11-джоба в матрице (решение 1b).
 
-**Кандидат 3 (без спецправ, но не Ctrl+C+C): `PortalGlobalShortcut`.**
-`CreateSession` → `BindShortcuts([{id:"translate", description,
-preferred_trigger:"<Alt>Ctrl+c"}], parent_window, {})` → диалог
-согласования → `Activated`/`Deactivated` → `ShortcutMonitor` →
-`DoublePressDetector`. Реализация на `QDBusInterface`, имя сервиса и путь
-**инжектируются** (как `ToolFinder` в `WlClipboard`) — иначе тест не
-подделать. `ListShortcuts()` при старте, чтобы не показывать диалог
-повторно. Спайк Stage 0 обязан ответить: пускает ли gnome-impl не-sandboxed
-приложение, нужен ли установленный `traduku.desktop`, что в `options`
-(`activation_token`?), какая `version` интерфейса.
+**Кандидат 3 (без спецправ, но не Ctrl+C+C): `PortalGlobalShortcut` —
+заблокирован на этом стеке** (замеры в §0b): `CreateSession` отвечает
+`portal.Error.NotAllowed: An app id is required`, а идентичность
+`xdg-desktop-portal` 1.21.1 выдаёт только sandboxed-вызывающим (не помогли ни
+имя на шине с `org.freedesktop.Application`, ни `app_id` в options, ни
+`.desktop`, ни запуск через `gio launch`). Реализацию по спецификации
+(`CreateSession` → `BindShortcuts` → `Activated`/`Deactivated` →
+`ShortcutMonitor`) держим под `-DLT_PORTAL_SHORTCUT=OFF` по умолчанию и
+пере-проверяем спайком на более новом стеке; имя сервиса и путь при этом
+инжектируются (как `ToolFinder` в `WlClipboard`), чтобы фейковый портал в
+тестах был возможен.
 
-**Кандидат 4 (последний): `GsettingsGlobalShortcut`.** Пишет
+**Кандидат 4 (последний по списку, но основной запасной путь): 
+`GsettingsGlobalShortcut` — пишем СРАЗУ** (правило решения 3 сработало:
+портал не подтверждён). Пишет
 `org.gnome.settings-daemon.plugins.media-keys custom-keybindings` +
 `…/custom0/{name,command,binding}`, `command=gdbus call --session -d
 dev.traduku.Traduku -o /dev/traduku/Traduku -m
 dev.traduku.Traduku.gesturePressed`; каждое нажатие — вызов метода
 работающему экземпляру, пары режет тот же детектор. Раннер `gsettings`
 инжектируется, `unregister()` убирает binding. Работает и на Debian 13, и
-на Ubuntu 22.04. **Правило из решения 3:** пишем сразу, если спайк Stage 0
-показал портал нерабочим (нет диалога / `Invalid session` / требует
-sandboxed app_id / impl отсутствует в нужной версии); иначе — вместе с
-Debian 13 в матрице.
+на Ubuntu 22.04.
 
 **Кандидат 5 (опция, later):** расширение GNOME Shell, наблюдающее клавиши
 и отдающее буфер по D-Bus. Даёт Ctrl+C+C без группы `input` и решает D2, но
@@ -133,34 +164,35 @@ Debian 13 в матрице.
 
 ---
 
-## 3. D2 — буфер на GNOME Wayland (риск №1)
+## 3. D2 — буфер на GNOME Wayland (РЕШЕНО спайком Stage 0, §0b)
 
-Порядок, от дешёвого к дорогому; победителя определяет спайк Stage 0.
+Замерено на живой системе: фоновое чтение `QClipboard` на муттере не
+работает (A и B пустые, включая вариант с `show()+requestActivate()` —
+фон не получает фокус), а `wl-paste` читает за 13 мс, `XConvertSelection`
+через XWayland за 10 мс, и `wl-copy` из фона становится владельцем
+selection, т.е. запись результата тоже доступна.
 
-1. **Спайк (`tools/spike/clip-spike.cpp`).** Четыре способа замера, каждый
-   дважды (после Ctrl+C в gnome-text-editor и после `wl-copy`): фоновый
-   `QClipboard::text()`; то же после `show()+requestActivate()`; `wl-paste`
-   как дочерний процесс; X11-соединение к XWayland (`XConvertSelection`).
-   Критерий: непустой текст ≤200 мс.
-2. **`X11Clipboard` (`platform/x11`) — ожидаемый победитель.** Муттер
-   зеркалит wayland-буфер в XWayland, а X11-семантика не требует фокуса:
-   `XGetSelectionOwner`/`XConvertSelection` для чтения и
-   `XSetSelectionOwner` для записи. Этим же путём уже пользуются e2e-гейты
-   ветки `debian` (`xclip` на ubuntu-gnome). Подключение — к `:0` с
-   `XAUTHORITY` из `/proc/<Xwayland-pid>/environ` (тот же приём, что у
-   `capture_sessionenv`). Авторизацию и пути инжектируем; юнит-тесты — на
-   слое разбора MIME/charset (общий с `WlClipboard`), интеграционный — под
-   реальным X, с `SKIP` без `DISPLAY`.
-3. **Focus-window трюк** (если XWayland недоступен): жест показывает окно,
-   чтение откладывается до `QClipboard::dataChanged` с таймаутом 300 мс;
-   при таймауте — честное уведомление «нет доступа к буферу».
-4. **Расширение Shell** (кандидат 5 из D1) — если 2 и 3 не сработали.
-5. `WlClipboard` (wl-clipboard) остаётся для композиторов с
-   `ext-data-control` (KWin, Hyprland); на муттере он не помогает — муттер
-   протокол не реализует.
+Итоговый порядок в `ClipboardFactory`:
 
-Запись результата (`CopyResult`) идёт тем же каналом, что и чтение; на
-Wayland-клиенте — через активированное окно (`QClipboard::setText`).
+1. **`WlClipboard` — уже есть в дереве**, wayland + `wl-clipboard`.
+   `wl-clipboard` в `Recommends` пакета и отдельная строка в README
+   («на GNOME нужен wl-clipboard»). Проверить, что KDE-специфичная ветка
+   `org.kde.KClipboard` не затеняет этот путь на GNOME.
+2. **`X11Clipboard` (`platform/x11`)** — запас, когда `wl-clipboard`
+   отсутствует, а XWayland есть: `XGetSelectionOwner`/`XConvertSelection`
+   для чтения, `XSetSelectionOwner` + ответ на `SelectionRequest` для
+   записи; `XAUTHORITY` из `/proc/<Xwayland-pid>/environ` (приём обкатан в
+   `clip-spike`). Разбор MIME/charset — общий с `WlClipboard` (спайк
+   показал реальный набор типов: `text/plain`, `text/plain;charset=utf-8`,
+   `STRING`, `TEXT`, `UTF8_STRING`, `SAVE_TARGETS`, `TIMESTAMP`).
+3. `QtClipboard` — X11-сессии (там он работает) и последний шанс; на
+   wayland-клиенте фонового чтения от него ждать нечего.
+4. Расширение Shell — в резерве только на случай системы без
+   `wl-clipboard` и без XWayland.
+
+Focus-window трюк из плана **исключён**: замер B показал, что фоновое
+приложение не получает фокус, значит трюк ничего не даёт, а фокус-кражу
+пользователь бы заметил.
 
 ---
 
@@ -282,13 +314,20 @@ up && ./tools/vms/vmctl.sh mkvm ubuntu-kde ubuntu kde && …`. Отдельны�
 
 ## 9. Этапы (каждый = зелёный `ctest` + коммит; «руками» = проверка у вас)
 
-**Stage 0 — спайки и замеры (без продуктового кода).**
-`tools/spike/clip-spike.cpp` (D2.1), `tools/spike/portal-spike.py`
-(GlobalShortcuts: диалог? `Activated`/`Deactivated`, `timestamp`, нужна ли
-sandboxed-идентичность), `tools/spike/evdev-spike.cpp` (Ctrl+C+C из
-`/dev/input` после выдачи группы). Результат — таблица в этом файле и
-решения: победитель D2, «писать ли gsettings сразу» (правило D1-B).
-*Документировать в §0/§9.*
+**Stage 0 — спайки и замеры. Частично готово (2026-11-04).**
+Сделано и задокументировано в §0b: `tools/spike/clip-spike.cpp` (пути
+чтения/записи буфера, A–E), `tools/spike/portal-spike.py` (идентичность для
+портала, лестница из 5 попыток + запуск как настоящего приложения),
+`tools/spike/evdev-spike.cpp` (инвентаризация `/dev/input`, слушатель
+клавиш), `tools/spike/stage0.sh` (полевая прогонка «одной командой»),
+подключение в CMake (`-DLT_BUILD_SPIKES`, по умолчанию ON, в ctest не
+лезет). Решения, которые они дали: D2 = `WlClipboard` + `X11Clipboard`
+(focus-трюк исключён), D1-B/C = портал заблокирован → gsettings пишем
+сразу.
+Осталось в Stage 0: (а) `evdev-spike listen` после `sudo usermod -aG input
+$USER` или `sudo setfacl -R -m u:$USER:rw /dev/input/event*` — проверить,
+что Ctrl+C+C детектируется и не ломает копирование; (б) тот же прогон на
+гридной VM (QMP-клавиши должны прийти в `/dev/input`).
 
 **Stage 1 — каркас GNOME-оболочки.** `app/cli.*` (вынести парсер из
 `app/kde/main.cpp`, поведение KDE не меняется), `app/gnome/main.cpp`,
