@@ -22,6 +22,11 @@ for t in "$BIN/evdev-spike" "$BIN/clip-spike"; do
   [ -x "$t" ] || { say "missing $t - cmake --build build"; exit 1; }
 done
 
+say "== 0) gesture logic (the REAL core/DoublePressDetector) ============"
+say "   no device access needed; the same object Stage 3 will use"
+"$BIN"/evdev-spike selftest 2>&1 | tee -a "$LOG"
+say ""
+
 say "== 1) keyboards in /dev/input ======================================"
 "$BIN/evdev-spike" list | tee -a "$LOG"
 ev_rc=${PIPESTATUS[0]}

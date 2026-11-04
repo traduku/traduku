@@ -30,6 +30,8 @@
 #include <cstring>
 #include <vector>
 
+#include "core/doublepressdetector.h"
+
 #include <sys/epoll.h>
 #include <sys/ioctl.h>
 #include <unistd.h>
@@ -145,46 +147,155 @@ void reportInventory(const std::vector<Device> &devices)
     }
 }
 
-/// Ctrl state machine + pair detection, mirroring core/DoublePressDetector
-/// (the spike deliberately re-implements it: Stage 0 must not depend on
-/// product code, and the real backend will reuse the tested detector).
-struct Gesture {
-    double intervalMs = 800;
-    bool ctrl = false;
-    QElapsedTimer sincePress;
-    bool armed = false;
-
-    bool press(unsigned short code)
-    {
-        if (code == KEY_LEFTCTRL || code == KEY_RIGHTCTRL) {
-            ctrl = true;
-            return false;
-        }
-        if (code != KEY_C) {
-            return false;
-        }
-        if (!ctrl) {
-            armed = false;
-            return false;
-        }
-        if (armed && sincePress.isValid() && sincePress.elapsed() <= intervalMs) {
-            armed = false;
-            return true;                       // the second Ctrl+C within the window
-        }
-        armed = true;
-        sincePress.restart();
+/// evdev keycode -> the identifiers DoublePressDetector is configured with.
+/// The detector is shared with the X11 backend and unit-tested
+/// (tests/unit/tst_doublepressdetector.cpp); Stage 3's EvdevHotkeyBackend
+/// feeds it the same way, so the spike drives THE REAL algorithm instead
+/// of a throwaway copy - which matters: the first copy of this file had a
+/// state machine that could never fire (it cleared the pending press on the
+/// C release, and the two taps always release C in between).
+bool mapKey(unsigned short code, quint32 &id, quint32 &nativeCode)
+{
+    switch (code) {
+    case KEY_LEFTCTRL:
+        id = lt::KeyCtrlL; nativeCode = 0; return true;
+    case KEY_RIGHTCTRL:
+        id = lt::KeyCtrlR; nativeCode = 0; return true;
+    case KEY_C:
+        // evdev codes are already layout-independent, which is what the
+        // detector's native-code path exists for.
+        id = lt::KeyC; nativeCode = lt::KeyNativeC; return true;
+    default:
         return false;
     }
-    void release(unsigned short code)
+}
+
+/// Feed scripted events through the real detector with a controllable
+/// clock - proves the gesture logic without anyone's fingers (the kernel
+/// path is covered by `listen`, the VM grid uses QMP send-keys).
+int selftest()
+{
+    int failures = 0;
+    struct Script {
+        const char *name;
+        int expectedFires;
+        // (evdev code, value) pairs; value 0 = release, 1 = press,
+        // 2 = autorepeat (delivered as a press, the detector must collapse)
+        std::vector<std::pair<unsigned short, int>> events;
+        std::vector<qint64> gaps;          // ms advanced after each event
+    };
+    const auto chord = [](std::vector<std::pair<unsigned short, int>> &ev,
+                          std::vector<qint64> &gaps, qint64 beforeChord) {
+        if (beforeChord) {
+            gaps.push_back(beforeChord);
+            ev.push_back({0, 0});                 // time-only step
+        }
+        ev.insert(ev.end(), {{KEY_LEFTCTRL, 1}, {KEY_C, 1}, {KEY_C, 0}, {KEY_LEFTCTRL, 0}});
+        for (int i = 0; i < 4; ++i) {
+            gaps.push_back(20);
+        }
+    };
+
+    std::vector<Script> scripts;
     {
-        if (code == KEY_LEFTCTRL || code == KEY_RIGHTCTRL) {
-            ctrl = false;
-        }
-        if (code == KEY_C) {
-            armed = false;   // the two presses must be separate taps
-        }
+        Script s{ "single chord does not fire", 0, {}, {} };
+        chord(s.events, s.gaps, 0);
+        scripts.push_back(s);
     }
-};
+    {
+        Script s{ "two chords = one gesture", 1, {}, {} };
+        chord(s.events, s.gaps, 0);
+        chord(s.events, s.gaps, 200);
+        scripts.push_back(s);
+    }
+    {
+        Script s{ "chords outside the 500 ms window do not fire", 0, {}, {} };
+        chord(s.events, s.gaps, 0);
+        chord(s.events, s.gaps, 900);
+        scripts.push_back(s);
+    }
+    {
+        Script s{ "right ctrl also works", 1, {}, {} };
+        chord(s.events, s.gaps, 0);
+        chord(s.events, s.gaps, 200);
+        // the second chord is held with the RIGHT ctrl
+        s.events[s.events.size() - 4] = { KEY_RIGHTCTRL, 1 };
+        s.events[s.events.size() - 1] = { KEY_RIGHTCTRL, 0 };
+        scripts.push_back(s);
+    }
+    {
+        Script s{ "typing c without ctrl never fires", 0, {}, {} };
+        for (int i = 0; i < 4; ++i) {
+            s.events.push_back({ KEY_C, 1 });
+            s.gaps.push_back(30);
+            s.events.push_back({ KEY_C, 0 });
+            s.gaps.push_back(30);
+        }
+        scripts.push_back(s);
+    }
+    {
+        Script s{ "ctrl alone never fires", 0, {}, {} };
+        for (int i = 0; i < 3; ++i) {
+            s.events.push_back({ KEY_LEFTCTRL, 1 });
+            s.gaps.push_back(40);
+            s.events.push_back({ KEY_LEFTCTRL, 0 });
+            s.gaps.push_back(40);
+        }
+        scripts.push_back(s);
+    }
+    {
+        // held Ctrl, C hammered by key repeat, released, repeated once more
+        Script s{ "auto-repeat collapses into one press", 1, {}, {} };
+        s.events.push_back({ KEY_LEFTCTRL, 1 });
+        s.gaps.push_back(20);
+        for (int round = 0; round < 2; ++round) {
+            s.events.push_back({ KEY_C, 1 });
+            s.gaps.push_back(15);
+            for (int r = 0; r < 5; ++r) {
+                s.events.push_back({ KEY_C, 2 });
+                s.gaps.push_back(30);
+            }
+            s.events.push_back({ KEY_C, 0 });
+            s.gaps.push_back(round == 0 ? 150 : 20);
+        }
+        s.events.push_back({ KEY_LEFTCTRL, 0 });
+        s.gaps.push_back(20);
+        scripts.push_back(s);
+    }
+
+    for (Script &s : scripts) {
+        qint64 now = 1000;
+        int fires = 0;
+        lt::DoublePressDetector det;
+        det.setIntervalMs(500);
+        det.setClock([&now]() { return now; });
+        QObject::connect(&det, &lt::DoublePressDetector::activated,
+                         [&fires]() { ++fires; });
+        for (size_t i = 0; i < s.events.size(); ++i) {
+            const auto [code, value] = s.events[i];
+            if (code != 0) {
+                quint32 id = 0, native = 0;
+                if (mapKey(code, id, native)) {
+                    det.keyEvent(value == 0 ? lt::DoublePressDetector::Release
+                                            : lt::DoublePressDetector::Press,
+                                 id, native);
+                }
+            }
+            now += i < s.gaps.size() ? s.gaps[i] : 0;
+        }
+        const bool ok = (fires == s.expectedFires);
+        if (!ok) {
+            ++failures;
+        }
+        say(QStringLiteral("  %1 %2 (expected %3 gesture(s), got %4)\n")
+                .arg(ok ? QStringLiteral("PASS") : QStringLiteral("FAIL"),
+                     QString::fromUtf8(s.name).leftJustified(42))
+                .arg(s.expectedFires).arg(fires));
+    }
+    say(QStringLiteral("selftest: %1 script(s), %2 failed\n")
+            .arg(scripts.size()).arg(failures));
+    return failures == 0 ? 0 : 1;
+}
 
 int listen(std::vector<Device> devices, int seconds)
 {
@@ -222,10 +333,18 @@ int listen(std::vector<Device> devices, int seconds)
     say(QStringLiteral("listening %1 s — press Ctrl+C twice now "
                        "(each press separately, Ctrl held)\n").arg(seconds));
 
-    Gesture g;
+    // THE product detector - Stage 3 wires this same object to these same
+    // events, so what `listen` proves here is the shipping logic.
+    lt::DoublePressDetector det;
+    det.setIntervalMs(800);
+    int gestures = 0;
     QElapsedTimer total;
     total.start();
-    int gestures = 0, presses = 0;
+    QObject::connect(&det, &lt::DoublePressDetector::activated, [&]() {
+        ++gestures;
+        say(QStringLiteral("  ==> GESTURE Ctrl+C+C detected (%1ms)\n").arg(total.elapsed()));
+    });
+    int presses = 0;
     while (total.elapsed() < seconds * 1000) {
         epoll_event events[8];
         const int n = epoll_wait(ep, events, 8, 200);
@@ -237,20 +356,22 @@ int listen(std::vector<Device> devices, int seconds)
                 if (ev.type != EV_KEY) {
                     continue;
                 }
-                if (ev.value == 1) {
+                quint32 id = 0, native = 0;
+                if (!mapKey(ev.code, id, native)) {
+                    continue;
+                }
+                if (ev.value != 0) {
                     ++presses;
                     if (ev.code == KEY_C) {
                         say(QStringLiteral("  press Ctrl+C (keycode %1, fd %2, t=%3ms)\n")
                                 .arg(ev.code).arg(events[i].data.fd).arg(total.elapsed()));
                     }
-                    if (g.press(ev.code)) {
-                        ++gestures;
-                        say(QStringLiteral("  ==> GESTURE Ctrl+C+C detected (%1ms)\n")
-                                .arg(total.elapsed()));
-                    }
-                } else if (ev.value == 0) {
-                    g.release(ev.code);
                 }
+                // value 2 (autorepeat) is fed as a press on purpose: the
+                // detector must collapse it, exactly as it does for X11.
+                det.keyEvent(ev.value == 0 ? lt::DoublePressDetector::Release
+                                           : lt::DoublePressDetector::Press,
+                             id, native);
             }
         }
     }
@@ -271,12 +392,18 @@ int main(int argc, char **argv)
     QCommandLineParser parser;
     parser.addHelpOption();
     parser.addPositionalArgument(QStringLiteral("mode"),
-                                 QStringLiteral("list | listen [seconds]"),
-                                 QStringLiteral("[list|listen] [seconds]"));
+                                 QStringLiteral("list | listen [seconds] | selftest"),
+                                 QStringLiteral("[list|listen|selftest] [seconds]"));
     parser.process(app);
 
     const QStringList args = parser.positionalArguments();
     const QString mode = args.value(0, QStringLiteral("list"));
+
+    // no device access needed, runs anywhere
+    if (mode == QLatin1String("selftest")) {
+        return selftest();
+    }
+
     auto devices = scan();
     reportInventory(devices);
 
