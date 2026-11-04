@@ -16,7 +16,9 @@ if(PkgConfig_FOUND)
     endif()
 endif()
 
-add_executable(evdev-spike evdev-spike.cpp)
+add_executable(evdev-spike evdev-spike.cpp
+    ${CMAKE_SOURCE_DIR}/src/core/doublepressdetector.cpp)
+target_include_directories(evdev-spike PRIVATE ${CMAKE_SOURCE_DIR}/src)
 target_link_libraries(evdev-spike PRIVATE Qt6::Core)
 set_target_properties(evdev-spike PROPERTIES
     RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)

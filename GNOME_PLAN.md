@@ -77,9 +77,26 @@ GlobalShortcuts только **sandboxed** вызывающим (flatpak/snap). 
 решения 3 сработало: **`GsettingsGlobalShortcut` пишем сразу**, портал —
 отдельная ветка «если когда-нибудь разблокируют» (пере-проверить спайком).
 
-**evdev — ждёт разрешения**: 24 устройства `/dev/input/event*`, все
-`Permission denied` (группы `input` нет). Команды и повторный прогон —
-`./tools/spike/stage0.sh`.
+**evdev — працює через uaccess (виміряно).** Після
+`packaging/udev/70-traduku-uaccess.rules` + `udevadm trigger --action=add`:
+`24 readable, 1 keyboard-capable, 0 permission-denied` — клавіатура
+`Chicony USB Wireless Keyboard` впізнана, миша MX Master відсіяна, вихід 0.
+По дорозі спливли два **власні** баги спайка, обидва релевантні Stage 3:
+
+1. `EVIOCGBIT` повертає **кількість скопійованих байтів** (8/96), а не 0 —
+   порівняння `== 0` вимикало детекцію клавіатури для всіх пристроїв, а
+   інструмент брехав «no readable keyboard» при робочих правах.
+2. Власна копія state-machine скидала pending-прес на релізі `KEY_C` — а
+   між двома тапами C завжди відпускають, тобто жест **не міг спрацювати
+   ніколи**.
+
+Тому `evdev-spike` тепер юзає **справжній** `core/DoublePressDetector`
+(той самий, що й X11-бекенд, з 11 юніт-тестами) — Stage 3 підключатиме
+його до тих самих подій, тож спайк перевіряє код, який поїде в прод.
+`./build/bin/evdev-spike selftest` проганяє через нього 7 скриптів
+(single / double / поза вікном / правий Ctrl / набір без Ctrl / сам Ctrl /
+auto-repeat) — 7/7. Залишився лише живий прогін `listen` (пальці); у CI це
+закриє `test_09_gesture_evdev` з QMP-клавішами.
 
 ---
 
@@ -339,10 +356,10 @@ up && ./tools/vms/vmctl.sh mkvm ubuntu-kde ubuntu kde && …`. Отдельны�
 лезет). Решения, которые они дали: D2 = `WlClipboard` + `X11Clipboard`
 (focus-трюк исключён), D1-B/C = портал заблокирован → gsettings пишем
 сразу.
-Осталось в Stage 0: (а) `evdev-spike listen` после установки правила
-`packaging/udev/70-traduku-uaccess.rules` (uaccess, см. D1) — проверить,
-что Ctrl+C+C детектируется и не ломает копирование; (б) тот же прогон на
-гридной VM (QMP-клавиши должны прийти в `/dev/input`).
+Осталось в Stage 0: живий прогін `./build/bin/evdev-spike listen 25`
+(права вже є, детекцію виправлено) — переконатись, що Ctrl+C+C
+детектується і копіювання не ламається; потім той самий сценарій на
+гридній VM через QMP (`test_09_gesture_evdev`).
 
 **Stage 1 — каркас GNOME-оболочки.** `app/cli.*` (вынести парсер из
 `app/kde/main.cpp`, поведение KDE не меняется), `app/gnome/main.cpp`,
