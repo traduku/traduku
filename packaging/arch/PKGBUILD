@@ -12,7 +12,8 @@ depends=('qt6-base' 'qt6-multimedia' 'qt6-5compat'
          'kstatusnotifieritem' 'knotifications' 'kglobalaccel'
          'kdbusaddons' 'libx11' 'libxi' 'libxtst')
 makedepends=('cmake' 'ninja')
-optdepends=('wl-clipboard: clipboard access on pure Wayland')
+optdepends=('wl-clipboard: clipboard access on Wayland (required on GNOME, Plasma usually has org.kde.KClipboard)'
+            'gnome-shell-extension-appindicator: tray icon on GNOME')
 source=("traduku-${pkgver}.tar.gz")
 sha256sums=('SKIP')
 

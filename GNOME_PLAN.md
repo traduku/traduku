@@ -36,7 +36,7 @@
 | `org.freedesktop.portal.GlobalShortcuts` | реализован в `xdg-desktop-portal-gnome` 50.0 (front-door + impl-интерфейс на шине) | запасной жест без спецправ; `Activated`/`Deactivated` = press/release |
 | `org.freedesktop.portal.Clipboard` | есть, но по спецификации работает **только над сессиями RemoteDesktop/InputCapture** | для чтения буфера обычным приложением не годится |
 | `org.gnome.Mutter.Clipboard` | **нет** на шине | готового «прочитай буфер из фона» API в GNOME 50 нет |
-| `/dev/input/event*` | `crw-rw---- root:input`; группы `input` у пользователя **нет** | evdev-жест требует `usermod -aG input` (или ACL) — см. D1 |
+| `/dev/input/event*` | `crw-rw---- root:input`; группы `input` у пользователя **нет** | evdev-жест требует ACL; правильный путь — udev `uaccess` (проверено, см. D1), а не группа |
 | `org.gnome.SettingsDaemon.MediaKeys` | есть, `custom-keybindings` пуст | gsettings-fallback возможен |
 | `wl-clipboard`, `xclip` | не установлены | Stage 0 их ставит: без них `WlClipboard` недоступен |
 | Qt6/KF6 dev | не установлены | §8 |
@@ -115,9 +115,19 @@ grabs и инъекций → копирование пользователем 
 раскладка не важна (та же дисциплина, что у XI2-бэкенда, где мы сверяем
 native keycode).
 
-* Цена: пользователю нужна группа `input` (`sudo usermod -aG input $USER`,
-  как у `input-remapper`/`keyd`) — это «может читать все клавиатуры»
-  разрешение, оно **оп-ин** и обязано быть описано в README и в `--help`.
+* Цена: нужен доступ к `/dev/input/event*`. **Не группа `input`** (она даёт
+  умение читать клавиатуру вообще всем программам аккаунта; в Arch-сообществе
+  это называют «a sledgehammer to insert a pushpin» и советуют uaccess).
+  Правильный механизм — правило udev с `TAG+="uaccess"`: udevd+logind выдают
+  ACL **только активной seat-сессии**. Проверено на этой машине: systemd 259,
+  `getfacl /dev/video0` показывает `user:user:rw-` (механизм работает), а
+  дистрибутивный `/usr/lib/udev/rules.d/70-uaccess.rules` тегает джойстики,
+  но **не клавиатуры** — потому их и не прочитать. Наше правило
+  (`packaging/udev/99-traduku-uaccess.rules`) валидировано без root:
+  `udevadm test --extra-rules-dir=<dir> $(udevadm info -q path -n
+  /dev/input/event3)` → `TAGS=:uaccess:...`. Ставит его пользователь сам
+  (или `traduku --grant-keyboard-access`, Stage 3): наблюдать клавиатуру —
+  приватное решение, в `/etc` из пакета оно не едет.
 * Дизайн (по образцу `X11HotkeyBackend`): рабочий поток, `QSocketNotifier`
   на каждый fd, точка входа `feedEvent(type, code, value)` для тестов,
   `DeviceFinder`-функтор вместо реального сканирования `/dev/input`
@@ -301,8 +311,12 @@ cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DLT_SHELL=gnome
 cmake --build build && ctest --test-dir build --output-on-failure
 ./build/bin/traduku --backend-info
 
-# жест через /dev/input (решение 1): группа input + перелогин
-sudo usermod -aG input $USER   # затем выйти/войти; проверка: getent group input
+# жест через /dev/input: правило udev (НЕ группа input, см. D1)
+sudo install -Dm644 packaging/udev/99-traduku-uaccess.rules \
+     /etc/udev/rules.d/99-traduku-uaccess.rules
+sudo udevadm control --reload && sudo udevadm trigger --subsystem-match=input
+getfacl /dev/input/event3        # должно появиться user:user:rw-
+./build/bin/evdev-spike listen 20
 ```
 
 Грид (docker уже есть): `./tools/vms/setup-ctr.sh && ./tools/vms/vmctl.sh
@@ -324,8 +338,8 @@ up && ./tools/vms/vmctl.sh mkvm ubuntu-kde ubuntu kde && …`. Отдельны�
 лезет). Решения, которые они дали: D2 = `WlClipboard` + `X11Clipboard`
 (focus-трюк исключён), D1-B/C = портал заблокирован → gsettings пишем
 сразу.
-Осталось в Stage 0: (а) `evdev-spike listen` после `sudo usermod -aG input
-$USER` или `sudo setfacl -R -m u:$USER:rw /dev/input/event*` — проверить,
+Осталось в Stage 0: (а) `evdev-spike listen` после установки правила
+`packaging/udev/99-traduku-uaccess.rules` (uaccess, см. D1) — проверить,
 что Ctrl+C+C детектируется и не ломает копирование; (б) тот же прогон на
 гридной VM (QMP-клавиши должны прийти в `/dev/input`).
 
@@ -392,9 +406,10 @@ wl-clipboard`, `Suggests: xdg-desktop-portal-gnome`; README: таблица «ч
 
 ## 10. Открытые вопросы
 
-1. evdev = группа `input` (умение читать все клавиатуры). Ок как
-   рекомендуемый путь с явным предупреждением, или делать его опцией
-   конфига по умолчанию `false`?
+1. evdev = доступ к `/dev/input` через uaccess-правило (умение читать
+   клавиатуру активным пользователем сессии). Ок как рекомендуемый путь с
+   явным предупреждением, или делать его опцией конфига по умолчанию
+   `false`?
 2. Если спайк покажет, что фоновое чтение буфера на муттере невозможно, а
    XWayland-мост работает — устраивает ли зависимость GNOME-версии от
    XWayland (на системах с выключенным XWayland буфер не читается)?

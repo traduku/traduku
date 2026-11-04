@@ -2,10 +2,13 @@
 
 #include <QClipboard>
 
+#include <utility>
+
 namespace lt {
 
-QtClipboard::QtClipboard(QClipboard *clipboard)
+QtClipboard::QtClipboard(QClipboard *clipboard, QString diagnostic)
     : m_clipboard(clipboard)
+    , m_diagnostic(std::move(diagnostic))
 {
 }
 
