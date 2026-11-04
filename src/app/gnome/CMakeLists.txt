@@ -12,7 +12,8 @@ add_executable(traduku main.cpp)
 target_compile_definitions(traduku PRIVATE LT_VERSION="${PROJECT_VERSION}")
 target_link_libraries(traduku PRIVATE
     lt::app lt::ui lt::core lt::interfaces
-    lt::platform_qt lt::platform_wl lt::platform_fdo)
+    lt::platform_qt lt::platform_wl lt::platform_fdo
+    lt::platform_evdev)
 
 install(TARGETS traduku RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
 # A GNOME-specific .desktop: the one at the repo root carries KDE-only keys

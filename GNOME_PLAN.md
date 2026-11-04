@@ -445,13 +445,44 @@ up && ./tools/vms/vmctl.sh mkvm ubuntu-kde ubuntu kde && …`. Отдельны�
 перевіряє single-instance до будь-чого іншого і відмовляється стартувати
 без ґесту ( Stage 3).
 
-**Stage 3 — жест (D1).** `EvdevHotkeyBackend` (юнит: `feedEvent` +
-инжектируемый `DeviceFinder`, интервал из `Settings`, горячее подключение
-устройства), `GestureService` + `GsettingsGlobalShortcut`
-(инжектируемый `gsettings`-раннер), `PortalGlobalShortcut` (фейковый портал
-на сессионной шине под инжектируемым именем). *Руками:* Ctrl+C+C на
-Ubuntu GNOME; одиночное нажатие не срабатывает; ru-раскладка; без группы
-`input` — понятное сообщение и работа через портал.
+**Stage 3 — жест (D1). ЧАСТКОВО: primary-шлях готовий, fallback попереду.**
+
+Готово (`808825e..`):
+* `src/platform/evdev/DeviceFinder.{h,cpp}` — причесний пошук клавіатур
+  (`/dev/input/event*`, `EVIOCGBIT`; той самий `>= 0`, не `== 0`) як
+  **інтерфейс**, щоб бекенд тестувався без `/dev` (CI не має uaccess-правав і
+  не повинен їх вимагати) і щоб `--backend-info` юзив той самий пробник.
+  `describeKeyboardAccess()` + `keyboardAccessFixHint()` — єдине джерело
+  підказки про правило (бо «Permission denied» ще нікого нічому не навчило).
+* `src/platform/evdev/EvdevHotkeyBackend.{h,cpp}` — `IHotkeyBackend`:
+  epoll-подібне читання через `QSocketNotifier`, `feedBytes()` як тестовий
+  шов + парсер сирих `input_event` (буферизує неповний запис), `rescan()` для
+  hot-plug (клавіатуру можна воткнути після старту; зниклу — закриваємо),
+  `setClock()` для точної перевірки вікна. Уся логіка жесту — у
+  `core/DoublePressDetector`, той самий, що в X11-бекенда.
+  `tst_evdevhotkey`: 14 кейсів (подвійний тап, тап порізно, автоповтор,
+  правий Ctrl, шум не-клавіш, межа вікна по інжектеному годиннику,
+  `start()` без прав => текст з іменем правила, відкрити всі придатні,
+  hot-plug, від'єднання, реальний `write()` у pipe).
+* `src/app/gnome/main.cpp` — режим трея нарешті збирається й працює:
+  `SingleInstance` → `createGesture()` → `AppController` + `FdoNotifier` +
+  `WlClipboard` + `TranslatorWindow`; `Ctrl+Q` виходить; без ґесту —
+  відмова з `--backend-info` у виводі (краще відмова, ніж глухий застосунок).
+  `--backend-info` на живій машині:
+  `gesture: evdev /dev/input/event*`, `hotkey evdev: chosen (1 keyboard(s))`,
+  `notifier: fdo`; другий примірник → `Traduku is already running`.
+
+Попереду (Stage 3B): `GsettingsGlobalShortcut` (інжектируемий
+gsettings-раннер) + `--trigger` як єдиний chord, який парыться
+`ShortcutMonitor`-ом; `GestureService` на D-Bus — разом із Stage 6
+(перший запуск/розширення). `PortalGlobalShortcut` реалізовувати **не**
+буде, доки портал не розблокують (§0b: кожен виклик
+`portal.Error.NotAllowed: An app id is required`; фейковий портал у тесті
+доводив би лише те, що мій фейк поводиться як мій фейк).
+
+*Руками:* Ctrl+C+C у живій GNOME-сесії (пальцями операторa), одинарний
+`Ctrl+C` не повинен викликати переклад, і без ACL має бути зрозуміле
+повідомлення.
 
 **Stage 4 — буфер (D2).** `X11Clipboard` + приоритеты в `ClipboardFactory`.
 *Тесты:* разбор MIME/charset (общая таблица с `WlClipboard`), интеграционный

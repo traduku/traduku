@@ -14,18 +14,25 @@
 // 5) - refusing loudly beats starting an app that silently never reacts to
 // Ctrl+C+C.
 
+#include "app/AppController.h"
 #include "app/BackendInfo.h"
 #include "app/SelfTest.h"
 #include "app/SingleInstance.h"
 #include "app/cli.h"
+#include "core/chunkedtranslator.h"
 #include "core/settings.h"
+#include "core/soundplayer.h"
+#include "platform/wl/ClipboardFactory.h"
+#include "platform/wl/WlClipboard.h"
+#include "platform/evdev/EvdevHotkeyBackend.h"
 #include "platform/fdo/FdoNotifier.h"
 #include "platform/qt/SessionInfo.h"
-#include "platform/wl/WlClipboard.h"
-#include "platform/wl/ClipboardFactory.h"
+#include "ui/SettingsDialog.h"
+#include "ui/TranslatorWindow.h"
 
 #include <QApplication>
 #include <QDir>
+#include <QShortcut>
 #include <QElapsedTimer>
 #include <QGuiApplication>
 #include <QTextStream>
@@ -64,55 +71,39 @@ bool cliNeedsWidgets(const QStringList &argv)
     return true;                                       // no mode flag: tray mode
 }
 
-/// Can the keyboard be read for the /dev/input gesture? Empty answer means
-/// "nothing to complain about". Stage 3 moves this behind an injectable
-/// DeviceFinder in platform/evdev (unit-testable); it only ever opens nodes
-/// read-only, never EVIOCGRABs, so copying is never disturbed.
-QString inputAccessStatus()
+/// The gesture stack (GNOME_PLAN.md D1): /dev/input is the primary because
+/// it is the only channel that sees the literal Ctrl+C+C on Wayland. The
+/// gsettings shortcut fallback lands in the next commit; until then a box
+/// without keyboard ACLs has no gesture and the shell refuses to start
+/// rather than running deaf.
+struct GestureSetup
 {
-    QDir dir(QStringLiteral("/dev/input"));
-    const QStringList entries =
-        dir.entryList({QStringLiteral("event*")}, QDir::System, QDir::Name);
-    if (entries.isEmpty()) {
-        return QStringLiteral("no /dev/input/event* devices at all");
+    std::unique_ptr<EvdevHotkeyBackend> evdev;
+    IHotkeyBackend *chosen = nullptr;
+};
+
+GestureSetup createGesture(Settings &settings, BackendReport &r)
+{
+    GestureSetup g;
+    g.evdev = std::make_unique<EvdevHotkeyBackend>();
+    g.evdev->setIntervalMs(qint64(settings.pressInterval() * 1000.0));
+    if (g.evdev->start()) {
+        g.chosen = g.evdev.get();
+        r.hotkeyAttempts.append({QStringLiteral("evdev"),
+                                 QStringLiteral("chosen (%1 keyboard(s)")
+                                     .arg(g.evdev->openKeyboardCount())
+                                 + QStringLiteral(")")});
+        r.hotkeyChosen = QStringLiteral("evdev");
+        r.gestureSource = QStringLiteral("evdev /dev/input/event*");
+        r.inputAccess.clear();
+    } else {
+        r.hotkeyAttempts.append({QStringLiteral("evdev"), g.evdev->lastError()});
+        r.inputAccess = g.evdev->lastError();
     }
-    int readableKeyboards = 0, denied = 0;
-    for (const QString &entry : entries) {
-        const QString path = dir.absoluteFilePath(entry);
-        const int fd = ::open(qPrintable(path), O_RDONLY | O_NONBLOCK);
-        if (fd < 0) {
-            if (errno == EACCES || errno == EPERM) {
-                ++denied;
-            }
-            continue;
-        }
-        unsigned long evBits[1] = {};
-        // EVIOCGBIT returns the number of BYTES copied, not 0.
-        if (ioctl(fd, EVIOCGBIT(0, sizeof(evBits)), evBits) >= 0
-            && (evBits[0] & (1UL << EV_KEY))) {
-            unsigned long keyBits[12] = {};
-            if (ioctl(fd, EVIOCGBIT(EV_KEY, sizeof(keyBits)), keyBits) >= 0) {
-                const auto bit = [](const unsigned long *b, int code) {
-                    return (b[code / 64] >> (code % 64)) & 1UL;
-                };
-                if (bit(keyBits, KEY_C)
-                    && (bit(keyBits, KEY_LEFTCTRL) || bit(keyBits, KEY_RIGHTCTRL))) {
-                    ++readableKeyboards;
-                }
-            }
-        }
-        ::close(fd);
-    }
-    if (readableKeyboards > 0) {
-        return QString();
-    }
-    return denied > 0
-               ? QStringLiteral("%1 of %2 input nodes are not readable by this user")
-                     .arg(denied).arg(entries.size())
-               : QStringLiteral("no device advertises KEY_C + KEY_CTRL");
+    return g;
 }
 
-BackendReport collectBackends()
+BackendReport collectBackends(Settings *settings)
 {
     BackendReport r;
     r.shell = QStringLiteral("gnome");
@@ -142,11 +133,13 @@ BackendReport collectBackends()
         r.clipboardHint = cb->diagnostic();
     }
 
-    // gesture/notifier/tray: Stages 3, 2, 5 fill these in. Empty prints as
-    // "none", which is the truth and what tests/e2e greps for.
-    r.gestureSource = QString();
-    r.hotkeyChosen = QString();
-    r.inputAccess = inputAccessStatus();
+    // gesture/notifier/tray: the gesture is probed for real (start/stop),
+    // which is the only way --backend-info can tell "works" from "no ACL".
+    Settings probeSettings;
+    GestureSetup gesture = createGesture(probeSettings, r);
+    if (gesture.chosen) {
+        gesture.evdev->stop();
+    }
     // The FDO service is what gnome-shell actually shows; no KF6, no
     // libnotify, one D-Bus call.
     r.notifier = FdoNotifier::isAvailable() ? QStringLiteral("fdo") : QString();
@@ -267,7 +260,7 @@ int main(int argc, char **argv)
 
     switch (cli.mode) {
     case CliOptions::Mode::BackendInfo:
-        out << formatBackendInfo(collectBackends());
+        out << formatBackendInfo(collectBackends(nullptr));
         return 0;
     case CliOptions::Mode::SelfTest:
         return runSelfTest(out, cli.live) == 0 ? 0 : 1;
@@ -290,14 +283,43 @@ int main(int argc, char **argv)
     }
 
     // A tray app that silently never reacts to Ctrl+C+C is worse than a
-    // refusal, so a gesture backend is a hard requirement. Stage 3 fills
-    // gestureSource in and this guard stops firing.
-    const BackendReport report = collectBackends();
-    if (report.gestureSource.isEmpty()) {
-        err << "traduku: no gesture backend yet - Ctrl+C+C would do nothing.\n"
-               "       use --translate/--selftest meanwhile; --backend-info "
-               "shows the rest.\n";
+    // refusal, so a working gesture backend is a hard requirement.
+    BackendReport report;
+    GestureSetup gesture = createGesture(settings, report);
+    if (!gesture.chosen) {
+        report.shell = QStringLiteral("gnome");
+        err << "traduku: no gesture backend available - Ctrl+C+C would do "
+               "nothing.\n";
         err << formatBackendInfo(report);
         return 5;
     }
+
+    // The composition root is DE-agnostic: build the backends, hand them
+    // over, run. No tray icon yet (Stage 5) - running tray-less is a
+    // requirement, not a fallback: GNOME shows an SNI only with an
+    // extension installed.
+    FdoNotifier notifier;
+    SoundPlayer sound(&settings);
+    auto clipboard = createClipboard(sessionType(), {}, QGuiApplication::clipboard());
+    TranslatorWindow window;
+    ChunkedTranslator pipeline(&settings);
+    AppController controller({&settings, clipboard.get(), &notifier, &sound,
+                              &window, &pipeline});
+    controller.setHotkey(gesture.chosen);
+
+    QObject::connect(&controller, &AppController::settingsRequested, app.get(),
+                     [&settings]() {
+                         SettingsDialog dlg(&settings);
+                         dlg.exec();
+                     });
+
+    // No tray icon yet (Stage 5), so the window needs a way out.
+    auto *quit = new QShortcut(QKeySequence(QStringLiteral("Ctrl+Q")), &window);
+    QObject::connect(quit, &QShortcut::activated, app.get(), []() { qApp->quit(); });
+
+    out << QStringLiteral("Traduku is running (GNOME, %1 session): press "
+                          "Ctrl+C twice to translate. Ctrl+Q quits.\n")
+               .arg(sessionType());
+    out.flush();          // a SIGINT kill would otherwise eat the banner
+    return app->exec();
 }
