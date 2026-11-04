@@ -118,3 +118,8 @@ lt_add_test(tst_singleinstance SOURCES integration/tst_singleinstance.cpp
     integration/fakebus.h
     LIBS lt::app Qt6::DBus)
 target_include_directories(tst_singleinstance PRIVATE integration)
+
+# G3: /dev/input gesture backend (D1) - fake DeviceFinder + raw input_event
+# bytes, so no /dev access and no uaccess rule is needed to test it
+lt_add_test(tst_evdevhotkey SOURCES unit/tst_evdevhotkey.cpp
+    LIBS lt::platform_evdev lt::core lt::interfaces Qt6::Core)

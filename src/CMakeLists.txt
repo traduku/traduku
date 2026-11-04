@@ -6,6 +6,7 @@ add_subdirectory(app)
 add_subdirectory(platform/qt)
 add_subdirectory(platform/wl)
 add_subdirectory(platform/fdo)
+add_subdirectory(platform/evdev)
 
 if(LT_BUILD_X11)
     pkg_check_modules(X11 REQUIRED IMPORTED_TARGET x11 xtst xi)
