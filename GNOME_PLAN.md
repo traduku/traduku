@@ -36,7 +36,7 @@
 | `org.freedesktop.portal.GlobalShortcuts` | реализован в `xdg-desktop-portal-gnome` 50.0 (front-door + impl-интерфейс на шине) | запасной жест без спецправ; `Activated`/`Deactivated` = press/release |
 | `org.freedesktop.portal.Clipboard` | есть, но по спецификации работает **только над сессиями RemoteDesktop/InputCapture** | для чтения буфера обычным приложением не годится |
 | `org.gnome.Mutter.Clipboard` | **нет** на шине | готового «прочитай буфер из фона» API в GNOME 50 нет |
-| `/dev/input/event*` | `crw-rw---- root:input`; группы `input` у пользователя **нет** | evdev-жест требует ACL; правильный путь — udev `uaccess` (проверено, см. D1), а не группа |
+| `/dev/input/event*` | `crw-rw---- root:input`; группы `input` у пользователя **нет** | evdev-жест требует ACL; правильный путь — udev `uaccess` (проверено, см. D1), а не группа. **Ловушка:** файл обязан именоваться `70-*` (до `71-seat.rules`/`73-seat-late.rules`, где `TAG=="uaccess"` кудит `RUN{builtin}+="uaccess"`) и тригериться с `--action=add`; `99-*` вешает тег слишком поздно — ACL не появляется, хотя `udevadm info` показывает `:uaccess:` |
 | `org.gnome.SettingsDaemon.MediaKeys` | есть, `custom-keybindings` пуст | gsettings-fallback возможен |
 | `wl-clipboard`, `xclip` | не установлены | Stage 0 их ставит: без них `WlClipboard` недоступен |
 | Qt6/KF6 dev | не установлены | §8 |
@@ -123,7 +123,7 @@ native keycode).
   `getfacl /dev/video0` показывает `user:user:rw-` (механизм работает), а
   дистрибутивный `/usr/lib/udev/rules.d/70-uaccess.rules` тегает джойстики,
   но **не клавиатуры** — потому их и не прочитать. Наше правило
-  (`packaging/udev/99-traduku-uaccess.rules`) валидировано без root:
+  (`packaging/udev/70-traduku-uaccess.rules`) валидировано без root:
   `udevadm test --extra-rules-dir=<dir> $(udevadm info -q path -n
   /dev/input/event3)` → `TAGS=:uaccess:...`. Ставит его пользователь сам
   (или `traduku --grant-keyboard-access`, Stage 3): наблюдать клавиатуру —
@@ -312,8 +312,8 @@ cmake --build build && ctest --test-dir build --output-on-failure
 ./build/bin/traduku --backend-info
 
 # жест через /dev/input: правило udev (НЕ группа input, см. D1)
-sudo install -Dm644 packaging/udev/99-traduku-uaccess.rules \
-     /etc/udev/rules.d/99-traduku-uaccess.rules
+sudo install -Dm644 packaging/udev/70-traduku-uaccess.rules \
+     /etc/udev/rules.d/70-traduku-uaccess.rules
 sudo udevadm control --reload
 sudo udevadm trigger --action=add --subsystem-match=input   # add, не change
 getfacl /dev/input/event3        # должно появиться user:user:rw-
@@ -340,7 +340,7 @@ up && ./tools/vms/vmctl.sh mkvm ubuntu-kde ubuntu kde && …`. Отдельны�
 (focus-трюк исключён), D1-B/C = портал заблокирован → gsettings пишем
 сразу.
 Осталось в Stage 0: (а) `evdev-spike listen` после установки правила
-`packaging/udev/99-traduku-uaccess.rules` (uaccess, см. D1) — проверить,
+`packaging/udev/70-traduku-uaccess.rules` (uaccess, см. D1) — проверить,
 что Ctrl+C+C детектируется и не ломает копирование; (б) тот же прогон на
 гридной VM (QMP-клавиши должны прийти в `/dev/input`).
 
