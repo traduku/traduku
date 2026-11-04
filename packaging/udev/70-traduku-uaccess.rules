@@ -1,0 +1,59 @@
+# Traduku — observe the keyboard for the Ctrl+C+C gesture WITHOUT the
+# `input` group.
+#
+# Traduku reads /dev/input/event* (no grab, no injection - normal copying
+# is untouched) because a Wayland compositor never hands foreign key
+# presses to a client, and the advertised gesture is literally Ctrl+C twice
+# (GNOME_PLAN.md D1).
+#
+# `uaccess` is the modern answer instead of the `input` group: an ACL is
+# put on the node for the user of the ACTIVE seat session only, so a locked
+# screen, another seat or another user gets nothing. The group, by
+# contrast, lets every program of the account read every keyboard forever
+# (the Arch community's words: "a sledgehammer to insert a pushpin").
+#
+# FILE NAME MATTERS - this file must sort after 60-input-id.rules (which
+# sets ID_INPUT_KEYBOARD) and BEFORE 71-seat.rules/73-seat-late.rules,
+# because conditions are evaluated against the tags collected so far:
+#
+#   71-seat.rules:1   TAG=="uaccess", SUBSYSTEM!="sound", TAG+="seat"
+#   73-seat-late:16   TAG=="uaccess", ENV{MAJOR}!="", RUN{builtin}+="uaccess"
+#
+# Called 99-*, the rule sets the tag but nobody sees it: no `seat` tag, no
+# queued ACL builtin, and `getfacl` stays at `root:input 0660` forever -
+# while `udevadm info` cheerfully reports TAGS=:uaccess: and everyone
+# blames the trigger. (Exactly what happened on the Ubuntu 26.04 box this
+# file was developed on: the udev db kept TAGS=:power-switch:uaccess:, no
+# ACL.) The distro's own 70-uaccess.rules is named that way for the same
+# reason - and it tags joysticks only, never keyboards.
+#
+# The explicit TAG+="seat" + RUN{builtin} are belt and braces: `seat` is
+# what lets logind know the device (and drop the ACL when the session goes
+# inactive), and queuing the builtin ourselves keeps the rule working even
+# if someone installs it under a different name. Verified accepted from an
+# untrusted rules dir:
+#   udevadm test --extra-rules-dir=<dir with this file> \
+#       "$(udevadm info -q path -n /dev/input/event3)"
+#   # -> RUN{builtin}+="uaccess": Set command: uaccess
+#   # -> TAGS=:power-switch:seat:uaccess:
+# The ACL itself comes from src/udev/udev-builtin-uaccess.c (v259):
+#   device_get_seat() -> sd_seat_get_active(seat, ..., &uid) -> devnode_acl(fd, uid)
+#
+# Install (per machine, the user decides - observing keys is a privacy
+# choice, so the package does not ship this into /etc by itself):
+#   sudo install -Dm644 packaging/udev/70-traduku-uaccess.rules \
+#        /etc/udev/rules.d/70-traduku-uaccess.rules
+#   sudo rm -f /etc/udev/rules.d/99-traduku-uaccess.rules   # old name
+#   sudo udevadm control --reload
+#   sudo udevadm trigger --action=add --subsystem-match=input
+#   (MUST be --action=add: RUN only executes on add/move events; the
+#    default "change" re-runs rules but queues nothing)
+# Check:  getfacl /dev/input/event3   ->  user:<you>:rw-
+#         udevadm info -q property -n /dev/input/event3 | grep TAGS  -> :seat:uaccess:
+# Revoke: rm the file, reload, trigger --action=add again.
+#
+# Narrow it down if a laptop keyboard is enough: append conditions like
+#   , ENV{ID_BUS}=="usb"      or      , ENV{ID_VENDOR_ID}=="04f2"
+# (property names from `udevadm info -q property -n /dev/input/eventN`).
+
+SUBSYSTEM=="input", ENV{ID_INPUT_KEYBOARD}=="1", TAG+="uaccess", TAG+="seat", RUN{builtin}+="uaccess"

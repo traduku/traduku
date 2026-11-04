@@ -119,19 +119,21 @@ void reportInventory(const std::vector<Device> &devices)
     if (keyboards == 0 && denied > 0) {
         // Not "usermod -aG input": the group hands keyboard reading to
         // every program of the account, forever. uaccess is the modern
-        // answer (packaging/udev/99-traduku-uaccess.rules) - a logind ACL
+        // answer (packaging/udev/70-traduku-uaccess.rules) - a logind ACL
         // for the ACTIVE seat session only. Verified matching here; the
         // ACL lands when the node is set up, so trigger MUST be add:
         // plain `udevadm trigger` sends change and does nothing.
         say(QStringLiteral(
             "hint: install the uaccess rule (NOT the 'input' group):\n"
-            "  sudo install -Dm644 packaging/udev/99-traduku-uaccess.rules \\\n"
-            "       /etc/udev/rules.d/99-traduku-uaccess.rules\n"
+            "  sudo install -Dm644 packaging/udev/70-traduku-uaccess.rules \\\n"
+            "       /etc/udev/rules.d/70-traduku-uaccess.rules\n"
+            "  sudo rm -f /etc/udev/rules.d/99-traduku-uaccess.rules\n"
             "  sudo udevadm control --reload\n"
             "  sudo udevadm trigger --action=add --subsystem-match=input\n"
             "  getfacl /dev/input/event3     # expect: user:$USER:rw-\n"
-            "(--action=add is required: uaccess ACLs are applied when the\n"
-            " node is set up; the default 'change' event changes nothing)\n"
+            "(the name must sort before 71-seat.rules/73-seat-late.rules -\n"
+            " a 99-* rule tags too late and no ACL is ever queued - and\n"
+            " --action=add is required, RUN only runs on add/move)\n"
             "one-shot for a test run, gone after reboot:\n"
             "  sudo setfacl -R -m u:$USER:rw /dev/input/event*\n"));
     }
