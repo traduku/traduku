@@ -9,9 +9,11 @@
 //   ./build/bin/evdev-spike list      # device inventory + readability
 //   ./build/bin/evdev-spike listen 10 # watch 10 s, report Ctrl+C and pairs
 //
-// Cost of this path: the user must be able to read /dev/input/event*, i.e.
-// be in group `input` (like input-remapper/keyd ask for). That is a
-// keylogger-grade capability and must stay opt-in + documented.
+// Cost of this path: the user must be able to read /dev/input/event*.
+// Grant it with packaging/udev/70-traduku-uaccess.rules (uaccess: an ACL
+// for the ACTIVE seat session only), NOT with the `input` group - see
+// packaging/README.md for why, including the two traps (rule file must sort
+// before 71-seat.rules, trigger needs --action=add).
 //
 // Exit codes: 0 keyboards readable; 2 permission denied on every device;
 // 3 no keyboard-capable device at all.
@@ -78,7 +80,11 @@ std::vector<Device> scan()
             continue;
         }
         unsigned long evBits[1] = {};
-        if (ioctl(d.fd, EVIOCGBIT(0, sizeof(evBits)), evBits) == 0
+        // NOTE EVIOCGBIT returns the number of bytes copied (8/96), NOT 0.
+        // Comparing with == 0 silently disabled key detection for every
+        // device - the spike then reported "0 keyboard-capable" on a box
+        // with a perfectly readable keyboard.
+        if (ioctl(d.fd, EVIOCGBIT(0, sizeof(evBits)), evBits) >= 0
             && (evBits[0] & (1UL << EV_KEY))) {
             d.hasC = hasKeyBit(d.fd, KEY_C);
             d.hasCtrl = hasKeyBit(d.fd, KEY_LEFTCTRL) || hasKeyBit(d.fd, KEY_RIGHTCTRL);
@@ -182,14 +188,25 @@ struct Gesture {
 
 int listen(std::vector<Device> devices, int seconds)
 {
-    int keyboards = 0;
+    int keyboards = 0, readable = 0;
     for (const Device &d : devices) {
+        if (d.fd >= 0) {
+            ++readable;
+        }
         if (d.isKeyboard()) {
             ++keyboards;
         }
     }
     if (keyboards == 0) {
-        say(QStringLiteral("nothing to listen to (no readable keyboard)\n"));
+        // Distinguish the two failures - last time this printed "no
+        // readable keyboard" while every device WAS readable and the real
+        // cause was a broken capability check inside this very tool.
+        say(readable > 0
+                ? QStringLiteral("no device advertises KEY_C + KEY_CTRL although "
+                                 "%1 are readable - the keyboard is missing, or a "
+                                 "capability check here is wrong (see EVIOCGBIT "
+                                 "returning byte count, not 0)\n").arg(readable)
+                : QStringLiteral("nothing to listen to (no readable keyboard)\n"));
         return 2;
     }
     const int ep = epoll_create1(0);
