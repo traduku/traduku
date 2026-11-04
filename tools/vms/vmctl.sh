@@ -1,16 +1,19 @@
 #!/usr/bin/env bash
 # VM grid controller (runs on the HOST; talks to the traduku-pipeline-vmm
-# container). Grid (PIPELINE.md): arch-kde  p-debian-kde
+# container). Grid (PIPELINE.md): arch-kde debian-kde debian-gnome
+# ubuntu-kde ubuntu-gnome — one matrix, one container (the two grids that
+# grew up separately - "pipeline" (arch base) and "debian" (cloud images +
+# GNOME) - are merged here; ports are the position in VMS, so a VM's ssh
+# port is 2200+idx and its VNC display is :5900+idx).
 # Each VM: qcow2 (Arch: built from the official bootstrap by mkarchbase.sh;
-# Debian: official cloud image) + NoCloud seed ISO (Debian only).
-# Access: ssh 127.0.0.1:2205..2206 (vm/vm + ~/vms/id_ed25519), VNC :5905..,
+# Debian/Ubuntu: official cloud image) + NoCloud seed ISO (cloud distros).
+# Access: ssh 127.0.0.1:2201..2205 (vm/vm + ~/vms/id_ed25519), VNC :5901..,
 # QMP sockets at ~/vms/run/<vm>/qmp.sock (screenshots + virtual keyboard).
-# Port base 2204 keeps the sibling traduku-vmm grid (2201..2204) free.
 set -euo pipefail
 HERE="$(cd "$(dirname "$0")" && pwd)"
 VMS_HOME="${VMS_HOME:-$HOME/vms}"
 CTR=traduku-pipeline-vmm
-VMS=(arch-kde p-debian-kde)
+VMS=(arch-kde debian-kde debian-gnome ubuntu-kde ubuntu-gnome)
 
 dexec() { docker exec "$CTR" bash -c "$*"; }
 
@@ -19,7 +22,7 @@ ensure_ctr() {
   "$HERE/setup-ctr.sh"
 }
 
-idx_of() { local i=1; for v in "${VMS[@]}"; do [ "$v" = "$1" ] && { echo $((4+i)); return; }; i=$((i+1)); done; echo "unknown vm $1" >&2; return 1; }
+idx_of() { local i=1; for v in "${VMS[@]}"; do [ "$v" = "$1" ] && { echo $i; return; }; i=$((i+1)); done; echo "unknown vm $1" >&2; return 1; }
 
 cmd=${1:-status}; shift || true
 case "$cmd" in
@@ -57,5 +60,5 @@ case "$cmd" in
   all)
     shift
     for v in "${VMS[@]}"; do echo "== $v"; $0 "$@" "$v" 2>&1 | sed 's/^/   /' || true; done;;
-  *) echo "commands: up mkarchbase mkvm start stop logs shot key keyseq ssh vnc status all" >&2; exit 2;;
+  *) echo "commands: up mkarchbase mkvm start stop logs shot key keyseq mouse ssh vnc status all" >&2; exit 2;;
 esac

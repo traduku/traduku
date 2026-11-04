@@ -64,6 +64,8 @@ packages:
   - wl-clipboard
   - python3
   - python3-pil
+  - python3-pyqt5
+  - onboard
 $(for p in $DE_PKGS; do echo "  - $p"; done)
 write_files:
   - path: /etc/dconf/db/local.d/00-grid
@@ -98,12 +100,20 @@ write_files:
       User=vm
       Session=plasma
       SDDM
-        # Debian 13 sddm: Wayland autologin unsupported -> X11 session.
+        # Session-type corners found on the real grid: Debian 13 sddm cannot
+        # autologin a Wayland session (-> X11), Ubuntu 25.10 Plasma 6 dropped
+        # the X11 session entirely (-> Wayland). Pick whichever exists.
         if ! ls /usr/share/wayland-sessions/ 2>/dev/null | grep -qi plasma; then
           sed -i '/^DisplayServer=/d;/^Session=/d' /etc/sddm.conf.d/10-autologin.conf
           SES=\$(ls /usr/share/xsessions/ 2>/dev/null | grep -i plasma | grep -vi wayland | head -1)
-          [ -n "\$SES" ] && echo "Session=\${SES%.desktop}" >> /etc/sddm.conf.d/10-autologin.conf
-          echo "DisplayServer=x11" >> /etc/sddm.conf.d/10-autologin.conf
+          if [ -n "\$SES" ]; then
+            echo "Session=\${SES%.desktop}" >> /etc/sddm.conf.d/10-autologin.conf
+            echo "DisplayServer=x11" >> /etc/sddm.conf.d/10-autologin.conf
+          else
+            sed -i '/^DisplayServer=/d' /etc/sddm.conf.d/10-autologin.conf
+            WSES=\$(ls /usr/share/wayland-sessions/ 2>/dev/null | grep -i plasma | head -1)
+            echo "Session=\${WSES%.desktop}" >> /etc/sddm.conf.d/10-autologin.conf
+          fi
         fi
         systemctl enable sddm
       else
@@ -129,6 +139,17 @@ write_files:
       set -x
       export DEBIAN_FRONTEND=noninteractive
       apt-get update
+      # First attempt adds the GTK/appindicator introspection packages the
+      # GNOME layer needs (SNI tray, libnotify bridge); distros without them
+      # fall back to the core set. Both branches' grids ran one of the two.
+      apt-get install -y --no-install-recommends \
+        build-essential cmake ninja-build pkg-config debhelper extra-cmake-modules \
+        qt6-base-dev qt6-multimedia-dev $C5 \
+        libkf6coreaddons-dev libkf6i18n-dev \
+        libkf6statusnotifieritem-dev libkf6notifications-dev \
+        libkf6globalaccel-dev libkf6dbusaddons-dev \
+        libx11-dev libxi-dev libxtst-dev \
+        libgtk-3-dev gir1.2-notify-3.0 gir1.2-appindicator3-0.1 2>/dev/null || \
       apt-get install -y --no-install-recommends \
         build-essential cmake ninja-build pkg-config debhelper extra-cmake-modules \
         qt6-base-dev qt6-multimedia-dev $C5 \

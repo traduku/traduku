@@ -42,6 +42,10 @@ AppController::AppController(const Backends &b, QObject *parent)
         const QString t = m_b.pipeline->targetText();
         QString clipboardNote;
         if (m_b.settings->copyResult()) {
+            // Wayland drops set_selection from unfocused apps: bring the
+            // result window to the foreground before writing the clipboard.
+            m_b.window->raise();
+            m_b.window->activateWindow();
             m_b.clipboard->setText(t);
             clipboardNote = QStringLiteral(" (clipboard updated)");
         }

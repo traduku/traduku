@@ -1,3 +1,11 @@
+traduku (0.2.0-1) unstable; urgency=medium
+
+  * Version synced with CMakeLists VERSION (single source of truth, 0.2.0).
+  * Build-Depends: accept Ubuntu's Qt6 Core5Compat package name
+    (qt6-5compat-dev) as an alternative to Debian's (libqt6core5compat6-dev).
+
+ -- Traduku contributors <dev@localhost>  Sun, 02 Nov 2025 12:00:00 +0300
+
 traduku (0.2) unstable; urgency=medium
 
   * Renamed project: llm-translate -> Traduku (binary `traduku`, config
