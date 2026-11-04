@@ -19,9 +19,13 @@ include(GNUInstallDirs)
 # Declared before any add_subdirectory so tests see the switches.
 option(LT_BUILD_X11 "Build the X11 (XI2/RECORD) passive hotkey backend" ON)
 option(LT_BUILD_KDE "Build the KDE Platform backend and the tray application" ON)
+option(LT_BUILD_SPIKES "Build the tools/spike Stage 0 diagnostics (manual tools, not tests)" ON)
 
 add_subdirectory(src)
 add_subdirectory(tests)
+if(LT_BUILD_SPIKES)
+    add_subdirectory(tools/spike)
+endif()
 
 # ---- install rules (used by the distro packages) --------------------------
 if(TARGET traduku)
