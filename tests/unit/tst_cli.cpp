@@ -81,6 +81,14 @@ private slots:
                  int(CliOptions::Mode::BackendInfo));
     }
 
+    void notifyTestMode()
+    {
+        // Support and e2e need one way to ask "does a bubble actually
+        // appear" without waiting for a translation to fail.
+        QCOMPARE(int(parse({QStringLiteral("--notify-test")}).mode),
+                 int(CliOptions::Mode::NotifyTest));
+    }
+
     void modesAreMutuallyExclusive()
     {
         const CliOptions o = parse({QStringLiteral("--translate"),

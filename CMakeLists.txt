@@ -11,7 +11,7 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
 set(QT_MIN_VERSION "6.4.0")
 find_package(Qt6 ${QT_MIN_VERSION} REQUIRED
-    COMPONENTS Core Gui Widgets Network Multimedia Test Core5Compat)
+    COMPONENTS Core Gui Widgets Network Multimedia Test Core5Compat DBus)
 find_package(PkgConfig REQUIRED)
 include(CTest)
 include(GNUInstallDirs)

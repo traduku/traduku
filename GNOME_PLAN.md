@@ -409,9 +409,41 @@ up && ./tools/vms/vmctl.sh mkvm ubuntu-kde ubuntu kde && …`. Отдельны�
 `clipboard: wl-clipboard`, `gesture: none`; `--selftest` → PASSED;
 помилки CLI → rc=2 з підказкою. `ctest` 24/24.
 
-**Stage 2 — уведомления + единственный экземпляр (D4, D5).**
-*Тесты:* фейковый сервер уведомлений на сессионной шине; второй процесс
-будит первый. *Руками:* баннер GNOME при переводе и при ошибке endpoint.
+**Stage 2 — уведомления + единственный экземпляр (D4, D5). ГОТОВО.**
+
+* `src/platform/fdo/FdoNotifier.{h,cpp}` — один виклик
+  `org.freedesktop.Notifications.Notify` (9 аргументів), без KF6 і без
+  libnotify. `isAvailable()` — `NameHasOwner` (синхронно, ~1 мс), щоб
+  відсутність сервісу поверталась одразу, а не завислим async; сам `Notify`
+  — `asyncCall` + watcher (уведомлення не має затримувати переклад, і
+  завислий демон не повинен морозити UI). `lastId()` — доказ, що демон
+  саме *прийняв* бабл, а не те, що ми відправили повідомлення.
+  Тести `tst_fdonotifier` (9 кейсів, приватний dbus-daemon).
+* `src/app/SingleInstance.{h,cpp}` — токен `dev.traduku.Traduku` на
+  сесійній шині + `QLocalServer traduku-<uid>` для «прокинься».
+  `tst_singleinstance` (7 кейсів), включно з тим, що другий примірник
+  будить перший, і що деструктор звільняє ім'я.
+* `tests/integration/fakebus.h` — `PrivateBus`: приватний dbus-daemon на
+  тест. На справжній сесійній шині це неможливо (ім'я
+  `org.freedesktop.Notifications` вже належить gnome-shell), і важливо:
+  два `SingleInstance` у тому ж процесі мають сидіти на **різних**
+  з'єднаннях, інакше Qt дозволяє зареєструвати одне й те саме ім'я двічі і
+  тест бреше.
+* `--notify-test` — режим «чи реально GNOME показує баннер» (для support і
+  для e2e): `notification service: accepted (id 2)`, rc=0.
+
+Пастки Qt6, на які пішов час (варто знати далі): `QDBusConnection` не має
+конструктора за замовчуванням і не копіюється-присвоюється як слід →
+`std::optional<QDBusConnection>`; шина підключається через
+`connectToBus(address, name)`, а не `connectToBusAddress`; об'єкт-адаптер
+отримує інтерфейс **за іменем класу**, тож фейковому сервісу потрібен
+`Q_CLASSINFO("D-Bus Interface", "org.freedesktop.Notifications")`; і
+оскільки `Notify` async — тести мають чекати (`QTRY_*`), бо `calls.last()`
+на порожньому списку це segfault, а не FAIL.
+
+`--backend-info` тепер друкує `notifier: fdo` на живій сесії; режим трея
+перевіряє single-instance до будь-чого іншого і відмовляється стартувати
+без ґесту ( Stage 3).
 
 **Stage 3 — жест (D1).** `EvdevHotkeyBackend` (юнит: `feedEvent` +
 инжектируемый `DeviceFinder`, интервал из `Settings`, горячее подключение

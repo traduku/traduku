@@ -103,3 +103,18 @@ target_include_directories(tst_oneshot PRIVATE integration ${CMAKE_SOURCE_DIR}/s
 # G1: session detection (QPA plugin name is not the session; offscreen CI
 # must still see wayland/x11 so backends are picked correctly)
 lt_add_test(tst_sessioninfo SOURCES unit/tst_sessioninfo.cpp LIBS lt::platform_qt)
+
+# G2: FDO notifications (GNOME ships no KNotification; org.freedesktop.
+# Notifications is what the shell actually shows). Tests own a private bus
+# (fakebus.h) because the desktop already owns the well-known name.
+lt_add_test(tst_fdonotifier SOURCES integration/tst_fdonotifier.cpp
+    integration/fakebus.h
+    LIBS lt::platform_fdo lt::interfaces Qt6::DBus)
+target_include_directories(tst_fdonotifier PRIVATE integration)
+
+# G2: single instance (D5) - session-bus name as the ownership token plus a
+# QLocalServer activation channel
+lt_add_test(tst_singleinstance SOURCES integration/tst_singleinstance.cpp
+    integration/fakebus.h
+    LIBS lt::app Qt6::DBus)
+target_include_directories(tst_singleinstance PRIVATE integration)
