@@ -27,11 +27,16 @@ say "== 1) keyboards in /dev/input ======================================"
 ev_rc=${PIPESTATUS[0]}
 if [ "$ev_rc" -ne 0 ]; then
   say ""
-  say "   no readable keyboard. Choose one (then re-run this script):"
-  say "     sudo usermod -aG input \$USER      # permanent, needs re-login"
-  say "     sudo setfacl -R -m u:\$USER:rw /dev/input/event*   # until next boot"
-  say "   (this is the keylogger-grade permission the evdev gesture costs;"
-  say "    GNOME_PLAN.md D1 — the fallback paths work without it)"
+  say "   no readable keyboard. The right way is a udev uaccess rule"
+  say "   (logind gives the node to the ACTIVE session only), NOT the"
+  say "   'input' group, which grants it to every program of the account:"
+  say "     sudo install -Dm644 packaging/udev/99-traduku-uaccess.rules \\"
+  say "          /etc/udev/rules.d/99-traduku-uaccess.rules"
+  say "     sudo udevadm control --reload && sudo udevadm trigger --subsystem-match=input"
+  say "     getfacl /dev/input/event3        # expect: user:\$USER:rw-"
+  say "   (one-shot for testing only, until next boot:"
+  say "     sudo setfacl -R -m u:\$USER:rw /dev/input/event*)"
+  say "   The gesture has fallbacks without it (gsettings shortcut, tray)."
   say ""
 fi
 

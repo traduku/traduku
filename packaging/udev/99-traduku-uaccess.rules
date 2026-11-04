@@ -1,0 +1,31 @@
+# Traduku — observe the keyboard for the Ctrl+C+C gesture WITHOUT the
+# `input` group.
+#
+# Traduku reads /dev/input/event* (no grab, no injection - normal copying
+# is untouched) because a Wayland compositor never hands foreign key
+# presses to a client, and the advertised gesture is literally Ctrl+C twice
+# (GNOME_PLAN.md D1).
+#
+# `uaccess` is the modern answer: systemd-udevd + logind put an ACL on the
+# node for the user of the ACTIVE seat session only, so a locked screen,
+# another seat or another user gets nothing. That is strictly narrower than
+# `usermod -aG input`, which grants every program of the account forever.
+#
+# Verified on Ubuntu 26.04 (systemd 259) with:
+#   udevadm test --extra-rules-dir=<dir with this file> \
+#       "$(udevadm info -q path -n /dev/input/event3)"   # -> TAGS=:uaccess:...
+# The distro's own /usr/lib/udev/rules.d/70-uaccess.rules tags joysticks
+# but NOT keyboards, which is exactly why reading a keyboard needs a rule.
+#
+# Install (per machine, the user decides - observing keys is a privacy
+# choice, so the package does not ship this into /etc by itself):
+#   sudo install -Dm644 packaging/udev/99-traduku-uaccess.rules \
+#        /etc/udev/rules.d/99-traduku-uaccess.rules
+#   sudo udevadm control --reload && sudo udevadm trigger --subsystem-match=input
+# Check:  getfacl /dev/input/event3   ->  user:<you>:rw-
+#
+# Narrower variants, if a laptop keyboard is enough: add
+#   , ENV{ID_INPUT_KEY}=="1", ENV{ID_BUS}=="usb"
+# or match by ID_VENDOR/ID_MODEL (udevadm info -q property -n /dev/input/eventN).
+
+SUBSYSTEM=="input", ENV{ID_INPUT_KEYBOARD}=="1", TAG+="uaccess"

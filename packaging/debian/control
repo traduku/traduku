@@ -24,8 +24,8 @@ Rules-Requires-Root: no
 Package: traduku
 Architecture: any
 Depends: ${shlibs:Depends}, ${misc:Depends}, libqt6multimedia6,
- qt6-wayland, gstreamer1.0-plugins-good
-Recommends: wl-clipboard
+ qt6-wayland, gstreamer1.0-plugins-good, wl-clipboard
+Recommends: gnome-shell-extension-appindicator | gnome-shell-ubuntu-extensions
 Description: Clipboard translator powered by any OpenAI-compatible LLM
  Press Ctrl+C twice to translate the clipboard into the configured target
  language. Streams responses, translates interactively, runs on KDE Plasma

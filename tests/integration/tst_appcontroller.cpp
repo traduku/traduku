@@ -33,8 +33,10 @@ public:
         return true;
     }
     QString backendName() const override { return QStringLiteral("mem"); }
+    QString diagnostic() const override { return m_diagnostic; }
     int writes = 0;
     QString m_text;
+    QString m_diagnostic;          // what the backend wants the user to know
     std::function<bool()> probe;   // e.g. "is the result window active?"
     bool m_activeAtWrite = false;
 };
@@ -250,6 +252,21 @@ private slots:
     {
         Q_EMIT m_hotkey->activated();
         QVERIFY(m_notifier->messages.last().body.contains(QStringLiteral("empty")));
+        QCOMPARE(m_sounds.size(), 0);
+    }
+
+    void emptyClipboardAdvisesTheMissingTool()
+    {
+        // Measured on GNOME 50 (GNOME_PLAN.md §0b): a background wayland
+        // client receives no data offer, so "clipboard is empty" is a lie
+        // when the real cause is a missing wl-clipboard. A backend that
+        // knows it is blind carries the actionable hint, and the
+        // notification must show THAT, not the misleading default.
+        m_clip.m_text.clear();
+        m_clip.m_diagnostic = QStringLiteral("install wl-clipboard");
+        Q_EMIT m_hotkey->activated();
+        QVERIFY2(m_notifier->messages.last().body.contains(QStringLiteral("wl-clipboard")),
+                 qPrintable(m_notifier->messages.last().body));
         QCOMPARE(m_sounds.size(), 0);
     }
 };
