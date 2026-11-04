@@ -1,355 +1,363 @@
 # Traduku — план GNOME-версии
 
 Цель: второй composition root (`app/gnome`) + слой `platform/gnome`, чтобы
-`traduku` работал на GNOME Wayland/X11 **без KF6**, с треем, уведомлениями,
-глобальным жестом и переводом буфера обмена. Ядро (`core/`), UI (`ui/`) и
-`platform/qt|wl` не трогаем — они DE-нейтральные по построению
-(ARCHITECTURE.md). Правило TDD из ARCHITECTURE.md действует: каждый кусок
-продуктового кода начинается с падающего теста.
+`traduku` работал на GNOME **Wayland** и X11 **без KF6**, с тем же
+пользовательским обещанием, что и на KDE: **Ctrl+C+C переводит буфер**,
+буфер читается и в него пишется результат, работает автозапуск и звук.
+Ядро (`core/`) и UI (`ui/`) не трогаем — они DE-нейтральные
+(ARCHITECTURE.md). Правило TDD из ARCHITECTURE.md действует: кусок
+продуктового кода без падающего теста не принимается.
 
-Хост для ручной проверки: **Ubuntu 26.04 LTS, GNOME Shell 50.1, сессия
-Wayland** (замеры — ниже).
+Хост ручной проверки: **Ubuntu 26.04 LTS, GNOME Shell 50.1, Wayland**
+(`ubuntu26`, ядро 7.0.0-34).
+
+## Решения, принятые оператором (2026-11-04)
+
+| # | Решение | Как отражено в плане |
+|---|---|---|
+| 1 | **Ctrl+C+C должен работать везде** — и на X11, и на Wayland | D1: кандидат, который это даёт на Wayland, — `EvdevHotkeyBackend` (чтение `/dev/input`, ничего не перехватывает). Портал/gsettings остаются запасными путями с другим жестом |
+| 1b | X11 нужен в основном старым ОС (Ubuntu 24.04 Xorg, Debian 13) | XI2/RECORD-слой остаётся (`LT_BUILD_X11=ON`), в матрице — один X11-джоб как свойство сессии |
+| 2 | Главное — жест + чтение/запись буфера. AppIndicator-расширение добавить, но **программа обязана работать без него** | D3: расширение — рекомендация в README и в `--backend-info`; отсутствие watchера = деградация без падения, с явной строкой в логе |
+| 3 | gsettings-fallback — сразу, только если портал в текущем окружении не подтвердится | D1-B: правило решения привязано к спайку Stage 0, результат записывается в §9 |
+| 4 | `KdeTray` не удалять, пока `SniTray` не проверен в KDE | Stage 5 = SniTray на GNOME; Stage 6b = прогон `SniTray` на arch-kde (e2e 8/8 + руками), удаление `KdeTray` — отдельным коммитом **после** зелёного прогона и вашего «да» |
+| 5 | Схема мержа веток одобрена | §7; уже выполнено: `integration/gnome-base` = `pipeline` + `debian`, мерж-коммит `3fc9f6a` |
+| 6 | Build-deps ставим локально | §8 (команды для `apt`) |
 
 ---
 
 ## 0. Замеры на реальном хосте (2026-11-04, Ubuntu 26.04 / GNOME 50.1 / Wayland)
 
-Надёжные (проверено напрямую, `busctl`/`gdbus`/`dpkg`/`gsettings`):
+Надёжные (проверено напрямую: `busctl`, `gdbus`, `gsettings`, `dpkg`, `ls`):
 
-| Что | Факт | Значение для плана |
+| Что | Факт | Значение |
 |---|---|---|
-| `org.kde.StatusNotifierWatcher` | **есть**, `IsStatusNotifierHostRegistered=true` (расширение `ubuntu-appindicators@ubuntu.com`, включено) | трей на GNOME возможен без своего расширения — но только когда расширение установлено |
-| реестр SNI | сейчас заняты только ayatana-иконки apt/unattended-upgrades | наш предмет — `org.kde.StatusNotifierItem` + `com.canonical.dbusmenu`; расширение официально поддерживает и то и другое |
-| `org.freedesktop.Notifications` | есть (сервер GNOME) | `INotifier` = прямой D-Bus, libnotify не нужен |
-| `org.freedesktop.portal.GlobalShortcuts` | **есть** (front-door + `org.freedesktop.impl.portal.GlobalShortcuts` у `xdg-desktop-portal-gnome` 50.0) | штатный Wayland-механизм глобального жеста; `Activated`/`Deactivated` = press/release → кормим существующий `DoublePressDetector` |
-| `org.freedesktop.portal.Clipboard` | есть, но по спецификации **только над sessions RemoteDesktop/InputCapture** | для чтения буфера обычным приложением **не годится** (InputCapture = перехват всей клавиатуры, красное предупреждение муттера) |
+| `org.kde.StatusNotifierWatcher` | **есть**, `IsStatusNotifierHostRegistered=true` (расширение `ubuntu-appindicators@ubuntu.com` включено) | трей на GNOME реален; в реестре сейчас только ayatana-иконки apt |
+| `org.freedesktop.Notifications` | есть | `INotifier` = прямой D-Bus, libnotify не нужен |
+| `org.freedesktop.portal.GlobalShortcuts` | реализован в `xdg-desktop-portal-gnome` 50.0 (front-door + impl-интерфейс на шине) | запасной жест без спецправ; `Activated`/`Deactivated` = press/release |
+| `org.freedesktop.portal.Clipboard` | есть, но по спецификации работает **только над сессиями RemoteDesktop/InputCapture** | для чтения буфера обычным приложением не годится |
 | `org.gnome.Mutter.Clipboard` | **нет** на шине | готового «прочитай буфер из фона» API в GNOME 50 нет |
-| `org.gnome.SettingsDaemon.MediaKeys` | есть, `custom-keybindings` пуст | запасной механизм жеста через gsettings |
-| `wl-clipboard`, `xclip` | **не установлены** | `WlClipboard` сейчас недоступен → путь только через Qt/X11 |
-| Qt6/KF6 dev-пакеты | не установлены (`dpkg -l | grep -c libqt6` = 0, `/usr/lib/cmake/Qt6` нет) | Stage 0 начинается с build-deps |
-| qemu на хосте | нет; docker есть | e2e-грид живёт в контейнере, как в `pipeline` |
+| `/dev/input/event*` | `crw-rw---- root:input`; группы `input` у пользователя **нет** | evdev-жест требует `usermod -aG input` (или ACL) — см. D1 |
+| `org.gnome.SettingsDaemon.MediaKeys` | есть, `custom-keybindings` пуст | gsettings-fallback возможен |
+| `wl-clipboard`, `xclip` | не установлены | Stage 0 их ставит: без них `WlClipboard` недоступен |
+| Qt6/KF6 dev | не установлены | §8 |
+| qemu на хосте | нет; docker есть; `~/vms` пуст (мы в Ubuntu, грид жил на Arch-стороне) | грид поднимается заново: `vmctl.sh up` + `mkvm` |
 
-Неубедительно (требует Qt-спайка, GTK3-измерения тут не инструмент):
-попытка прочитать буфер из фонового Wayland-клиента (`Gtk.Clipboard
-request_text`/`wait_for_text`, несколько вариантов, включая клиент, который
-сам только что записал текст в буфер) вернула `None`. Но и «фокусный» клиент
-с окном прочитал `None`, поэтому вывод «муттер режет чтение без фокуса»
-считать **недоказанным** — это риск №1, который закрывается спайком Stage 0
-на настоящем Qt-двоичном файле, а не на GTK-обёртке.
-
-Почему это важно: если фонового чтения нет, то `QClipboard::text()` по
-жесту вернёт пусто, и нужен один из обходных путей (D2).
+Неубедительно и **не** принято как факт: попытки прочитать буфер из фонового
+GTK3-клиента (`request_text`, `wait_for_text`, несколько вариантов, включая
+клиент, который сам только что записал текст) вернули `None` — но и
+«фокусный» GTK-клиент вернул `None`, то есть подозрение на сам GTK-спайк, а
+не на муттер. Вопрос «можно ли читать буфер на GNOME Wayland без фокуса»
+закрывается Qt-спайком Stage 0 (§9), а не догадками: от него зависит, какой
+из путей D2 становится основным.
 
 ---
 
-## 1. Что уже готово и что отсутствует (по интерфейсам)
+## 1. Gap-анализ по интерфейсам
 
-| Интерфейс | KDE | GNOME | Комментарий |
-|---|---|---|---|
-| `IClipboard` | Qt/Wl через `ClipboardFactory` | **решение D2** | на X11-сессии GNOME `QtClipboard` работает как есть |
-| `IHotkeyBackend` | `X11HotkeyBackend` (X11/XWayland) | тот же на X11-сессии; на Wayland — **решение D1** | пассивное наблюдение Ctrl+C на Wayland запрещено в принципе |
-| `IGlobalShortcut` | `KdeGlobalShortcut` (KGlobalAccel) | **`PortalGlobalShortcut` + `GsettingsGlobalShortcut`** (D1) | KF6 тут быть не должно |
-| `INotifier` | `KdeNotifier` (KNotification + notifyrc) | **`FdoNotifier`** (D4) | звуки и так работают: `core/SoundPlayer` |
-| `IAutostart` | `XdgAutostart` | он же | GNOME уважает XDG autostart — проверять нечего |
-| трей | `KdeTray` (KF6 `KStatusNotifierItem`) | **`SniTray`** (D3), чистый D-Bus | тот же контракт сигналов: `translateRequested/settingsRequested/targetLanguagePicked` |
-| единственный экземпляр | `KDBusService(Unique)` | **`SingleInstance`** (D5) | KF6-зависимость, переписываем на QLocalServer/D-Bus |
-| composition root | `app/kde/main.cpp` | **`app/gnome/main.cpp`** | копипаст только аргументов CLI: вынести парсер в `app/cli.*` |
-| идентификатор приложения | — | `QGuiApplication::setDesktopFileName("traduku")` + установленный `traduku.desktop` | нужен порталу, уведомлениям и иконке окна в GNOME |
+| Интерфейс | KDE (готово) | GNOME (делать) |
+|---|---|---|
+| `IHotkeyBackend` | `X11HotkeyBackend` (XI2 raw + RECORD-хелпер) | он же на X11-сессии + **новый `EvdevHotkeyBackend`** на Wayland (D1) |
+| `IGlobalShortcut` | `KdeGlobalShortcut` (KGlobalAccel) | `PortalGlobalShortcut` + `GsettingsGlobalShortcut` (D1-B/C) |
+| `IClipboard` | `ClipboardFactory` → Qt/Wl | те же + **`X11Clipboard`** (чтение/запись через XWayland) и, опционально, мост через расширение Shell (D2) |
+| `INotifier` | `KdeNotifier` (+notifyrc) | `FdoNotifier` — прямой `org.freedesktop.Notifications` (D4) |
+| `IAutostart` | `XdgAutostart` | он же (GNOME уважает XDG autostart) |
+| трей | `KdeTray` (KF6) | `SniTray` — чистый D-Bus SNI + `com.canonical.dbusmenu` (D3); общий для KDE и GNOME |
+| один экземпляр | `KDBusService(Unique)` | `SingleInstance` (QLocalServer + сессионное имя `dev.traduku.Traduku`) (D5) |
+| composition root | `app/kde/main.cpp` | `app/gnome/main.cpp`; общий парсер CLI → `app/cli.*` |
+| id приложения | — | `QCoreApplication::setApplicationName` + `QGuiApplication::setDesktopFileName("traduku")` + установленный `traduku.desktop` (нужно порталу, уведомлениям и иконке окна) |
 
 ---
 
-## 2. Пять решений (D1…D5)
+## 2. D1 — жест Ctrl+C+C везде
 
-### D1. Глобальный жест на GNOME
+Продуктовая правда, которую надо принять: на Wayland **никакой** легальный
+механизм не позволяет пассивно «слушать» нажатия чужих окон — compositor
+не отдаёт клавиши клиентам. Значит наблюдение либо (а) ниже композитора —
+в ядре, либо (б) внутри композитора — портал/расширение/gsettings, ценой
+другого сочетания клавиш.
 
-Продуктовая правда, которую надо принять вслух: **настоящий Ctrl+C+C на
-GNOME Wayland ненаблюдаем**. Ни XInput2 (KWin-а нет, муттер не отдаёт
-native-клавиши в XWayland), ни grab (сломал бы копирование). Поэтому:
+**Кандидат 1 (основной, даёт именно Ctrl+C+C): `EvdevHotkeyBackend`,
+`src/platform/evdev/`.** Чтение `/dev/input/event*` (`EV_KEY`), никаких
+grabs и инъекций → копирование пользователем не трогается вообще; работает
+одинаково под GNOME и KDE на Wayland и на X11 (XI2 остаётся запасным).
+Сообщение клавиш — физическое: `KEY_LEFTCTRL`/`KEY_RIGHTCTRL` + `KEY_C`,
+раскладка не важна (та же дисциплина, что у XI2-бэкенда, где мы сверяем
+native keycode).
 
-- **A (рекомендую).** `PortalGlobalShortcut` — `org.freedesktop.portal.GlobalShortcuts`:
-  `CreateSession` → `BindShortcuts([{id:"translate", description,
-  preferred_trigger:"<Alt>Ctrl+c"}], parent_window, {})` → диалог
-  подтверждения у пользователя → сигналы `Activated`/`Deactivated`
-  (press/release!) → тот же `ShortcutMonitor` + `DoublePressDetector`.
-  Реализация на `QDBusInterface` (libportal не тянем), имя сервиса и путь
-  **инжектируются** (как `ToolFinder` в `WlClipboard`) — иначе тест не
-  подделать. Плюс `ListShortcuts()` при старте, чтобы не показывать диалог
-  повторно, и `ConfigureShortcuts()` в меню «Settings…» (portal v2).
-  Требует xdg-desktop-portal-gnome ≳ 48 (Ubuntu 26.04: 50.0 ✓; Debian 13:
-  ✗ → fallback B).
-- **B (fallback, обязан быть).** `GsettingsGlobalShortcut`: пишем
-  `org.gnome.settings-daemon.plugins.media-keys custom-keybindings` +
-  `…/custom-keybindings/custom0/{name,command,binding}`, где
-  `command=gdbus call --session -d dev.traduku.Traduku -o /dev/traduku/Traduku
-  -m dev.traduku.Traduku.gesturePressed`. Каждое нажатие — вызов метода
-  работающему экземпляру; дубликаты гасит тот же детектор. Готовится через
-  инъекцию раннера (`gsettings` CLI), чистится при `unregister()`. Работает
-  и на Debian 13, и на Ubuntu 22.04.
-- **C (отложено).** Сопутствующее расширение GNOME Shell (наблюдение
-  клавиш + чтение буфера через `meta.Clipper`). Даёт настоящий Ctrl+C+C, но
-  ломается на каждой мажорной версии Shell и требует
-  `gnome-extensions install`. Завести под флагом `LT_EXPERIMENT_SHELL_EXT`,
-  вернуться к нему, если A+B разочаруют.
-- **D.** На X11-сессии GNOME ничего не меняем: `X11HotkeyBackend` (в версии
-  из ветки `debian` — с вынесенным хелпер-процессом RECORD) даёт
-  пассивный Ctrl+C+C как в KDE-X11.
+* Цена: пользователю нужна группа `input` (`sudo usermod -aG input $USER`,
+  как у `input-remapper`/`keyd`) — это «может читать все клавиатуры»
+  разрешение, оно **оп-ин** и обязано быть описано в README и в `--help`.
+* Дизайн (по образцу `X11HotkeyBackend`): рабочий поток, `QSocketNotifier`
+  на каждый fd, точка входа `feedEvent(type, code, value)` для тестов,
+  `DeviceFinder`-функтор вместо реального сканирования `/dev/input`
+  (юнит-тест кормит синтетическими событиями), горячее подключение устройств
+  — пересканирование по `inotify` на каталоге, интервал берётся из
+  `Settings::pressInterval()` и обновляется по `Settings::changed`.
+* Порядок выбора бэкендов на Wayland: `EvdevHotkeyBackend` → (если
+  `/dev/input` не читается) портал (кандидат 3) → gsettings (кандидат 4).
+  На X11-сессии: XI2/RECORD (он ничего не требует), потом evdev.
+* e2e-совместимость: QMP `input-send-event` из грида — это настоящие
+  события ядра, evdev их видит (в отличие от XI2-raw на Wayland, который
+  измерен как пустой). То есть `test_05` для GNOME пишется естественно.
 
-### D2. Чтение буфера на GNOME Wayland (риск №1)
+**Кандидат 2: XI2 passive (есть)** — работает только на X11-сессиях;
+держим ради старых ОС и X11-джоба в матрице (решение 1b).
 
-Порядок такой, первым — самый дешёвый и беззависимостный:
+**Кандидат 3 (без спецправ, но не Ctrl+C+C): `PortalGlobalShortcut`.**
+`CreateSession` → `BindShortcuts([{id:"translate", description,
+preferred_trigger:"<Alt>Ctrl+c"}], parent_window, {})` → диалог
+согласования → `Activated`/`Deactivated` → `ShortcutMonitor` →
+`DoublePressDetector`. Реализация на `QDBusInterface`, имя сервиса и путь
+**инжектируются** (как `ToolFinder` в `WlClipboard`) — иначе тест не
+подделать. `ListShortcuts()` при старте, чтобы не показывать диалог
+повторно. Спайк Stage 0 обязан ответить: пускает ли gnome-impl не-sandboxed
+приложение, нужен ли установленный `traduku.desktop`, что в `options`
+(`activation_token`?), какая `version` интерфейса.
 
-1. **Спайк Stage 0.** Минимальный Qt-хелпер (`tools/spike/clip-spike.cpp`):
-   фоновый `QClipboard::text()`, то же после `show()+requestActivate()`,
-   то же через `wl-paste`, то же из X11-соединения. Критерий: что реально
-   отдаёт непустой текст за ≤200 мс после Ctrl+C в gedit. Решение принимаем
-   по таблице, а не по догадкам.
-2. **Путь XWayland (ожидаемый победитель).** Отдельное X11-соединение
-   (`xcb`) читает `CLIPBOARD` через `XConvertSelection` без фокуса — на
-   X11-семантике фокус не нужен, а муттер зеркалит wayland-буфер в
-   XWayland. Этим же путём уже пользуется ветка `debian` в e2e-гейте
-   (`xclip` на ubuntu-gnome). Реализуется как `X11Clipboard` в
-   `platform/x11` (тот же дисциплинарный паттерн: соединения/раннеры
-   инжектируются) и добавляется в `ClipboardFactory` приоритетом после
-   `WlClipboard`. Ограничение: нет XWayland → следующий пункт.
-3. **Focus-window трюк.** Жест сам вызывает `window.show()+requestActivate()`,
-   чтение буфера откладывается до прихода `data_offer`
-   (`QClipboard::dataChanged`), с таймаутом 300 мс и уведомлением «нет
-   доступа к буферу». Побочный эффект — окно всплывает само, что для
-   переводчика нормально.
-4. **Расширение Shell (вариант C из D1)** — если 2 и 3 не сработали.
+**Кандидат 4 (последний): `GsettingsGlobalShortcut`.** Пишет
+`org.gnome.settings-daemon.plugins.media-keys custom-keybindings` +
+`…/custom0/{name,command,binding}`, `command=gdbus call --session -d
+dev.traduku.Traduku -o /dev/traduku/Traduku -m
+dev.traduku.Traduku.gesturePressed`; каждое нажатие — вызов метода
+работающему экземпляру, пары режет тот же детектор. Раннер `gsettings`
+инжектируется, `unregister()` убирает binding. Работает и на Debian 13, и
+на Ubuntu 22.04. **Правило из решения 3:** пишем сразу, если спайк Stage 0
+показал портал нерабочим (нет диалога / `Invalid session` / требует
+sandboxed app_id / impl отсутствует в нужной версии); иначе — вместе с
+Debian 13 в матрице.
 
-### D3. Трея
+**Кандидат 5 (опция, later):** расширение GNOME Shell, наблюдающее клавиши
+и отдающее буфер по D-Bus. Даёт Ctrl+C+C без группы `input` и решает D2, но
+это отдельная поддержка и `gnome-extensions install` + перезаход в сессию.
+Флаг `LT_EXPERIMENT_SHELL_EXT`; возвращаемся, если evdev или D2 не устроят.
 
-`src/platform/sni/` — клиент StatusNotifierItem на чистом Qt/D-Bus:
-регистрация у `org.kde.StatusNotifierWatcher`, интерфейс
+---
+
+## 3. D2 — буфер на GNOME Wayland (риск №1)
+
+Порядок, от дешёвого к дорогому; победителя определяет спайк Stage 0.
+
+1. **Спайк (`tools/spike/clip-spike.cpp`).** Четыре способа замера, каждый
+   дважды (после Ctrl+C в gnome-text-editor и после `wl-copy`): фоновый
+   `QClipboard::text()`; то же после `show()+requestActivate()`; `wl-paste`
+   как дочерний процесс; X11-соединение к XWayland (`XConvertSelection`).
+   Критерий: непустой текст ≤200 мс.
+2. **`X11Clipboard` (`platform/x11`) — ожидаемый победитель.** Муттер
+   зеркалит wayland-буфер в XWayland, а X11-семантика не требует фокуса:
+   `XGetSelectionOwner`/`XConvertSelection` для чтения и
+   `XSetSelectionOwner` для записи. Этим же путём уже пользуются e2e-гейты
+   ветки `debian` (`xclip` на ubuntu-gnome). Подключение — к `:0` с
+   `XAUTHORITY` из `/proc/<Xwayland-pid>/environ` (тот же приём, что у
+   `capture_sessionenv`). Авторизацию и пути инжектируем; юнит-тесты — на
+   слое разбора MIME/charset (общий с `WlClipboard`), интеграционный — под
+   реальным X, с `SKIP` без `DISPLAY`.
+3. **Focus-window трюк** (если XWayland недоступен): жест показывает окно,
+   чтение откладывается до `QClipboard::dataChanged` с таймаутом 300 мс;
+   при таймауте — честное уведомление «нет доступа к буферу».
+4. **Расширение Shell** (кандидат 5 из D1) — если 2 и 3 не сработали.
+5. `WlClipboard` (wl-clipboard) остаётся для композиторов с
+   `ext-data-control` (KWin, Hyprland); на муттере он не помогает — муттер
+   протокол не реализует.
+
+Запись результата (`CopyResult`) идёт тем же каналом, что и чтение; на
+Wayland-клиенте — через активированное окно (`QClipboard::setText`).
+
+---
+
+## 4. D3 — трей: общий `SniTray`, KDE не ломать
+
+`src/platform/sni/`: `SniTray` + `SniWatcher` + `DBusMenuExporter`
+(`GetLayout`, `GetGroupProperties`, `Event`, `AboutToShow`), интерфейс
 `org.kde.StatusNotifierItem` (Category/Id/Title/Status/IconName/ToolTip/
-ItemIsMenu + `Activate`/`ContextMenu`/`SecondaryActivate`) и
-`com.canonical.dbusmenu` для меню (`GetLayout`, `GetGroupProperties`,
-`Event`, `AboutToShow`). Сигналы те же, что у `KdeTray`, поэтому
-`AppController` не меняется. Если watchera нет (чистый GNOME без
-расширения) — логируем `tray=none (no StatusNotifierWatcher)` и живём без
-иконки: жест, CLI и уведомления работают. `KdeTray` сейчас **не**
-переписываем (потом можно унифицировать).
+ItemIsMenu + `Activate`/`ContextMenu`/`SecondaryActivate`), регистрация у
+`org.kde.StatusNotifierWatcher`. Сигналы — те же, что у `KdeTray`
+(`translateRequested`, `settingsRequested`, `targetLanguagePicked`),
+`AppController` не меняется.
 
-### D4. Уведомления
+Порядок по решению 4:
+1. Stage 5 — `SniTray` включён в GNOME-оболочку; `KdeTray` не трогаем.
+2. Stage 6b — переключатель `LT_TRAY=sni|kde` (по умолчанию `kde`),
+   `SniTray` прогоняется на arch-kde: e2e `test_04` (watcher + Title +
+   red-check «убили — иконка пропала») + панель глазами (`vmctl.sh vnc
+   arch-kde`).
+3. Только после зелёного прогона и вашего «да» — `KdeTray` и зависимость от
+   `KF6StatusNotifierItem` удаляются отдельным коммитом; до того `KdeTray`
+   живёт и остаётся дефолтом KDE-сборки.
 
-`FdoNotifier` в `platform/qt` (DE-нейтрально): прямой
-`org.freedesktop.Notifications.Notify` с `app_name="Traduku"`,
-`desktopFileName` выставлен, иконка `accessories-dictionary`. KDE оставляет
-себе `KdeNotifier` из-за именованных событий в `traduku.notifyrc`.
-Тестируется фейковым сервером на сессионной шине (инъекция имени сервиса).
+Отсутствие watchера (чистый GNOME без расширения) = не ошибка:
+`tray=none (no StatusNotifierWatcher)` в `--backend-info`, подсказка в
+первом запуске «установите AppIndicator/KStatusNotifierItem Support»,
+жест/CLI/уведомления работают (решение 2).
 
-### D5. Один экземпляр и «второй запуск = переведи»
+## 5. D4/D5 — уведомления и единственный экземпляр
 
-`SingleInstance` в `platform/qt`: `QLocalServer` на имени
-`traduku-$UID` + владение сессионным именем `dev.traduku.Traduku`. Второй
-запуск шлёт первому команду (`translate` / `gesture`) и выходит 0. Заодно
-это транспорт для D1-B. Плюс чиним давно найденное: `--version` печатает
-пустоту, потому что `QApplication::setApplicationVersion` не вызывается
-(запись в `pipeline_task.md`, п.1).
+`FdoNotifier` (`platform/qt`, DE-нейтрально): прямой
+`org.freedesktop.Notifications.Notify`, `app_name=Traduku`, иконка
+`accessories-dictionary`, `desktopFileName` выставлен; KDE сохраняет
+`KdeNotifier` из-за именованных событий `traduku.notifyrc`.
+
+`SingleInstance` (`platform/qt`): `QLocalServer` + владение сессионным
+именем `dev.traduku.Traduku`; второй запуск передаёт первому команду
+(`translate`, `gesture`) и выходит 0 — это же транспорт для D1-B. Заодно
+чиним `--version` (не вызывается `setApplicationVersion`; пункт 1 из
+«Найдено в текущей версии» в трекере).
 
 ---
 
-## 3. Структура и переключатели сборки
+## 6. Структура и сборка
 
 ```
-src/app/cli.{h,cpp}            # вынесенный QCommandLineParser (+--gesture, --backend-info, --no-tray)
+src/app/cli.{h,cpp}            # общий QCommandLineParser (+--gesture, --backend-info, --no-tray)
 src/app/gnome/main.cpp         # GNOME composition root
-src/platform/sni/              # SniTray (Qt-only SNI + dbusmenu)
-src/platform/gnome/            # PortalGlobalShortcut, GsettingsGlobalShortcut,
-                               # GestureService (dev.traduku.Traduku), GnomeSessionInfo
+src/platform/evdev/            # EvdevHotkeyBackend            [D1]
+src/platform/sni/              # SniTray, DBusMenuExporter     [D3]
+src/platform/gnome/            # PortalGlobalShortcut, GsettingsGlobalShortcut, GestureService
 src/platform/qt/               # + FdoNotifier, SingleInstance
-src/platform/x11/              # + X11Clipboard (XConvertSelection без фокуса)  [D2]
-tests/unit/                    # + tst_snitray, tst_fdonotifier, tst_singleinstance,
-                               #   tst_portalglobalshortcut, tst_gsettingsglobalshortcut
-tests/integration/             # + tst_gestureservice, tst_clipboards (X11Clipboard),
-                               #   tst_gnomeshell_wiring
+src/platform/x11/              # + X11Clipboard                [D2]
+tools/spike/                   # clip-spike.cpp, portal-spike.py, evdev-spike.cpp (не продукт)
+tests/unit/, tests/integration/ # новые suites — см. этапы
 ```
 
-CMake: вместо булевых пар — один кэш-переключатель оболочки
-`set(LT_SHELL "auto" CACHE STRING "kde|gnome|auto")` (`auto` = kde, если
-найдены все KF6, иначе gnome), плюс `LT_BUILD_SNI`, `LT_BUILD_X11` как есть.
-Правило: `add_subdirectory(app/gnome)` только когда `LT_SHELL=gnome`;
-FATAL_ERROR, если одновременно два `traduku`-таргета. Дебаевский/убунтовый
-пакет собирается с `-DLT_SHELL=gnome` (иначе в Depends полезут KF6),
-Arch-пакет — `kde`; `--selftest` обязан проходить в обоих.
-
-`--backend-info` (текстом: clipboard=?, hotkey=?, notifier=?, tray=?,
-shortcut=?, session=wayland/x11) — одна строка на бэкенд. Это то, чем
-_manually_ проверяется конфигурация на чужой машине и что парсят e2e-тесты.
+`set(LT_SHELL "auto" CACHE STRING "kde|gnome|auto")` (`auto` = kde при
+полных KF6, иначе gnome), `LT_TRAY=sni|kde`, `LT_BUILD_X11`, `LT_BUILD_EVDEV`.
+FATAL_ERROR, если собираются два `traduku`-таргета. `.deb` — `-DLT_SHELL=gnome`
+(иначе Depends уедут в KF6), Arch — `kde`; `--selftest` зелёный в обоих.
+Новых зависимостей не появляется: только Qt6 + X11 (уже есть) + D-Bus из Qt.
 
 ---
 
-## 4. Этапы (каждый = зелёный `ctest` + коммит)
+## 7. Ветки: состояние и остаток
 
-**Stage 0 — окружение и спайки (без продуктового кода).**
-`sudo apt-get install -y qt6-base-dev qt6-multimedia-dev
-qt6-5compat-dev libx11-dev libxi-dev libxtst-dev wayland-protocols
-libkf6*‑dev pkg-config ninja-build cmake` (список = `packaging/debian/control`
-из `debian`), сборка `-DLT_SHELL=auto` (на этом хосте → `gnome`, т.е. пока
-без исполняемого файла — это и есть мотивация Stage 1), затем
-`tools/spike/clip-spike.cpp` с четырьмя способами чтения буфера (D2.1) и
-`tools/spike/portal-spike.py` (CreateSession+BindShortcuts против живого
-портала: какой диалог, что в `Activated`, `Deactivated`, `timestamp`).
-Документировать результаты таблицей в этом файле. Выход: понятен победитель
-D2 и подтверждён D1-A.
+Схема одобрена и **выполнена частично**:
+
+* создано `integration/gnome-base` = `pipeline` + merge `debian`
+  (коммит `3fc9f6a`); конфликты разрешены объединением: один список VM
+  грида (`arch-kde debian-kde debian-gnome ubuntu-kde ubuntu-gnome`,
+  ssh 2201..2205, vnc :5901..), общий контейнер `traduku-pipeline-vmm`,
+  control = Depends из `pipeline` + KF6-dev-пакеты из `debian`, changelog =
+  запись `0.2.0-1`, install-deps = два шага (с GTK/appindicator gir и
+  фолбэком), обе ветки логики типа сессии sddm.
+* **Гейты перед мержем в `master` (не пройдены — на этом хосте нет Qt):**
+  `ctest` 20/20; `TRADUKU_VM=arch-kde pytest tests/e2e` 8/8;
+  `vm-functest.sh debian-kde` 7/7 и `ubuntu-gnome` 7/7. После `apt` из §8
+  первый гейт запускается сразу, остальные — после `vmctl.sh up/mkvm`.
+* После гейтов: `git switch master && git merge --no-ff integration/gnome-base`
+  (ожидаемых конфликта два: `packaging/debian/changelog`,
+  `src/platform/x11/X11HotkeyBackend.cpp` — берём версию с
+  `RecordKeyEmitter`), затем уборка: `plan.md` и `pipeline_task.md` →
+  `docs/archive/`, `--version`-фикс и `qt6-wayland` в PKGBUILD отдельными
+  коммитами, тег, `archive/debian`/`archive/pipeline` и удаление веток.
+* Дальнейшая GNOME-работа — `git switch -c gnome` от `master`.
+
+---
+
+## 8. Окружение этого хоста (команды; sudo нужен ваш пароль)
+
+```bash
+# сборка + e2e-тулинг гостя + инструменты ручной проверки
+sudo apt-get update
+sudo apt-get install -y --no-install-recommends \
+  build-essential cmake ninja-build pkg-config \
+  qt6-base-dev qt6-multimedia-dev qt6-5compat-dev \
+  libx11-dev libxi-dev libxtst-dev libglib2.0-dev \
+  wl-clipboard x11-utils xdotool xterm python3-pil python3-pytest
+# (имена проверены apt-cache на этом релизе: Qt здесь 6.10.2,
+#  qt6-5compat-dev есть, debian-имени libqt6core5compat6-dev нет)
+
+# проверка, что всё ставится как ожидается (KDE-слой на GNOME не собираем)
+cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DLT_SHELL=gnome
+cmake --build build && ctest --test-dir build --output-on-failure
+./build/bin/traduku --backend-info
+
+# жест через /dev/input (решение 1): группа input + перелогин
+sudo usermod -aG input $USER   # затем выйти/войти; проверка: getent group input
+```
+
+Грид (docker уже есть): `./tools/vms/setup-ctr.sh && ./tools/vms/vmctl.sh
+up && ./tools/vms/vmctl.sh mkvm ubuntu-kde ubuntu kde && …`. Отдельный
+долг: `mkvm.sh` ставит GNOME с `WaylandEnable=False` (X11-GNOME), а нам
+нужен **GNOME Wayland** — см. Stage 7.
+
+---
+
+## 9. Этапы (каждый = зелёный `ctest` + коммит; «руками» = проверка у вас)
+
+**Stage 0 — спайки и замеры (без продуктового кода).**
+`tools/spike/clip-spike.cpp` (D2.1), `tools/spike/portal-spike.py`
+(GlobalShortcuts: диалог? `Activated`/`Deactivated`, `timestamp`, нужна ли
+sandboxed-идентичность), `tools/spike/evdev-spike.cpp` (Ctrl+C+C из
+`/dev/input` после выдачи группы). Результат — таблица в этом файле и
+решения: победитель D2, «писать ли gsettings сразу» (правило D1-B).
+*Документировать в §0/§9.*
 
 **Stage 1 — каркас GNOME-оболочки.** `app/cli.*` (вынести парсер из
-`app/kde/main.cpp`, поведение KDE не меняется — 20/20 ctest как proof),
-`app/gnome/main.cpp`, `LT_SHELL`, `--backend-info`, фикс `--version`.
-До этого шага на GNOME нет вообще никакого бинаря (единственный
-executable — `app/kde`), поэтому Stage 1 уже приносит `--selftest`,
-`--translate` и `--text` на GNOME. Ручная проверка: `traduku --translate
---text "Привет мир"` против `tools/mock-openai.py`.
+`app/kde/main.cpp`, поведение KDE не меняется), `app/gnome/main.cpp`,
+`LT_SHELL`, `--backend-info`, фикс `--version`. До этого шага на GNOME нет
+ни одного бинаря (единственный executable — `app/kde`). *Руками:*
+`traduku --translate --text "Привет, мир"` против `tools/mock-openai.py`,
+`--selftest`, `--version`.
 
 **Stage 2 — уведомления + единственный экземпляр (D4, D5).**
-`FdoNotifier` (тест: фейковый сервер уведомлений), `SingleInstance`
-(тест: второй процесс выходит 0 и «будит» первый). Ручная проверка: баннер
-GNOME при жесте и при ошибке endpoint.
+*Тесты:* фейковый сервер уведомлений на сессионной шине; второй процесс
+будит первый. *Руками:* баннер GNOME при переводе и при ошибке endpoint.
 
-**Stage 3 — жест (D1).** `GestureService` (D-Bus `dev.traduku.Traduku`),
-`PortalGlobalShortcut` + `GsettingsGlobalShortcut`, выбор между ними по
-наличию интерфейса на шине; интеграция с `ShortcutMonitor`. Тесты: фейковый
-портал на сессионной шине (инжектируемое имя сервиса), фейковый `gsettings`
-раннер, `--gesture` из CLI. Ручная проверка: диалог портала, двойное
-нажатие, одиночное не срабатывает, ru-раскладка.
+**Stage 3 — жест (D1).** `EvdevHotkeyBackend` (юнит: `feedEvent` +
+инжектируемый `DeviceFinder`, интервал из `Settings`, горячее подключение
+устройства), `GestureService` + `GsettingsGlobalShortcut`
+(инжектируемый `gsettings`-раннер), `PortalGlobalShortcut` (фейковый портал
+на сессионной шине под инжектируемым именем). *Руками:* Ctrl+C+C на
+Ubuntu GNOME; одиночное нажатие не срабатывает; ru-раскладка; без группы
+`input` — понятное сообщение и работа через портал.
 
-**Stage 4 — буфер (D2).** `X11Clipboard` + приоритеты в `ClipboardFactory`
-(тесты на `feedSelection`-подобном инъекционном API + интеграционный тест
-против реального X-сервера помечать `SKIP` без `DISPLAY`). Ручная
-проверка: копирование в gnome-text-editor → жест → текст в окне.
+**Stage 4 — буфер (D2).** `X11Clipboard` + приоритеты в `ClipboardFactory`.
+*Тесты:* разбор MIME/charset (общая таблица с `WlClipboard`), интеграционный
+X-тест с `SKIP` без `DISPLAY`. *Руками:* копирование в gnome-text-editor →
+жест → перевод; `CopyResult=true` → `wl-paste`/`xclip` показывает результат.
 
-**Stage 5 — трей (D3).** `SniTray` + `platform/sni`; тесты: фейковый
-watcher, проверка `RegisterStatusNotifierItem`, `GetLayout` меню, `Event`
-по пункту «Translate Clipboard Now» → `translateRequested`, отсутствие
-watchera → деградация без падения. Ручная проверка: иконка в верхней панели
-Ubuntu, меню, переключение языка.
+**Stage 5 — трей (D3) на GNOME.** `platform/sni`. *Тесты:* фейковый watcher
+(`RegisterStatusNotifierItem`, `GetLayout`, `Event` по пункту меню →
+`translateRequested`), отсутствие watchера → деградация. *Руками:* иконка в
+панели Ubuntu, смена языка из меню.
 
-**Stage 6 — автономность.** Первый запуск на GNOME (приветствие, вопрос про
-автозапуск, открытие настроек), иконки/темы (`Yaru` vs `Adwaita`),
-HiDPI-скриншот, локаль ru, звук через PipeWire. Проверка `autostart`:
-перелогин → процесс жив.
+**Stage 6 — автономность.** Первый запуск (приветствие, вопрос про
+автозапуск, настройки), иконки Yaru/Adwaita, HiDPI, локаль ru, звук
+PipeWire, перелогин → процесс жив.
+Иконка-расширение на Ubuntu уже есть из пакета `gnome-shell-ubuntu-extensions`
+(`ubuntu-appindicators@ubuntu.com`), в Debian это
+`gnome-shell-extension-appindicator` — в `Recommends` оба имени.
 
-**Stage 7 — e2e-грид (см. §5).**
+**Stage 6b — `SniTray` в KDE (решение 4).** `LT_TRAY=sni` на arch-kde:
+`test_04` + глаза (`vmctl.sh vnc arch-kde`). Только потом — коммит
+«remove KdeTray» (с вашего «да»).
+
+**Stage 7 — e2e-грид.** `tests/e2e/profiles.py` (KdeProfile/GnomeProfile:
+sessionenv, анти-блокировка, тулзы буфера, ассерт окна, способ жеста),
+новые тесты: `test_09_gesture_evdev` (Ctrl+C+C из QMP),
+`test_10_gesture_portal`, `test_11_gesture_gsettings`,
+`test_12_gnome_clipboard`, `test_13_no_tray_degrade`. `test_04` —
+параметризация: KDE = watcher обязателен; GNOME = обязателен при
+включённом расширении, иначе явный `SKIP` (не vacuous). Инфраструктура:
+`mkvm.sh` должен уметь **GNOME Wayland** (сейчас `WaylandEnable=False`) и
+образ Ubuntu 26.04; `mkarchbase.sh` — кандидат на `arch-gnome` позже.
+Прогоны — последовательно (урок про два грида).
 
 **Stage 8 — упаковка и документация.** `-DLT_SHELL=gnome` в
-`packaging/debian/rules`, Depends без KF6 (+`gsettings-desktop-schemas`,
-`xdg-desktop-portal-gnome` как Recommends), README: таблица «что работает
-на каком DE/сессии» и честная строка про Wayland-жест; ARCHITECTURE.md:
-раздел GNOME вместо TODO; версия 0.3.0 в `CMakeLists.txt`,
-`packaging/arch/PKGBUILD`, `packaging/debian/changelog`.
+`packaging/debian/rules`, Depends без KF6, `Recommends:
+gnome-shell-extension-appindicator | gnome-shell-ubuntu-extensions,
+wl-clipboard`, `Suggests: xdg-desktop-portal-gnome`; README: таблица «что работает на каком DE/сессии», раздел про
+группу `input` и приватность evdev, раздел про расширение; ARCHITECTURE.md:
+раздел GNOME вместо TODO; версия 0.3.0 в трёх местах (`CMakeLists.txt`,
+`PKGBUILD`, `changelog`).
 
 ---
 
-## 5. Тестовая матрица GNOME (поверх `pipeline`)
+## 10. Открытые вопросы
 
-Инфраструктура `pipeline` (`tools/vms/`, `tests/e2e/`) переиспользуется
-целиком; добавляется профиль DE, чтобы не переписывать тесты 1–8
-(правило «не менять существующие тесты без согласования»):
-
-```
-tests/e2e/profiles.py     # KdeProfile / GnomeProfile: sessionenv, анти-блокировка
-                          # экрана, tools буфера (wl-copy/xclip), ассерт окна
-                          # (KWin scripting vs xdotool/Xwayland vs journal), жест (KGA vs portal/gsettings)
-tests/e2e/test_04_tray    # → параметризовать: KDE = watcher обязателен,
-                          #    GNOME = обязателен при включённом расширении,
-                          #    иначе SKIP с явной причиной (не vacuous!)
-tests/e2e/test_09_gesture_portal   # BindShortcuts через портал → QMP-пара → перевод
-tests/e2e/test_10_gesture_gsettings# custom-keybinding → gdbus gesturePressed → перевод
-tests/e2e/test_11_gnome_clipboard  # seed → жест → результат в буфере (X11-путь и wayland-путь)
-tests/e2e/test_12_no_tray_degrade  # выключенное расширение: приложение живо, CLI работает
-```
-
-VM: `ubuntu-gnome` (Wayland, образ Ubuntu 26.04 — тот же релиз, что и
-ручная машина) и `debian-gnome` (X11, уже есть в ветке `debian`, гейт
-`vm-functest.sh` 7/7). `mkvm.sh` объединяет ветки (см. §6) и принимает
-`<distro> <de>` из множества {arch,debian,ubuntu,fedora} × {kde,gnome}.
-Порядок прогонов — последовательный (урок из `pipeline_task.md`: два
-грида одновременно = тайминг-флейки).
-
----
-
-## 6. Что делать с ветками `debian` и `pipeline`
-
-**Слить — да, и до начала GNOME-работы.** Это не две параллельные фичи:
-`pipeline` ответвился от `debian` на коммите `2684afa` (содержимое
-эквивалентно `master`), и с тех пор `debian` ушла на 7 коммитов вперёд
-(X11 RECORD-хелпер, Build/Runtime-Depends, гейт `vm-functest.sh` на 4 VM),
-а `pipeline` — на 22 (QEMU-грид, pytest e2e 1–8, `.deb`-пайплайн,
-`mkrelease --sign`). Один и тот же чин (flaky commit-order, регистр HTTP-
-заголовков) сделан дважды двумя cherry-pick'ами — классический признак
-расхождения. GNOME-работа опирается и на e2e-инфраструктуру (`pipeline`), и
-на X11-хелпер (`debian`), так что third-branch поверх master дала бы
-трёхсторонние конфликты в `tools/vms/` — а они уже сейчас add/add:
-`Dockerfile`, `mkvm.sh`, `qmp.py`, `vm-install.sh`, `vmctl.sh`, `vmlife.sh`
-(plus `packaging/debian/control`).
-
-Порядок слияния (от менее спорного к master):
-
-```bash
-git switch pipeline && git switch -c integration/gnome-base   # рабочая ветка слияния
-git merge --no-ff debian          # конфликты: tools/vms/* (union: arch-логика pipeline
-                                  # + дистрибутив/DE-логика debian), packaging/debian/control
-                                  # (взять pipeline-версию + libkf6coreaddons-dev, libkf6i18n-dev),
-                                  # changelog (взять debian: запись 0.2.0-1)
-# дубли-патчи тестов (7d37663/d28930e, 7f82696/ae9295b) оставить один раз
-ctest --test-dir build            # 20/20
-TRADUKU_VM=arch-kde  pytest tests/e2e      # 8/8
-./tools/vms/vm-functest.sh debian-kde      # 7/7 (валидирует X11 RECORD-хелпер)
-./tools/vms/vm-functest.sh ubuntu-gnome    # 7/7 (здесь же первая проверка GNOME-сессии)
-
-git switch master && git merge --no-ff integration/gnome-base
-# ожидаемых конфликта два: packaging/debian/changelog и
-# src/platform/x11/X11HotkeyBackend.cpp (взять debian-версию с RecordKeyEmitter)
-ctest --test-dir build && TRADUKU_VM=arch-kde pytest tests/e2e
-```
-
-Затем один «уборочный» коммит: `plan.md` (debian) и `pipeline_task.md`
-(pipeline) — трекеры сессий, у них нет дома; перенести в `docs/archive/`
-или удалить по вашему слову; `--version`-фикс и `qt6-wayland` в depends
-PKGBUILD (пункты 1–2 из «Найдено в текущей версии») — отдельными
-маленькими коммитами с тестами. После — тег `v0.2.1`, ветки `debian` и
-`pipeline` пометить тегами `archive/debian`, `archive/pipeline` и удалить
-(история остаётся в мерж-коммитах).
-
-Альтернатива «не сливать сейчас» стоит того только если вы хотите держать
-e2e-инфраструктуру отдельно от продуктового дерева; тогда GNOME-ветку всё
-равно надо начинать от `pipeline`, а 4 уникальных коммита `debian`
-(в первую очередь X11-хелпер) при этом чerry-pick'аются вручную — т.е.
-та же работа, только с повторным разрешением конфликтов потом. Не советую.
-
----
-
-## 7. Открытые вопросы (нужен ваш ответ)
-
-1. **Жест на Wayland.** Принимаем, что на GNOME Wayland жестом становится
-   зарегистрированная пара (`Ctrl+Alt+C` ×2 через портал/gsettings), а
-   Ctrl+C+C остаётся только на X11-сессиях? Или сразу закладываем
-   расширение Shell (D1-C)?
-2. **Трея на чистом GNOME** (без `gnome-shell-extension-appindicator`)
-   считаем приемлемой деградацией без иконки?
-3. **`gsettings`-fallback (D1-B)** писать сразу вместе с порталом или
-   дождаться Debian 13 в матрице?
-4. **`KdeTray`** — оставляем как есть (рекомендую) или сразу мигрируем KDE
-   на общий `SniTray` (дешевле сопровождение, дороже риск регрессий)?
-5. **Ветки** — схема §6 ок? Куда определить `plan.md`/`pipeline_task.md`:
-   `docs/archive/` или удалить?
-6. **Можно ли ставить build-deps на эту машину** (`apt-get install` из
-   Stage 0) и поднимать grid-VM (docker, ~4 vCPU) — или сборку держим в
-   distrobox?
-
----
-
-## 8. Что можно потрогать руками уже сегодня (после Stage 0–1)
-
-```bash
-sudo apt-get install -y qt6-base-dev qt6-multimedia-dev qt6-5compat-dev \
-  libx11-dev libxi-dev libxtst-dev pkg-config cmake ninja-build
-cmake -S . -B build -DLT_SHELL=gnome -G Ninja && cmake --build build
-./build/bin/traduku --backend-info
-python3 tools/mock-openai.py 8931 &
-./build/bin/traduku --translate --text "Привет, мир"
-```
-
-Дальше по этапам: Stage 2 даёт баннеры GNOME, Stage 3 — жест с диалогом
-портала, Stage 5 — иконку в верхней панели Ubuntu.
+1. evdev = группа `input` (умение читать все клавиатуры). Ок как
+   рекомендуемый путь с явным предупреждением, или делать его опцией
+   конфига по умолчанию `false`?
+2. Если спайк покажет, что фоновое чтение буфера на муттере невозможно, а
+   XWayland-мост работает — устраивает ли зависимость GNOME-версии от
+   XWayland (на системах с выключенным XWayland буфер не читается)?
+3. Порядок этапов: трогать ли `KdeTray`/KGA до того, как GNOME-версия
+   полностью готова (Stage 6b запланирован после Stage 5)?
