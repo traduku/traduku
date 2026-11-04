@@ -362,12 +362,52 @@ up && ./tools/vms/vmctl.sh mkvm ubuntu-kde ubuntu kde && …`. Отдельны�
 використовується). **Stage 0 закрито.** У CI той самий сценарій закриє
 `test_09_gesture_evdev` (QMP-клавіші на гридній VM).
 
-**Stage 1 — каркас GNOME-оболочки.** `app/cli.*` (вынести парсер из
-`app/kde/main.cpp`, поведение KDE не меняется), `app/gnome/main.cpp`,
-`LT_SHELL`, `--backend-info`, фикс `--version`. До этого шага на GNOME нет
-ни одного бинаря (единственный executable — `app/kde`). *Руками:*
-`traduku --translate --text "Привет, мир"` против `tools/mock-openai.py`,
-`--selftest`, `--version`.
+**Stage 1 — каркас GNOME-оболочки. ГОТОВО.** Зроблено і перевірено на
+живій машині:
+
+* `src/app/cli.{h,cpp}` — спільний парсер + `runOneShotTranslation()`
+  (стримінг без GUI/трея/буфера, колбеки). Тести: `tst_cli` (12 кейсів:
+  режими, взаємна виключність, `--text` без `--translate`, невідома опція,
+  `--help/--version` як *флаги*, а не `exit()`), `tst_oneshot` (3 кейси
+  проти mock SSE).
+* `src/app/BackendInfo.{h,cpp}` — `BackendReport` + чистий
+  `formatBackendInfo()` (тести `tst_backendinfo`: кожен рядок `key: value`,
+  підказка буфера передається дослівно, при проблемі з `/dev/input`
+  обов'язково друкується шлях до `70-traduku-uaccess.rules`).
+* `src/platform/qt/SessionInfo.{h,cpp}` — **сесія, а не QPA-плагін**
+  (`tst_sessioninfo`). Без цього `--translate` під примусовим
+  `QT_QPA_PLATFORM=offscreen` брав сліпий Qt-буфер на Wayland, бо
+  `createClipboard(QGuiApplication::platformName(), ...)` бачив
+  «offscreen» замість «wayland».
+* `LT_SHELL=auto|kde|gnome` (верхній `CMakeLists.txt` + `src/CMakeLists.txt`):
+  KF6 шукається QUIET, `kde` вимагає KF6 інакше FATAL_ERROR, `gnome` не
+  шукає його взагалі, `auto` = історична поведінка; `add_subdirectory`
+  обох оболонок у одному білді → FATAL_ERROR. Інсталяції перенесено в
+  каталоги оболонок (GNOME-білд більше не ставить `traduku.notifyrc` у
+  `knotifications6`), додано `packaging/gnome/traduku.desktop`
+  (`dev.traduku.Traduku`, без KDE-ключів).
+* `src/app/gnome/main.cpp` — перший на GNOME executable. `--version` тепер
+  каже номер (раніше `QApplication::setApplicationVersion` не викликався
+  ніде). Режим трея навмисно відмовляється стартувати (exit 5) до Stage
+  2/3/5: краще відмова, ніж застосунок, що мовчить на Ctrl+C+C.
+
+Знахідки по дорозі (обидва — реальні, не тестові):
+
+1. `LlmStreamClient` не перевіряв HTTP-статус: Qt не перетворює 4xx/5xx на
+   `QNetworkReply::error()`, тож **невірний API-ключ (401) або nginx 502
+   виглядали як «порожній переклад»**. Додано перевірку статусу після гілок
+   парсер-помилок (щоб JSON-`{"error":{...}}` і далі давав точніший текст).
+   Ручна перевірка: `traduku: HTTP 502 Bad Gateway from the API endpoint`, rc=1.
+2. `tools/mock-openai.py` різав текст після маркера `<<<TEXT` за відступом і
+   тягнув у «переклад» новий рядок + закриття `TEXT`. Ріжемо між маркерами.
+
+*Перевірено руками* (Latin-дані, за домовленістю): `--translate --text
+"hello world"` → `[MOCK -> Русский (Russian)] hello world`; `--translate` з
+**живого** буфера GNOME (`wl-copy "copied from gnome"`) →
+`[MOCK -> Русский (Russian)] copied from gnome`; порожній буфер → rc=1;
+`--backend-info` → `session: wayland (qpa=offscreen)`,
+`clipboard: wl-clipboard`, `gesture: none`; `--selftest` → PASSED;
+помилки CLI → rc=2 з підказкою. `ctest` 24/24.
 
 **Stage 2 — уведомления + единственный экземпляр (D4, D5).**
 *Тесты:* фейковый сервер уведомлений на сессионной шине; второй процесс

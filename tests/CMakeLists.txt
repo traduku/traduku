@@ -83,3 +83,23 @@ lt_add_test(tst_chunkedtranslator
 
 # M16: chunk aligner (whole-text result -> per-chunk mapping)
 lt_add_test(tst_aligner SOURCES unit/tst_aligner.cpp LIBS lt::core)
+
+# G1 (GNOME plan, Stage 1): shared CLI parsing - both shells use it, so it
+# is tested instead of duplicated per shell.
+lt_add_test(tst_cli SOURCES unit/tst_cli.cpp LIBS lt::app Qt6::Core)
+target_include_directories(tst_cli PRIVATE ${CMAKE_SOURCE_DIR}/src)
+
+# G1: --backend-info rendering (the operator's "why is nothing happening"
+# output; tests/e2e greps these lines).
+lt_add_test(tst_backendinfo SOURCES unit/tst_backendinfo.cpp LIBS lt::app)
+target_include_directories(tst_backendinfo PRIVATE ${CMAKE_SOURCE_DIR}/src)
+
+# G1: one-shot `traduku --translate` (the mode scripts and e2e use)
+lt_add_test(tst_oneshot SOURCES integration/tst_oneshot.cpp
+    integration/mocksseserver.h
+    LIBS lt::app lt::core Qt6::Network)
+target_include_directories(tst_oneshot PRIVATE integration ${CMAKE_SOURCE_DIR}/src)
+
+# G1: session detection (QPA plugin name is not the session; offscreen CI
+# must still see wayland/x11 so backends are picked correctly)
+lt_add_test(tst_sessioninfo SOURCES unit/tst_sessioninfo.cpp LIBS lt::platform_qt)

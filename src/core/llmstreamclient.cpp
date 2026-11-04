@@ -115,6 +115,22 @@ void LlmStreamClient::onFinished()
         }
     }
 
+    // Qt does not turn an HTTP 4xx/5xx into QNetworkReply::error(): a wrong
+    // API key (401) or an nginx 502 would otherwise reach the caller as a
+    // successful-but-empty translation. A JSON error body is still better
+    // evidence, which is why this sits AFTER the parser-error branches.
+    const int status = reply->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt();
+    if (status >= 400) {
+        const QString phrase = reply->attribute(
+            QNetworkRequest::HttpReasonPhraseAttribute).toString();
+        QString msg = QStringLiteral("HTTP %1").arg(status);
+        if (!phrase.isEmpty()) {
+            msg += QStringLiteral(" %1").arg(phrase);
+        }
+        Q_EMIT failed(msg + QStringLiteral(" from the API endpoint"));
+        return;
+    }
+
     if (reply->error() != QNetworkReply::NoError) {
         QString reason = QStringLiteral("%1 (HTTP status %2)")
                              .arg(reply->errorString(),
