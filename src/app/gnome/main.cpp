@@ -135,7 +135,7 @@ BackendReport collectBackends(Settings *settings)
 
     // gesture/notifier/tray: the gesture is probed for real (start/stop),
     // which is the only way --backend-info can tell "works" from "no ACL".
-    Settings probeSettings;
+    Settings probeSettings;   // interval only; --backend-info must not need a config
     GestureSetup gesture = createGesture(probeSettings, r);
     if (gesture.chosen) {
         gesture.evdev->stop();
@@ -143,6 +143,11 @@ BackendReport collectBackends(Settings *settings)
     // The FDO service is what gnome-shell actually shows; no KF6, no
     // libnotify, one D-Bus call.
     r.notifier = FdoNotifier::isAvailable() ? QStringLiteral("fdo") : QString();
+    // --backend-info may be called without a config (collectBackends(nullptr)
+    // is legal), so nothing here may assume settings exists.
+    r.reasoning = settings && settings->disableReasoning()
+        ? QStringLiteral("skipped (request options sent)")
+        : QStringLiteral("NOT disabled - the model may stream hidden reasoning");
     r.tray = QString();
     return r;
 }
@@ -256,14 +261,19 @@ int main(int argc, char **argv)
         return cli.exitCode;
     }
 
-    Settings settings;
+    // Settings("") would happily create a file named "", so the default
+    // path ($TRADUKU_CONFIG, then XDG) has to come from the other ctor.
+    std::unique_ptr<Settings> settingsHolder(cli.configPath.isEmpty()
+                                                 ? new Settings
+                                                 : new Settings(cli.configPath));
+    Settings &settings = *settingsHolder;
 
     switch (cli.mode) {
     case CliOptions::Mode::BackendInfo:
-        out << formatBackendInfo(collectBackends(nullptr));
+        out << formatBackendInfo(collectBackends(&settings));
         return 0;
     case CliOptions::Mode::SelfTest:
-        return runSelfTest(out, cli.live) == 0 ? 0 : 1;
+        return runSelfTest(out, cli.live, cli.configPath) == 0 ? 0 : 1;
     case CliOptions::Mode::Translate:
         return doTranslate(*app, settings, cli);
     case CliOptions::Mode::NotifyTest:

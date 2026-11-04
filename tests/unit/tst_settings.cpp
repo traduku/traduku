@@ -11,6 +11,46 @@ class TestSettings : public QObject
     QString path() const { return m_dir.path() + QStringLiteral("/config.ini"); }
 
 private slots:
+    void configPathHonoursEnvironmentOverride()
+    {
+        // "Run this one instance against another endpoint" must not require
+        // inventing an XDG_CONFIG_HOME; tests and scripts need it too.
+        const QString custom = m_dir.path() + QStringLiteral("/custom.ini");
+        qputenv("TRADUKU_CONFIG", QFile::encodeName(custom));
+        QCOMPARE(Settings::defaultFilePath(), custom);
+
+        Settings s;                       // no explicit path -> the env wins
+        QCOMPARE(s.filePath(), custom);
+        s.setApiUrl(QStringLiteral("http://example.test/v1"));
+        s.save();
+        QVERIFY(QFile::exists(custom));
+
+        qunsetenv("TRADUKU_CONFIG");
+        QVERIFY2(!Settings::defaultFilePath().endsWith(QStringLiteral("custom.ini")),
+                 "the override leaked past its lifetime");
+    }
+
+    void reasoningOptionsDefaultAndRoundTrip()
+    {
+        // A reasoning model streams a private channel first and we discard
+        // it, so the default must be "ask the server to skip it".
+        Settings s(path());
+        QCOMPARE(s.disableReasoning(), true);
+        QVERIFY2(s.reasoningOffOptions().contains(QStringLiteral("enable_thinking")),
+                 qPrintable(s.reasoningOffOptions()));
+        QVERIFY(s.extraOptions().isEmpty());
+
+        s.setDisableReasoning(false);
+        s.setExtraOptions(QStringLiteral("{\"top_p\":0.9}"));
+        s.setReasoningOffOptions(QStringLiteral("{\"reasoning_effort\":\"none\"}"));
+        s.save();
+
+        Settings r(path());
+        QCOMPARE(r.disableReasoning(), false);
+        QCOMPARE(r.extraOptions(), QStringLiteral("{\"top_p\":0.9}"));
+        QCOMPARE(r.reasoningOffOptions(), QStringLiteral("{\"reasoning_effort\":\"none\"}"));
+    }
+
     void documentModeSettings()
     {
         Settings s(path());

@@ -16,6 +16,19 @@ struct ChatRequest {
     QString prompt;
     double temperature = 0.1;
     int transferTimeoutMs = 120'000;
+
+    /// Server-specific options merged into the request body (vLLM, llama.cpp
+    /// and gateways each want their own). Invalid JSON fails the request
+    /// loudly instead of translating without them.
+    QString extraBodyJson;
+
+    /// Many current chat models are reasoning models: they stream a private
+    /// "reasoning" channel first, which we discard, so the user just waits.
+    /// With this on, reasoningOffJson is merged in as well. Measured on
+    /// tr-coder/vLLM: 37 reasoning events and 0.71 s drop to 0.21 s, and the
+    /// answer no longer starts with the template's blank lines.
+    bool disableReasoning = false;
+    QString reasoningOffJson;   // e.g. {"chat_template_kwargs":{"enable_thinking":false}}
 };
 
 /*!
@@ -36,6 +49,10 @@ public:
     void cancel();
     bool busy() const { return m_reply != nullptr; }
 
+    /// How often a server rejected our optional extras (400/422) and the
+    /// request was retried without them.
+    int extraOptionsRejectedCount() const { return m_extraRejected; }
+
 Q_SIGNALS:
     void delta(const QString &text);
     void completed();
@@ -48,10 +65,15 @@ private:
     void onReadyRead();
     void onFinished();
 
+    void sendInternal(const ChatRequest &req, bool allowExtras);
+
     QNetworkAccessManager *m_nam = nullptr;
     QNetworkReply *m_reply = nullptr;
     class SseParser *m_parser = nullptr;
     QString m_streamError;   // server-sent error seen mid-stream
+    ChatRequest m_pending;   // as the caller asked for, for the extras retry
+    bool m_usedExtras = false;
+    int m_extraRejected = 0;
 };
 
 } // namespace lt

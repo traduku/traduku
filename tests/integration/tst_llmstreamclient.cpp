@@ -29,6 +29,13 @@ class TestLlmStreamClient : public QObject
     }
 
 private slots:
+    void init()
+    {
+        // One server object is shared by all slots: a leftover "reject the
+        // next N requests" from a previous slot would poison the next one.
+        m_server.reset();
+    }
+
     void streamsDeltasInOrder()
     {
         m_server.setResponse(200, {
@@ -120,6 +127,109 @@ private slots:
         QCOMPARE(done.count(), 0);
         QVERIFY(fail.last().last().toString().contains(QStringLiteral("503"))
                 || fail.last().last().toString().contains(QStringLiteral("no gpu")));
+    }
+
+    // ---- server-specific request options (reasoning models) ------------
+
+    void extraOptionsAreMergedIntoTheBody()
+    {
+        m_server.setResponse(200, {sse("ok")});
+        LlmStreamClient c;
+        QSignalSpy done(&c, &LlmStreamClient::completed);
+        ChatRequest r = request();
+        r.extraBodyJson = QStringLiteral("{\"seed\":7,\"user\":\"traduku\"}");
+        c.send(r);
+        QVERIFY(done.wait(5000));
+        const QByteArray &body = m_server.m_requests.last();
+        QVERIFY2(body.contains("\"seed\":7"), body);
+        QVERIFY(body.contains("\"user\":\"traduku\""));
+    }
+
+    void reasoningOffInjectsThePresetByDefault()
+    {
+        // Measured on the live endpoint: this is what removes 37 "reasoning"
+        // events and cuts 0.71 s to 0.21 s.
+        m_server.setResponse(200, {sse("ok")});
+        LlmStreamClient c;
+        QSignalSpy done(&c, &LlmStreamClient::completed);
+        ChatRequest r = request();
+        r.disableReasoning = true;
+        r.reasoningOffJson = QStringLiteral(
+            "{\"chat_template_kwargs\":{\"enable_thinking\":false},\"reasoning_effort\":\"none\"}");
+        c.send(r);
+        QVERIFY(done.wait(5000));
+        const QByteArray &body = m_server.m_requests.last();
+        QVERIFY2(body.contains("chat_template_kwargs"), body);
+        QVERIFY(body.contains("enable_thinking"));
+        QVERIFY2(body.contains("reasoning_effort"), body);
+    }
+
+    void reasoningOffCanBeDisabled()
+    {
+        m_server.setResponse(200, {sse("ok")});
+        LlmStreamClient c;
+        QSignalSpy done(&c, &LlmStreamClient::completed);
+        ChatRequest r = request();
+        r.disableReasoning = false;
+        r.reasoningOffJson = QStringLiteral("{\"reasoning_effort\":\"none\"}");
+        c.send(r);
+        QVERIFY(done.wait(5000));
+        QVERIFY(!m_server.m_requests.last().contains("reasoning_effort"));
+    }
+
+    void userExtraOptionsWinOverThePreset()
+    {
+        m_server.setResponse(200, {sse("ok")});
+        LlmStreamClient c;
+        QSignalSpy done(&c, &LlmStreamClient::completed);
+        ChatRequest r = request();
+        r.disableReasoning = true;
+        r.reasoningOffJson = QStringLiteral("{\"reasoning_effort\":\"none\"}");
+        r.extraBodyJson = QStringLiteral("{\"reasoning_effort\":\"low\"}");
+        c.send(r);
+        QVERIFY(done.wait(5000));
+        const QByteArray &body = m_server.m_requests.last();
+        QVERIFY2(body.contains("\"reasoning_effort\":\"low\""), body);
+        QVERIFY(!body.contains("\"reasoning_effort\":\"none\""));
+    }
+
+    void malformedOptionsFailWithAClearMessage()
+    {
+        // A typo in a settings field must not silently translate *with*
+        // reasoning: the user has to see that the option was not applied.
+        LlmStreamClient c;
+        QSignalSpy fail(&c, &LlmStreamClient::failed);
+        ChatRequest r = request();
+        r.extraBodyJson = QStringLiteral("{seed:7");
+        c.send(r);
+        QTRY_COMPARE_WITH_TIMEOUT(fail.count(), 1, 5000);
+        const QString reason = fail.last().last().toString();
+        QVERIFY2(reason.contains(QStringLiteral("Extra options")), qPrintable(reason));
+        QVERIFY2(reason.contains(QStringLiteral("JSON")), qPrintable(reason));
+        QCOMPARE(m_server.requestCount(), 0);      // nothing was sent
+    }
+
+    void strictServer400RetriesWithoutTheExtraOptions()
+    {
+        // Gateways that reject unknown fields must not lose the translation:
+        // one retry with the optional extras dropped, then normal failure.
+        m_server.setEchoMode(true);
+        const int before = m_server.requestCount();
+        m_server.setFailNextRequests(1, 400);
+        LlmStreamClient c;
+        QSignalSpy done(&c, &LlmStreamClient::completed);
+        QSignalSpy fail(&c, &LlmStreamClient::failed);
+        ChatRequest r = request();
+        r.disableReasoning = true;
+        r.reasoningOffJson = QStringLiteral("{\"reasoning_effort\":\"none\"}");
+        c.send(r);
+        QTRY_VERIFY_WITH_TIMEOUT(done.count() == 1 || fail.count() == 1, 12000);
+        QCOMPARE(fail.count(), 0);
+        QCOMPARE(m_server.requestCount(), before + 2);          // rejected + retried
+        QVERIFY(m_server.m_requests.at(before).contains("reasoning_effort"));
+        QVERIFY2(!m_server.m_requests.last().contains("reasoning_effort"),
+                 "the retry must drop the options the server refused");
+        QCOMPARE(c.extraOptionsRejectedCount(), 1);
     }
 
     void midStreamServerError()

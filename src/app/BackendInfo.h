@@ -32,6 +32,10 @@ struct BackendReport
     QString notifier;
     QString tray;
     QString audio;
+    /// What we asked the model to do about its hidden reasoning channel
+    /// ("skipped (request options sent)" / "NOT disabled - ..."). Empty when
+    /// the shell has no LLM path at all.
+    QString reasoning;
 };
 
 /// "key: value" per line. Only non-empty fields are printed, so a healthy

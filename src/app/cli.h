@@ -22,6 +22,7 @@ struct CliOptions
 
     Mode mode = Mode::Tray;
     QString text;              // --text; null means "read the clipboard"
+    QString configPath;        // --config; empty = $TRADUKU_CONFIG or XDG
     bool live = false;         // --live, only meaningful with --selftest
     bool wantsHelp = false;
     bool wantsVersion = false;

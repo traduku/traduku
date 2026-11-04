@@ -100,6 +100,13 @@ lt_add_test(tst_oneshot SOURCES integration/tst_oneshot.cpp
     LIBS lt::app lt::core Qt6::Network)
 target_include_directories(tst_oneshot PRIVATE integration ${CMAKE_SOURCE_DIR}/src)
 
+# selftest --live must use the config file it was handed (--config), not the
+# user's default path
+lt_add_test(tst_selftest SOURCES integration/tst_selftest.cpp
+    integration/mocksseserver.h ../src/app/SelfTest.h
+    LIBS lt::app lt::core lt::ui Qt6::Network Qt6::Widgets)
+target_include_directories(tst_selftest PRIVATE integration ${CMAKE_SOURCE_DIR}/src)
+
 # G1: session detection (QPA plugin name is not the session; offscreen CI
 # must still see wayland/x11 so backends are picked correctly)
 lt_add_test(tst_sessioninfo SOURCES unit/tst_sessioninfo.cpp LIBS lt::platform_qt)
