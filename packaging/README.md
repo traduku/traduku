@@ -38,7 +38,16 @@ observing the keyboard is a privacy decision the user makes per machine.
 sudo install -Dm644 packaging/udev/99-traduku-uaccess.rules \
      /etc/udev/rules.d/99-traduku-uaccess.rules
 sudo udevadm control --reload
-sudo udevadm trigger --action=add --subsystem-match=input   # add, not change
+sudo udevadm trigger --action=add --subsystem-match=input   # add, NOT change
+```
+
+`--action=add` is not decoration: the ACL comes from
+`/usr/lib/udev/rules.d/73-seat-late.rules` (`TAG=="uaccess", RUN{builtin}+="uaccess"`)
+and `RUN` only executes on add/move events. A default `change` trigger updates the
+tags (so `udevadm info` already shows `:uaccess:`) but never applies the ACL — the
+classic "my rule does nothing" trap. Re-plugging the keyboard or rebooting works too.
+
+```bash
 ```
 
 (Stage 3 of GNOME_PLAN.md turns this into `traduku --grant-keyboard-access
