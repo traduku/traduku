@@ -117,10 +117,23 @@ void reportInventory(const std::vector<Device> &devices)
     say(QStringLiteral("summary: %1 readable, %2 keyboard-capable, %3 permission-denied\n")
             .arg(readable).arg(keyboards).arg(denied));
     if (keyboards == 0 && denied > 0) {
-        say(QStringLiteral("hint: give the user read access to the keyboards, then re-login:\n"
-                          "  sudo usermod -aG input $USER\n"
-                          "one-shot without re-login (until next boot):\n"
-                          "  sudo setfacl -R -m u:$USER:rw /dev/input/event*\n"));
+        // Not "usermod -aG input": the group hands keyboard reading to
+        // every program of the account, forever. uaccess is the modern
+        // answer (packaging/udev/99-traduku-uaccess.rules) - a logind ACL
+        // for the ACTIVE seat session only. Verified matching here; the
+        // ACL lands when the node is set up, so trigger MUST be add:
+        // plain `udevadm trigger` sends change and does nothing.
+        say(QStringLiteral(
+            "hint: install the uaccess rule (NOT the 'input' group):\n"
+            "  sudo install -Dm644 packaging/udev/99-traduku-uaccess.rules \\\n"
+            "       /etc/udev/rules.d/99-traduku-uaccess.rules\n"
+            "  sudo udevadm control --reload\n"
+            "  sudo udevadm trigger --action=add --subsystem-match=input\n"
+            "  getfacl /dev/input/event3     # expect: user:$USER:rw-\n"
+            "(--action=add is required: uaccess ACLs are applied when the\n"
+            " node is set up; the default 'change' event changes nothing)\n"
+            "one-shot for a test run, gone after reboot:\n"
+            "  sudo setfacl -R -m u:$USER:rw /dev/input/event*\n"));
     }
 }
 

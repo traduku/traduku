@@ -314,7 +314,8 @@ cmake --build build && ctest --test-dir build --output-on-failure
 # жест через /dev/input: правило udev (НЕ группа input, см. D1)
 sudo install -Dm644 packaging/udev/99-traduku-uaccess.rules \
      /etc/udev/rules.d/99-traduku-uaccess.rules
-sudo udevadm control --reload && sudo udevadm trigger --subsystem-match=input
+sudo udevadm control --reload
+sudo udevadm trigger --action=add --subsystem-match=input   # add, не change
 getfacl /dev/input/event3        # должно появиться user:user:rw-
 ./build/bin/evdev-spike listen 20
 ```
