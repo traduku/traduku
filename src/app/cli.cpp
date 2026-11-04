@@ -39,6 +39,11 @@ void addOptions(QCommandLineParser &parser, const QString &shell)
          QStringLiteral("Text to translate (default: the clipboard). "
                         "Requires --translate."),
          QStringLiteral("text")},
+        {QStringLiteral("config"),
+         QStringLiteral("Read settings from this file instead of "
+                        "$TRADUKU_CONFIG / ~/.config/traduku/config.ini "
+                        "(one instance against another endpoint, tests)."),
+         QStringLiteral("path")},
         {QStringLiteral("selftest"),
          QStringLiteral("Run the built-in smoke test (headless-safe) and "
                         "exit. Add --live to also translate once via the "
@@ -97,6 +102,9 @@ CliOptions parseCommandLine(QCoreApplication &app, const QStringList &args,
     const bool info = parser.isSet(QStringLiteral("backend-info"));
     const bool notifyTest = parser.isSet(QStringLiteral("notify-test"));
     o.live = parser.isSet(QStringLiteral("live"));
+    if (parser.isSet(QStringLiteral("config"))) {
+        o.configPath = parser.value(QStringLiteral("config"));
+    }
 
     if (int(translate) + int(selftest) + int(info) + int(notifyTest) > 1) {
         o.errors << QStringLiteral(

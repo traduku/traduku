@@ -62,6 +62,22 @@ private slots:
         QVERIFY2(s.contains(QStringLiteral("gesture: none")), qPrintable(s));
     }
 
+    void showsWhatHappensToModelReasoning()
+    {
+        // "the translation is slow" is usually a reasoning model streaming a
+        // hidden channel we discard - the report has to say whether we asked
+        // the server to skip it.
+        m_r.reasoning = QStringLiteral("skipped (request options sent)");
+        QVERIFY2(formatBackendInfo(m_r).contains(QStringLiteral("reasoning: skipped")),
+                 qPrintable(formatBackendInfo(m_r)));
+
+        m_r.reasoning = QStringLiteral("NOT disabled - the model may stream hidden reasoning");
+        QVERIFY(formatBackendInfo(m_r).contains(QStringLiteral("reasoning: NOT disabled")));
+
+        m_r.reasoning.clear();          // a shell without the LLM path: no noise
+        QVERIFY(!formatBackendInfo(m_r).contains(QStringLiteral("reasoning:")));
+    }
+
     void everyAttemptIsListedWithItsReason()
     {
         m_r.hotkeyAttempts = {

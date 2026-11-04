@@ -51,6 +51,9 @@ QString formatBackendInfo(const BackendReport &r)
     if (!r.audio.isEmpty()) {
         add(QStringLiteral("audio"), r.audio);
     }
+    if (!r.reasoning.isEmpty()) {
+        add(QStringLiteral("reasoning"), r.reasoning);
+    }
     return lines.join(QLatin1Char('\n')) + QLatin1Char('\n');
 }
 

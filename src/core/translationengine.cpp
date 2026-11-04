@@ -80,6 +80,9 @@ void TranslationEngine::translate(const QString &text)
     req.apiKey = m_settings->apiKey();
     req.model = m_settings->model();
     req.prompt = buildPrompt(text, targetName);
+    req.disableReasoning = m_settings->disableReasoning();
+    req.reasoningOffJson = m_settings->reasoningOffOptions();
+    req.extraBodyJson = m_settings->extraOptions();
 
     m_busy = true;
     Q_EMIT started(m_source, targetName);

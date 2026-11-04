@@ -81,6 +81,21 @@ private slots:
                  int(CliOptions::Mode::BackendInfo));
     }
 
+    void configPathOption()
+    {
+        const CliOptions o = parse({QStringLiteral("--translate"),
+                                    QStringLiteral("--config"),
+                                    QStringLiteral("/tmp/other.ini"),
+                                    QStringLiteral("--text"), QStringLiteral("hi")});
+        QVERIFY2(o.errors.isEmpty(), qPrintable(o.errors.join(QLatin1Char(';'))));
+        QCOMPARE(o.configPath, QStringLiteral("/tmp/other.ini"));
+    }
+
+    void configPathDefaultsEmpty()
+    {
+        QVERIFY(parse({QStringLiteral("--translate")}).configPath.isEmpty());
+    }
+
     void notifyTestMode()
     {
         // Support and e2e need one way to ask "does a bubble actually
