@@ -46,6 +46,10 @@ void addOptions(QCommandLineParser &parser, const QString &shell)
         {QStringLiteral("live"),
          QStringLiteral("With --selftest: include a live request to the "
                         "configured API.")},
+        {QStringLiteral("notify-test"),
+         QStringLiteral("Send one test notification through the desktop "
+                        "service and report whether it was accepted. "
+                        "Support-friendly: no clipboard, no model call.")},
         {QStringLiteral("backend-info"),
          QStringLiteral("Print which backend was chosen for clipboard, "
                         "gesture, notifications, tray and audio - and what "
@@ -91,12 +95,13 @@ CliOptions parseCommandLine(QCoreApplication &app, const QStringList &args,
     const bool translate = parser.isSet(QStringLiteral("translate"));
     const bool selftest = parser.isSet(QStringLiteral("selftest"));
     const bool info = parser.isSet(QStringLiteral("backend-info"));
+    const bool notifyTest = parser.isSet(QStringLiteral("notify-test"));
     o.live = parser.isSet(QStringLiteral("live"));
 
-    if (int(translate) + int(selftest) + int(info) > 1) {
+    if (int(translate) + int(selftest) + int(info) + int(notifyTest) > 1) {
         o.errors << QStringLiteral(
-            "only one of --translate, --selftest, --backend-info can be "
-            "used at a time");
+            "only one of --translate, --selftest, --backend-info, "
+            "--notify-test can be used at a time");
         o.exitCode = 2;
         return o;
     }
@@ -106,6 +111,8 @@ CliOptions parseCommandLine(QCoreApplication &app, const QStringList &args,
         o.mode = CliOptions::Mode::SelfTest;
     } else if (info) {
         o.mode = CliOptions::Mode::BackendInfo;
+    } else if (notifyTest) {
+        o.mode = CliOptions::Mode::NotifyTest;
     }
 
     if (parser.isSet(QStringLiteral("text"))) {

@@ -16,14 +16,17 @@
 
 #include "app/BackendInfo.h"
 #include "app/SelfTest.h"
+#include "app/SingleInstance.h"
 #include "app/cli.h"
 #include "core/settings.h"
+#include "platform/fdo/FdoNotifier.h"
 #include "platform/qt/SessionInfo.h"
 #include "platform/wl/WlClipboard.h"
 #include "platform/wl/ClipboardFactory.h"
 
 #include <QApplication>
 #include <QDir>
+#include <QElapsedTimer>
 #include <QGuiApplication>
 #include <QTextStream>
 
@@ -49,6 +52,7 @@ bool cliNeedsWidgets(const QStringList &argv)
         QStringLiteral("--translate"), QStringLiteral("-t"),
         QStringLiteral("--selftest"), QStringLiteral("--backend-info"),
         QStringLiteral("--text"), QStringLiteral("--live"),
+        QStringLiteral("--notify-test"),
         QStringLiteral("--help"), QStringLiteral("-h"),
         QStringLiteral("--version"),
     };
@@ -143,7 +147,9 @@ BackendReport collectBackends()
     r.gestureSource = QString();
     r.hotkeyChosen = QString();
     r.inputAccess = inputAccessStatus();
-    r.notifier = QString();
+    // The FDO service is what gnome-shell actually shows; no KF6, no
+    // libnotify, one D-Bus call.
+    r.notifier = FdoNotifier::isAvailable() ? QStringLiteral("fdo") : QString();
     r.tray = QString();
     return r;
 }
@@ -183,6 +189,38 @@ int doTranslate(QCoreApplication &app, Settings &settings, const CliOptions &cli
                           });
     app.exec();
     return rc;
+}
+
+int doNotifyTest()
+{
+    QTextStream out(stdout);
+    FdoNotifier notifier;
+    if (!FdoNotifier::isAvailable()) {
+        out << "notification service: absent - " << notifier.errorText() << '\n';
+        out << "       (gnome-shell owns org.freedesktop.Notifications; "
+               "nothing is listening here)\n";
+        return 1;
+    }
+    notifier.notify(QStringLiteral("Traduku"),
+                    QStringLiteral("If you can read this, GNOME notifications "
+                                   "work. (traduku --notify-test)"));
+    // The call is fire-and-forget; wait (bounded) for the daemon's reply so
+    // the exit code means something.
+    QElapsedTimer waited;
+    waited.start();
+    while (waited.elapsed() < 3000 && notifier.lastId() == 0
+           && notifier.errorText().isEmpty()) {
+        QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
+    }
+    if (notifier.lastId() != 0) {
+        out << "notification service: accepted (id " << notifier.lastId() << ")\n";
+        return 0;
+    }
+    out << "notification service: rejected - "
+        << (notifier.errorText().isEmpty() ? QStringLiteral("no reply within 3 s")
+                                           : notifier.errorText())
+        << '\n';
+    return 1;
 }
 
 } // namespace
@@ -235,18 +273,31 @@ int main(int argc, char **argv)
         return runSelfTest(out, cli.live) == 0 ? 0 : 1;
     case CliOptions::Mode::Translate:
         return doTranslate(*app, settings, cli);
+    case CliOptions::Mode::NotifyTest:
+        return doNotifyTest();
     case CliOptions::Mode::Tray:
         break;
     }
 
     // ---- tray mode ------------------------------------------------------
-    // Refused until the gesture (Stage 3), notifier (Stage 2) and tray
-    // (Stage 5) backends exist. --backend-info explains the state and
-    // --translate is fully usable meanwhile.
-    err << "traduku: the GNOME tray/gesture backends are not built yet "
-           "(GNOME_PLAN.md Stages 2/3/5).\n"
-           "       run --backend-info to see what works, or use "
-           "--translate/--selftest.\n";
-    err << formatBackendInfo(collectBackends());
-    return 5;
+    // One Traduku per session: a second launch wakes the running one instead
+    // of starting a duplicate tray (GNOME_PLAN.md D5).
+    SingleInstance instance;
+    if (!instance.start()) {
+        out << QStringLiteral("Traduku is already running (asked it to surface "
+                              "its window).\n");
+        return 0;
+    }
+
+    // A tray app that silently never reacts to Ctrl+C+C is worse than a
+    // refusal, so a gesture backend is a hard requirement. Stage 3 fills
+    // gestureSource in and this guard stops firing.
+    const BackendReport report = collectBackends();
+    if (report.gestureSource.isEmpty()) {
+        err << "traduku: no gesture backend yet - Ctrl+C+C would do nothing.\n"
+               "       use --translate/--selftest meanwhile; --backend-info "
+               "shows the rest.\n";
+        err << formatBackendInfo(report);
+        return 5;
+    }
 }

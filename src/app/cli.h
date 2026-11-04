@@ -18,7 +18,7 @@ class Settings;
  */
 struct CliOptions
 {
-    enum class Mode { Tray, Translate, SelfTest, BackendInfo };
+    enum class Mode { Tray, Translate, SelfTest, BackendInfo, NotifyTest };
 
     Mode mode = Mode::Tray;
     QString text;              // --text; null means "read the clipboard"
