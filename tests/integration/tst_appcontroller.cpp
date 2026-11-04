@@ -1,4 +1,5 @@
 #include <QtTest>
+#include <functional>
 #include <QSignalSpy>
 #include <QDir>
 #include <QLabel>
@@ -22,10 +23,20 @@ class MemClipboard : public IClipboard
 {
 public:
     QString text() const override { return m_text; }
-    bool setText(const QString &t) override { m_text = t; ++writes; return true; }
+    bool setText(const QString &t) override
+    {
+        m_text = t;
+        ++writes;
+        if (probe) {
+            m_activeAtWrite = probe();
+        }
+        return true;
+    }
     QString backendName() const override { return QStringLiteral("mem"); }
     int writes = 0;
     QString m_text;
+    std::function<bool()> probe;   // e.g. "is the result window active?"
+    bool m_activeAtWrite = false;
 };
 
 class FakeNotifier : public INotifier
@@ -138,6 +149,21 @@ private slots:
         QVERIFY(m_sounds.contains("complete.oga"));
         QCOMPARE(m_clip.text(), QString("HELLO WORLD"));   // copyResult
         QVERIFY(!m_app->translating());
+    }
+
+    void copyResultWritesFromActiveWindow()
+    {
+        // Wayland rejects clipboard writes (set_selection) from an app
+        // without keyboard focus. The controller must activate the result
+        // window before writing the translation, on every platform.
+        m_clip.probe = [this] { return m_window->isActiveWindow(); };
+        m_clip.m_text = QStringLiteral("activate me");
+        Q_EMIT m_hotkey->activated();
+        QTRY_COMPARE_WITH_TIMEOUT(m_clip.writes, 1, 10000);
+        QCOMPARE(m_clip.text(), QString("ACTIVATE ME"));
+        QVERIFY2(m_clip.m_activeAtWrite,
+                 "clipboard write happened while the window was inactive: "
+                 "Wayland compositors (kwin) drop set_selection silently");
     }
 
     void typingRequeuesOnlyEditedLine()

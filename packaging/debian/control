@@ -9,6 +9,8 @@ Build-Depends: debhelper-compat (= 13),
                qt6-base-dev,
                qt6-multimedia-dev,
                qt6-5compat-dev | libqt6core5compat6-dev,
+               libkf6coreaddons-dev,
+               libkf6i18n-dev,
                libkf6statusnotifieritem-dev,
                libkf6notifications-dev,
                libkf6globalaccel-dev,
@@ -26,5 +28,5 @@ Depends: ${shlibs:Depends}, ${misc:Depends}, libqt6multimedia6,
 Recommends: wl-clipboard
 Description: Clipboard translator powered by any OpenAI-compatible LLM
  Press Ctrl+C twice to translate the clipboard into the configured target
-  language. Streams responses, translates interactively, runs on KDE Plasma
-  and any other desktop (X11 and Wayland via XWayland).
+ language. Streams responses, translates interactively, runs on KDE Plasma
+ and any other desktop (X11 and Wayland via XWayland).

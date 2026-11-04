@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
 # VM lifecycle + QMP helpers. Runs in the container.
-# usage: vmlife.sh {start|stop|status|logs|shot|key|keyseq} [vm] [args]
+# usage: vmlife.sh {start|stop|status|logs|shot|key|keyseq|mouse} [vm] [args]
 set -euo pipefail
 VMS_HOME=${VMS_HOME:-/vms}
-VMS=(arch-kde p-debian-kde)
+VMS=(arch-kde debian-kde debian-gnome ubuntu-kde ubuntu-gnome)
 cmd=${1:-status}; VM=${2:-}
 
-idx_of() { local i=1; for v in "${VMS[@]}"; do [ "$v" = "$1" ] && { echo $((4+i)); return; }; i=$((i+1)); done; echo 0; }
+idx_of() { local i=1; for v in "${VMS[@]}"; do [ "$v" = "$1" ] && { echo $i; return; }; i=$((i+1)); done; echo 0; }
 
 case "$cmd" in
   status)
@@ -22,6 +22,8 @@ case "$cmd" in
     chmod a+rwX "$d" 2>/dev/null || true
     [ -f "$d/qemu.pid" ] && kill -0 "$(cat "$d/qemu.pid")" 2>/dev/null && { echo "already running"; exit 0; }
     i=$(idx_of "$VM")
+    # Cloud images boot their own GRUB and need the NoCloud seed; the Arch
+    # base (mkarchbase.sh) has no bootloader at all -> QEMU -kernel.
     SEED=""
     [ -f "$d/seed.iso" ] && SEED="-cdrom $d/seed.iso"
     KERN=()
