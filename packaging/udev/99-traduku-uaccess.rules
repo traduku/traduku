@@ -23,8 +23,12 @@
 #        /etc/udev/rules.d/99-traduku-uaccess.rules
 #   sudo udevadm control --reload
 #   sudo udevadm trigger --action=add --subsystem-match=input
-#   (MUST be --action=add: the ACL is applied when the node is set up; the
-#    default "change" event re-runs rules but applies no ACL)
+#   (MUST be --action=add. The tag alone does nothing: /usr/lib/udev/rules.d
+#    /73-seat-late.rules ends with
+#      TAG=="uaccess", ENV{MAJOR}!="", RUN{builtin}+="uaccess"
+#    and RUN only executes on add/move. A plain `udevadm trigger` (default
+#    action=change) updates TAGS - so `udevadm info` already shows
+#    :uaccess: - while the ACL never lands, which looks like a broken rule.)
 # Check:  getfacl /dev/input/event3   ->  user:<you>:rw-
 #
 # Narrower variants, if a laptop keyboard is enough: add
