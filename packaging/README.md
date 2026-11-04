@@ -37,7 +37,8 @@ observing the keyboard is a privacy decision the user makes per machine.
 ```bash
 sudo install -Dm644 packaging/udev/99-traduku-uaccess.rules \
      /etc/udev/rules.d/99-traduku-uaccess.rules
-sudo udevadm control --reload && sudo udevadm trigger --subsystem-match=input
+sudo udevadm control --reload
+sudo udevadm trigger --action=add --subsystem-match=input   # add, not change
 ```
 
 (Stage 3 of GNOME_PLAN.md turns this into `traduku --grant-keyboard-access
