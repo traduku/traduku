@@ -21,8 +21,8 @@ def test_app_captures_de_clipboard(env):
     _, clip = vm.ses("wl-paste")
     assert SEED in clip, f"wl-copy seed missing from DE clipboard: {clip!r}"
 
-    vm.ses("setsid xterm -e sleep 300 >/dev/null 2>&1 & sleep 1;"
-           "xdotool windowactivate $(xdotool search -name xterm | head -1) 2>/dev/null; true")
+    ok, _ = vm.focus_fresh_term()
+    assert ok, ("no foreign window took the focus; the helper said: " + str(_))
     # Gesture: the DE global-shortcut pair (KGlobalAccel). The XI2 passive
     # Ctrl+C+C path is structurally dead on KDE/Wayland: KWin injects keys
     # into XWayland per focused window, XI2 RAW events are never generated
@@ -30,8 +30,8 @@ def test_app_captures_de_clipboard(env):
     # XI2 coverage belongs to the X11 session job (debian-kde X11).
     vm.double_ctrl_alt_c()
     got = ""
-    for _ in range(20):
-        time.sleep(1)
+    for _ in range(100):        # 0.2 s ticks; the paste is there long before 20 s
+        time.sleep(0.2)
         _, got = vm.ses("wl-paste")
         if "MOCK" in got:
             break

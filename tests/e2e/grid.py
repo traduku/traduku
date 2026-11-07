@@ -13,6 +13,15 @@ ROOT = Path(__file__).resolve().parents[2]
 VMCTL = ROOT / "tools" / "vms" / "vmctl.sh"
 VMS_HOME = Path.home() / "vms"
 
+# The suite used to be "slow" and every fix started with a guess, so the
+# harness measures itself. Every guest command is timed; anything over SLOW_S
+# shouts while the run is in progress, and conftest.pytest_terminal_summary
+# prints the slowest ones at the end. Percentiles and "the suite takes 5 min"
+# are not actionable - "this one ssh takes 0.9s, 180 times" is.
+SLOW_S = 0.5
+SLOWLOG = []          # [(seconds, vm, command)] - appended by Grid.run
+_GRIDS = []           # live Grids, so the session can close their sockets
+
 
 class Grid:
     def __init__(self, vm):
@@ -20,6 +29,15 @@ class Grid:
         idx = self._idx()
         self.port = 2200 + idx
         self.shots = VMS_HOME / "run" / vm / "shots"
+        # One multiplexed TCP+auth connection per VM, reused by every command
+        # (ControlPersist keeps it warm between them; a reboot kills it and the
+        # next command reconnects by itself). Measured on ubuntu-gnome: a
+        # fresh handshake per command cost 0.35-0.5s, and the autouse fixture
+        # alone made ~8 of them per test - 88% of that fixture's time was
+        # ssh authenticating, not the guest working.
+        self.control = f"/tmp/traduku-grid-{vm}-{os.getpid()}.sock"
+        self.last_stderr = ""
+        _GRIDS.append(self)
 
     def _idx(self):
         out = self.vmctl("status")
@@ -33,44 +51,118 @@ class Grid:
         return subprocess.run([str(VMCTL), *args], capture_output=True, text=True).stdout
 
     # ---- ssh ----
-    def _ssh_cmd(self, cmd):
+    def _ssh_opts(self):
         return ["ssh", "-i", str(VMS_HOME / "id_ed25519"),
                 "-o", "StrictHostKeyChecking=no", "-o", "UserKnownHostsFile=/dev/null",
                 "-o", "ConnectTimeout=10", "-o", "ServerAliveInterval=15",
-                "-p", str(self.port), "vm@127.0.0.1", cmd]
+                "-o", "ControlMaster=auto", f"-oControlPath={self.control}",
+                "-o", "ControlPersist=180",
+                "-p", str(self.port), "vm@127.0.0.1"]
 
-    def run(self, cmd, timeout=120):
-        """Run in the guest; returns (rc, stdout)."""
+    def _ssh_cmd(self, cmd):
+        return self._ssh_opts() + [cmd]
+
+    def close_master(self, quiet=False):
+        """Drop the multiplexed connection."""
+        p = subprocess.run(self._ssh_opts() + ["-O", "exit"],
+                           capture_output=True, text=True, timeout=20)
+        if not quiet and p.returncode != 0 and p.stderr.strip():
+            print(f"[grid] closing the master for {self.vm}: {p.stderr.strip()}", flush=True)
+        # A master that died with the guest leaves its socket behind; ssh would
+        # keep trying to talk to it.
+        try:
+            os.unlink(self.control)
+        except OSError:
+            pass
+
+    def run(self, cmd, timeout=120, _retries=1):
+        """Run in the guest; returns (rc, stdout).
+
+        Timed, and loud when slow: a suite nobody can profile gets "fixed" by
+        raising timeouts, which makes it slower and redder at once.
+
+        rc 255 is ssh talking about itself - the transport died - not the
+        guest's exit code. test_03 reboots the VM, which takes the multiplexed
+        connection with it while ControlPersist leaves the socket behind, and
+        the next command then failed with 255 instead of reconnecting (measured:
+        the whole rest of the suite died in "session.env: No such file" and
+        scp 255, because the one file that lives in /tmp was gone with the
+        reboot and nothing could rewrite it). Before multiplexing, every command
+        made its own connection and this could not happen - so dropping the
+        master and retrying once is the price of the speedup, not a workaround.
+        """
+        started = time.monotonic()
         p = subprocess.run(self._ssh_cmd(cmd), capture_output=True, text=True, timeout=timeout)
+        took = time.monotonic() - started
+        SLOWLOG.append((took, self.vm, cmd))
+        if took >= SLOW_S:
+            print(f"[slow {took:5.2f}s] {self.vm}: {cmd[:150]}", flush=True)
+        self.last_stderr = p.stderr
+        if p.returncode == 255 and _retries > 0:
+            print(f"[grid] {self.vm}: ssh transport died ({p.stderr.strip()[:90]}); "
+                  "dropping the master and retrying once", flush=True)
+            self.close_master(quiet=True)
+            return self.run(cmd, timeout, _retries - 1)
         return p.returncode, p.stdout
 
     def ok(self, cmd, timeout=120):
         rc, out = self.run(cmd, timeout)
         return rc == 0, out
 
+    def _scp_base(self):
+        # Same multiplexing as run(): scp over a warm master is milliseconds,
+        # and it is the same path that has to be dropped when the guest reboots.
+        return ["scp", "-i", str(VMS_HOME / "id_ed25519"),
+                "-o", "StrictHostKeyChecking=no", "-o", "UserKnownHostsFile=/dev/null",
+                "-o", "ControlMaster=auto", f"-oControlPath={self.control}",
+                "-o", "ControlPersist=180",
+                "-P", str(self.port)]
+
     def push(self, local, remote):
-        subprocess.run(["scp", "-i", str(VMS_HOME / "id_ed25519"),
-                        "-o", "StrictHostKeyChecking=no", "-o", "UserKnownHostsFile=/dev/null",
-                        "-P", str(self.port), str(local), f"vm@127.0.0.1:{remote}"],
-                       check=True, capture_output=True)
+        for attempt in (0, 1):
+            p = subprocess.run(self._scp_base() + [str(local), f"vm@127.0.0.1:{remote}"],
+                               capture_output=True, text=True, timeout=120)
+            if p.returncode == 0:
+                return
+            if p.returncode == 255 and attempt == 0:
+                self.close_master(quiet=True)
+                continue
+            raise RuntimeError(f"scp {local} -> {remote} failed ({p.returncode}): {p.stderr}")
 
     def pull(self, remote, local):
-        subprocess.run(["scp", "-i", str(VMS_HOME / "id_ed25519"),
-                        "-o", "StrictHostKeyChecking=no", "-o", "UserKnownHostsFile=/dev/null",
-                        "-P", str(self.port), f"vm@127.0.0.1:{remote}", str(local)],
-                       check=True, capture_output=True)
+        for attempt in (0, 1):
+            p = subprocess.run(self._scp_base() + [f"vm@127.0.0.1:{remote}", str(local)],
+                               capture_output=True, text=True, timeout=120)
+            if p.returncode == 0:
+                return
+            if p.returncode == 255 and attempt == 0:
+                self.close_master(quiet=True)
+                continue
+            raise RuntimeError(f"scp {remote} -> {local} failed ({p.returncode}): {p.stderr}")
 
     # ---- session ----
-    def wait_ssh(self, seconds=420):
+    def wait_ssh(self, seconds=420, steady=3):
+        """Wait until ssh answers the same way `steady` times in a row.
+
+        One `echo up` only proves sshd opened its port. On this image, right
+        after `systemctl reboot`, sshd keeps dropping the next connections
+        ("Connection closed by 127.0.0.1", "timed out during banner exchange"),
+        and every test after the reboot died on that - which is what the 15 s of
+        sleep this suite used to carry after wait_ssh was really paying for.
+        Three answers ~1 s apart is what "the machine is up" has always meant
+        here, and it costs two seconds.
+        """
         end = time.time() + seconds
+        ok = 0
         while time.time() < end:
             try:
                 rc, _ = self.run("echo up", timeout=15)
-                if rc == 0:
-                    return True
+                ok = ok + 1 if rc == 0 else 0
             except subprocess.TimeoutExpired:
-                pass
-            time.sleep(5)
+                ok = 0
+            if ok >= steady:
+                return True
+            time.sleep(1)
         return False
 
     def sudo(self, cmd):
@@ -81,8 +173,8 @@ class Grid:
         stdout — redirect it, ssh would block on the open channel."""
         return self.ses(f"printf %s '{text}' | timeout 10 wl-copy >/dev/null 2>&1")
 
-    def start_app(self, extra_env=""):
-        """(Re)launch the packaged app as a transient user unit.
+    def start_app(self, extra_env="", ready_timeout=15):
+        """(Re)launch the packaged app and wait until it says it is up.
 
         systemd-run, NOT `setsid nohup >file`: journal_after() (gesture
         freshness in tests 05/06 and the KGA warm-up gate) reads
@@ -93,9 +185,17 @@ class Grid:
         logging truth. --collect removes the unit on exit so the next
         start is clean; --setenv forwards the session trio captured by
         capture_sessionenv.
+
+        Three round trips, all event-driven: read the journal cursor, one
+        script that stops the old instance and starts the unit, one script that
+        waits for the product's own "traduku: ready" line (src/app/AppFlavour.h
+        logReady). That line replaced `pkill; sleep 1` in here plus the fixture
+        's `sleep 4` + `sleep 1` - six seconds of guessing in every test, and
+        still red on a loaded VM. The polling loops run in the GUEST, so their
+        0.1 s tick costs no ssh round trip; a tick inside a bounded loop is a
+        wait, and the blind fixed pauses it replaces were the bug.
         """
-        self.ses("systemctl --user stop traduku-e2e.service >/dev/null 2>&1; true")
-        self.ses("pkill -x traduku; sleep 1; true")
+        cursor = self.cursor()
         # full session environment through the wrapper: KWindowSystem /
         # the KGA backends branch on XDG_SESSION_TYPE/XDG_CURRENT_DESKTOP,
         # --setenv of the display trio alone silently picked the wrong
@@ -105,8 +205,25 @@ class Grid:
         # the shell, so it survives the exec and lands on the app itself.
         env_args = " ".join(f"--setenv={e}" for e in extra_env) if extra_env else ""
         self.ses(
+            self._alive_fn()
+            + "systemctl --user stop traduku-e2e.service >/dev/null 2>&1; "
+              "pkill -x traduku 2>/dev/null; "
+              "end=$((SECONDS + 8)); "
+              "while [ $SECONDS -lt $end ] && alive; do sleep 0.1; done; "
             f"systemd-run --user --collect {env_args} --unit=traduku-e2e.service "
             "sh -c '. /tmp/session.env; exec /usr/bin/traduku'")
+        rc, out = self.wait_journal(cursor, "traduku: ready", timeout=ready_timeout,
+                                   unit="traduku-e2e.service")
+        if rc != 0:
+            _, tail = self.ses(
+                f"journalctl --user --no-pager --after-cursor='{cursor}' "
+                "-u traduku-e2e.service 2>/dev/null | tail -15; "
+                "pgrep -a traduku | head -3")
+            raise RuntimeError(
+                f"traduku never reported ready on {self.vm} within {ready_timeout}s. "
+                "Either a backend it needs is missing (the tail below names it) or "
+                "the app is wedged before finishing startup.\n" + tail)
+        return out
 
     def screen_size(self):
         """The compositor's scanout size, from the same QMP screendump the
@@ -116,11 +233,157 @@ class Grid:
         head = self.shot("screen-size").read_bytes()[:64].split()
         return int(head[1]), int(head[2])
 
+    @staticmethod
+    def _ses_prefix():
+        return "source /tmp/session.env; "
+
     def ses(self, script, timeout=120):
         """Run a snippet inside the captured graphical session."""
-        return self.run(f"source /tmp/session.env; {script}", timeout=timeout)
+        return self.run(self._ses_prefix() + script, timeout=timeout)
+
+    # ---- waiting for an event, not for a clock ---------------------------
+    def _alive_fn(self, name="traduku"):
+        """A shell function `alive`: true while a NON-zombie `name` process runs.
+
+        Two traps, both measured on ubuntu-gnome.
+
+        pgrep alone lies. A traduku killed but not reaped stays in the process
+        table as state Z, keeps the name and is counted - a zombie sat next to
+        the live app through the whole suite - so every "is it running?"
+        question here (this restart, and "did autostart bring it back after
+        login?") could be answered by a corpse.
+
+        It has to be a *function*: bash rejects a compound command in the
+        `while cond && { ... }` position ("syntax error near unexpected token
+        `do`" - the whole ssh command then died with rc 2 and the app was never
+        started), and an inline group whose body ran `exit` would have ended the
+        session instead of just the test.
+        """
+        return (f'alive() {{ for p in $(pgrep -x {name} 2>/dev/null); do '
+                f's=$(cut -d" " -f3 /proc/$p/stat 2>/dev/null); '
+                f'[ -n "$s" ] && [ "$s" != Z ] && return 0; done; return 1; }}; ')
+
+    def app_pid(self, name="traduku"):
+        """pid of a live (non-zombie) `name`, or ""."""
+        _, out = self.run(
+            f"for p in $(pgrep -x {name} 2>/dev/null); do "
+            f's=$(cut -d" " -f3 /proc/$p/stat 2>/dev/null); '
+            f'[ -n "$s" ] && [ "$s" != Z ] && {{ echo $p; exit 0; }}; done; exit 0')
+        return out.strip().splitlines()[-1] if out.strip() else ""
+
+    def app_alive(self, name="traduku"):
+        """(rc, out): rc 0 while a live `name` process exists."""
+        return self.run(self._alive_fn(name) + "alive")
+
+    def _wait_loop(self, test_cmd, timeout, tick):
+        """A bounded guest-side poll. ONE ssh for the whole wait: the loop, and
+        its tick, live in the guest, so checking 20x a second is free. The tick
+        is not a fixed pause - the loop leaves the moment the event is true.
+        """
+        return (f"end=$((SECONDS + {int(timeout)})); "
+                f"while [ $SECONDS -lt $end ]; do "
+                f"if {test_cmd}; then echo waited $SECONDS; exit 0; fi; "
+                f"sleep {tick}; done; echo never; exit 1")
+
+    def _wait_cmd(self, guest_cmd, timeout, tick):
+        """Run a guest-side wait loop until it is satisfied or the deadline passes.
+
+        rc 255 - ssh talking about itself - is not an answer about the
+        condition, so it must not consume the wait; only the deadline does.
+        Measured on ubuntu-gnome: after test_03's reboot the first look at the
+        session came back 255 while the VM was still booting, and the suite
+        reported "no session shell came back" about a machine that was fine.
+        """
+        deadline = time.monotonic() + timeout
+        out = ""
+        while True:
+            left = max(1, int(deadline - time.monotonic()))
+            rc, out = self.run(guest_cmd, timeout=max(30, left + 20))
+            if rc != 255:
+                return rc, out
+            if time.monotonic() >= deadline:
+                return 1, out or "ssh did not answer within the wait"
+            time.sleep(0.5)
+
+    def wait_journal(self, cursor, grep, timeout=12.0, unit=None, tick=0.2):
+        """Wait for a journal line after `cursor`. Returns (rc, out); rc 1 = timed out."""
+        unit_arg = f" -u {unit}" if unit else ""
+        return self._wait_cmd(self._ses_prefix() + self._wait_loop(
+            f"journalctl --user --no-pager --after-cursor='{cursor}'{unit_arg} 2>/dev/null"
+            f" | grep -qi --color=never '{grep}'", timeout, tick), timeout, tick)
+
+    def wait_file(self, path, grep, timeout=12.0, tick=0.2):
+        """Wait until a file in the guest contains `grep` (case-insensitive)."""
+        return self._wait_cmd(self._wait_loop(
+            f"grep -qi --color=never '{grep}' {path} 2>/dev/null", timeout, tick),
+            timeout, tick)
+
+    def wait_until(self, test_cmd, timeout=12.0, tick=0.3):
+        """Wait for any shell test in the guest to become true.
+
+        Takes a TEST, not a program name - `wait_until("gnome-shell")` does not
+        ask whether a gnome-shell exists, it starts one (measured: a stray
+        gnome-shell launched over ssh, and the tests after it died on ssh
+        failures). If what you mean is "is this process running", use
+        wait_process().
+        """
+        return self._wait_cmd(self._wait_loop(test_cmd, timeout, tick), timeout, tick)
+
+    def wait_process(self, name, timeout=60.0, tick=0.5):
+        """Wait for a live (non-zombie) process called `name` to exist."""
+        return self._wait_cmd(self._alive_fn(name) + self._wait_loop("alive", timeout, tick),
+                              timeout, tick)
 
     # ---- input (QMP scancodes: physical keys, layout-independent) ----
+    FOCUS_TITLE = "traduku-e2e-focus"
+
+    def focus_fresh_term(self, wait=10):
+        """Put a foreign window on the screen, mapped and in front.
+
+        Tests 07/08 must run with the app's own window NOT on top, so that the
+        gesture they press really is the session's global shortcut and not
+        something a window of ours handled. What this can and cannot promise,
+        both measured on ubuntu-gnome:
+
+        * `xdotool search -name xterm` matches nothing - the window is *named*
+          "sleep" (what -e runs) and only *classed* "xterm" - so the command
+          this replaced searched for a window that never existed, activated
+          nothing, and its `sleep 1` was the entire setup. The window is found
+          by a title this harness chose instead.
+        * input focus cannot be read here: under GNOME's XWayland
+          `XGetInputFocus` returns 1 (XInputFocusNone) for every window, so
+          "did it take focus" is not an observable fact on this desktop. The
+          activation is requested and the *mapping* is asserted - Map State:
+          IsViewable - which is what the tests actually depend on.
+        * leftovers are killed first: the terminal lives 300 s, so a second
+          test used to find the first test's window. pkill/pgrep -f also match
+          this ssh shell's own argv (it contains the pattern), so our pid is
+          excluded - the trap mock-openai.py documents.
+
+        Output goes to a log, not /dev/null: an unredirected background process
+        holds the ssh channel open, and a harness that throws output away cannot
+        debug the helper that failed.
+        """
+        title = self.FOCUS_TITLE
+        rc, out = self.ses(
+            'for p in $(pgrep -f "xterm -e sleep 300" 2>/dev/null; true); do '
+            '[ "$p" != "$$" ] && kill "$p" 2>/dev/null; done; '
+            f"setsid xterm -title {title} -e sleep 300 >/tmp/{title}.log 2>&1 & "
+            f"end=$((SECONDS + {int(wait)})); id=; "
+            "while [ $SECONDS -lt $end ]; do "
+            f"id=$(xdotool search --name {title} 2>/dev/null | head -1); "
+            '[ -n "$id" ] && break; sleep 0.2; done; '
+            '[ -n "$id" ] && xdotool windowactivate $id 2>/dev/null; '
+            'end=$((SECONDS + 5)); while [ $SECONDS -lt $end ]; do '
+            '[ -n "$id" ] && xwininfo -id $id 2>/dev/null | grep -q "Map State: IsViewable" '
+            "&& break; sleep 0.2; done; "
+            'echo "window=$id map=$(xwininfo -id ${id:-0} 2>/dev/null '
+            '| grep -o "Map State:.*")"')
+        tail = out.strip().splitlines()[-1] if out.strip() else ""
+        mapped = "IsViewable" in tail
+        window = tail.split("window=", 1)[-1].split()[0].strip() if "window=" in tail else ""
+        return mapped and window.isdigit(), out
+
     def clipget(self):
         # wl-paste can block forever when the clipboard owner died (ssh-owned
         # wl-copy daemons die with the session); always bound it.
@@ -165,10 +428,14 @@ print(s);
                  " -m org.kde.kwin.Scripting.unloadScript gridwl >/dev/null 2>&1; true")
         self.ses("gdbus call -e -d org.kde.KWin -o /Scripting"
                  " -m org.kde.kwin.Scripting.loadScript /tmp/grid-winlist.js gridwl")
+        cur = self.cursor()
         self.ses("gdbus call -e -d org.kde.KWin -o /Scripting"
                  " -m org.kde.kwin.Scripting.start")
-        time.sleep(1.5)
-        return self.journal("--since -10s", grep=tag)[1]
+        # The script prints its own tag; waiting for that line is both faster
+        # than the 1.5 s it replaced and cannot return a list from the
+        # previous call.
+        self.wait_journal(cur, tag, timeout=10, tick=0.2)
+        return self.journal_after(cur, grep=tag)[1]
 
     # ---- window list: three desktops, three truths (ROADMAP.md §4.1) -----
     def session_type(self):
@@ -236,7 +503,7 @@ print(s);
         for _ in range(10):
             if p.exists() and p.stat().st_size > 0:
                 return p
-            time.sleep(0.5)
+            time.sleep(0.2)
         raise RuntimeError(f"screendump {name} produced nothing")
 
     def diff_frac(self, a, b):
@@ -253,3 +520,10 @@ print(frac:=area/(a.size[0]*a.size[1]))
 """.strip(),
             capture_output=True, text=True).stdout.strip()
         return float(out.splitlines()[-1])
+
+
+def close_all():
+    """Close every multiplexed connection (pytest_sessionfinish)."""
+    for grid in list(_GRIDS):
+        grid.close_master()
+        _GRIDS.remove(grid)
