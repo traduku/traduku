@@ -100,6 +100,11 @@ lt_add_test(tst_oneshot SOURCES integration/tst_oneshot.cpp
     LIBS lt::app lt::core Qt6::Network)
 target_include_directories(tst_oneshot PRIVATE integration ${CMAKE_SOURCE_DIR}/src)
 
+# GNOME shell tray: QSystemTrayIcon with the KDE tray's behaviour (D3)
+lt_add_test(tst_qttray SOURCES unit/tst_qttray.cpp
+    LIBS lt::platform_qt lt::core Qt6::Widgets Qt6::DBus)
+target_include_directories(tst_qttray PRIVATE ${CMAKE_SOURCE_DIR}/src)
+
 # selftest --live must use the config file it was handed (--config), not the
 # user's default path
 lt_add_test(tst_selftest SOURCES integration/tst_selftest.cpp

@@ -28,6 +28,8 @@
 #include "platform/evdev/EvdevHotkeyBackend.h"
 #include "platform/fdo/FdoNotifier.h"
 #include "platform/qt/SessionInfo.h"
+#include "platform/qt/QtTray.h"
+#include "platform/qt/XdgAutostart.h"
 #include "ui/SettingsDialog.h"
 #include "ui/TranslatorWindow.h"
 
@@ -318,11 +320,29 @@ int main(int argc, char **argv)
                               &window, &pipeline});
     controller.setHotkey(gesture.chosen);
 
-    QObject::connect(&controller, &AppController::settingsRequested, app.get(),
-                     [&settings]() {
-                         SettingsDialog dlg(&settings);
-                         dlg.exec();
-                     });
+    auto openSettings = [&settings]() {
+        SettingsDialog dlg(&settings);
+        dlg.exec();
+    };
+    QObject::connect(&controller, &AppController::settingsRequested, app.get(), openSettings);
+
+    // ---- tray ------------------------------------------------------------
+    // QSystemTrayIcon, which on Wayland is Qt's generic DBus SNI client
+    // (measured on this desktop; tools/spike/tray-spike.cpp compares it with
+    // our own SNI client). Behaviour copied from KdeTray: left click
+    // translates, right click is the menu. KdeTray stays until the Qt tray is
+    // verified in a live KDE session.
+    XdgAutostart autostart(QStringLiteral("dev.traduku.Traduku"),
+                           QCoreApplication::applicationFilePath());
+    QtTray tray(&settings, &autostart);
+    QObject::connect(&tray, &QtTray::translateRequested, &controller,
+                     &AppController::translateNow);
+    QObject::connect(&tray, &QtTray::settingsRequested, app.get(), openSettings);
+    QObject::connect(&tray, &QtTray::quitRequested, app.get(), &QCoreApplication::quit);
+    if (gesture.chosen) {
+        tray.setToolTipSub(QStringLiteral("Press Ctrl+C twice to translate the clipboard"));
+    }
+    tray.show();
 
     // No tray icon yet (Stage 5), so stderr is the only way to answer the
     // one question that matters when "nothing happens": did the gesture fire
@@ -332,15 +352,20 @@ int main(int argc, char **argv)
                          qInfo("traduku: gesture detected, translating the clipboard");
                      });
     QObject::connect(&pipeline, &ChunkedTranslator::startedDocument, app.get(),
-                     [](const QString &source, const QString &target) {
+                     [&tray](const QString &source, const QString &target) {
                          qInfo("traduku: translating %d chars -> %s",
                                source.size(), qUtf8Printable(target));
+                         tray.setBusy(true);
                      });
     QObject::connect(&pipeline, &ChunkedTranslator::allDone, app.get(),
-                     []() { qInfo("traduku: translation ready"); });
+                     [&tray]() {
+                         qInfo("traduku: translation ready");
+                         tray.setBusy(false);
+                     });
     QObject::connect(&pipeline, &ChunkedTranslator::failed, app.get(),
-                     [](const QString &reason) {
+                     [&tray](const QString &reason) {
                          qInfo("traduku: translation failed: %s", qUtf8Printable(reason));
+                         tray.setBusy(false);
                      });
 
     // No tray icon yet (Stage 5), so the window needs a way out.
@@ -350,6 +375,13 @@ int main(int argc, char **argv)
     out << QStringLiteral("Traduku is running (GNOME, %1 session): press "
                           "Ctrl+C twice to translate. Ctrl+Q quits.\n")
                .arg(sessionType());
+    if (!tray.isAvailable()) {
+        // Not an error: a GNOME without an SNI extension has no tray, and the
+        // app is fully usable without one (gesture, window, notifications).
+        out << QStringLiteral("traduku: no tray host on this session - running "
+                              "tray-less. Install the AppIndicator/KStatusNotifierItem "
+                              "shell extension for a panel icon.\n");
+    }
     out.flush();          // a SIGINT kill would otherwise eat the banner
     return app->exec();
 }
