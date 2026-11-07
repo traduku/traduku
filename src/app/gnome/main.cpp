@@ -160,43 +160,6 @@ BackendReport collectBackends(Settings *settings)
     return r;
 }
 
-int doTranslate(QCoreApplication &app, Settings &settings, const CliOptions &cli)
-{
-    QTextStream out(stdout);
-    // Chosen by session: under a forced offscreen QPA the Qt clipboard
-    // reads nothing on Wayland, while wl-paste works.
-    auto clipboard = createClipboard(sessionType(), {}, QGuiApplication::clipboard());
-    const QString text =
-        (cli.text.isNull() ? clipboard->text() : cli.text).trimmed();
-    if (text.isEmpty()) {
-        // The backend knows when it is structurally blind (missing
-        // wl-clipboard on Wayland): say that instead of blaming the copy.
-        const QString hint = clipboard->diagnostic();
-        QTextStream(stderr) << (hint.isEmpty()
-                                    ? QStringLiteral("traduku: nothing to translate "
-                                                     "(clipboard is empty).\n")
-                                    : hint + QLatin1Char('\n'));
-        return 1;
-    }
-    int rc = 1;
-    runOneShotTranslation(&settings, text,
-                          [&out](const QString &chunk) {
-                              out << chunk;
-                              out.flush();          // stream into the pipe
-                          },
-                          [&rc](int code, const QString &error) {
-                              rc = code;
-                              if (code == 0) {
-                                  QTextStream(stdout) << '\n';
-                              } else {
-                                  QTextStream(stderr) << "traduku: " << error << '\n';
-                              }
-                              qApp->quit();
-                          });
-    app.exec();
-    return rc;
-}
-
 int doNotifyTest()
 {
     QTextStream out(stdout);
@@ -283,7 +246,7 @@ int main(int argc, char **argv)
     case CliOptions::Mode::SelfTest:
         return runSelfTest(out, cli.live, cli.configPath) == 0 ? 0 : 1;
     case CliOptions::Mode::Translate:
-        return doTranslate(*app, settings, cli);
+        return runOneShotMode(*app, settings, cli);
     case CliOptions::Mode::NotifyTest:
         return doNotifyTest();
     case CliOptions::Mode::Tray:

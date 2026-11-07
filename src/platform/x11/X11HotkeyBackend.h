@@ -52,6 +52,13 @@ public:
 
     void setIntervalMs(qint64 ms);
 
+    /// Where the RECORD listener binary is, resolved exactly the way
+    /// startRecordHelper() resolves it ($TRADUKU_RECORD_HELPER, next to the
+    /// app, ../bin, PATH). Exposed so `--backend-info` can say "the X key
+    /// listener is missing from this package" without spawning it - a probe
+    /// that starts a child process is not a diagnostic.
+    static QString helperPath();
+
     /// Passive listen channel. On XWayland the raw listener is blind and
     /// RECORD is used instead. Pure so it is unit-testable.
     enum class Mode { Disabled, Xi2Raw, Record };

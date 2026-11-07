@@ -6,6 +6,8 @@
 
 #include <QAction>
 #include <QApplication>
+#include <QDBusConnection>
+#include <QDBusInterface>
 #include <QIcon>
 #include <QMenu>
 #include <cstdio>
@@ -165,6 +167,23 @@ QIcon QtTray::createIcon()
         icon.addPixmap(QPixmap::fromImage(paintedIcon(size)));
     }
     return icon;
+}
+
+bool QtTray::hostSupportsTray()
+{
+    if (QSystemTrayIcon::isSystemTrayAvailable()) {
+        return true;
+    }
+    if (!QGuiApplication::platformName().contains(QLatin1String("offscreen"))) {
+        return false;      // a real platform said no; the bus cannot overrule it
+    }
+    if (!QDBusConnection::sessionBus().isConnected()) {
+        return false;
+    }
+    const QDBusInterface watcher(QStringLiteral("org.kde.StatusNotifierWatcher"),
+                                 QStringLiteral("/StatusNotifierWatcher"),
+                                 QStringLiteral("org.freedesktop.DBus.Properties"));
+    return watcher.isValid();
 }
 
 void QtTray::setStatusLabel(const QString &text)
