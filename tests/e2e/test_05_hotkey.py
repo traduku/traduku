@@ -15,7 +15,7 @@ in the debian-kde X11 job — see ROADMAP.md §6 matrix.)
 """
 import time
 
-from conftest import restart_kwin
+from conftest import set_layouts
 
 SEED = "Translate me 12345"
 RU_SEED = "ru layout text 67890"
@@ -43,8 +43,8 @@ def _wait_mock(vm, seconds=25):
 
 def test_double_press_hotkey_layouts(env):
     vm = env
-    # two layouts, switchable Alt+Shift (KWin kxkb), start on us
-    restart_kwin(vm, "us,ru")
+    # two layouts, switchable Alt+Shift (the desktop decides how), start on us
+    set_layouts(vm, "us,ru")
 
     # single press must NOT translate (pair detection, not a plain shortcut)
     vm.clipset(SEED)

@@ -4,6 +4,9 @@ TRADUKU_VM selects the grid VM (default arch-kde — the program's native
 environment, KDE Plasma Wayland, see ROADMAP.md §6).
 """
 import os
+import re
+import time
+
 import pytest
 
 from grid import Grid
@@ -46,6 +49,75 @@ def capture_sessionenv(vm):
         " [ -n \"$X\" ] && echo \"$X\" >> /tmp/session.env;"
         " grep -q XDG_RUNTIME_DIR /tmp/session.env || echo 'export XDG_RUNTIME_DIR=/run/user/1000' >> /tmp/session.env"
     )
+
+
+def sni_watcher_up(vm):
+    """Does a StatusNotifier host answer on this session bus?
+
+    Both hosts use the same well-known name (Plasma's own tray, and the
+    appindicator extension on GNOME), so this is the one question that says
+    whether a panel icon is possible at all. `IsStatusNotifierHostRegistered`
+    is checked too: a watcher that nobody hosts would list items forever and
+    never draw one.
+    """
+    rc, _ = vm.ses(
+        "gdbus call --session -d org.kde.StatusNotifierWatcher"
+        " -o /StatusNotifierWatcher -m org.freedesktop.DBus.Introspectable.Introspect")
+    if rc != 0:
+        return False, "no org.kde.StatusNotifierWatcher on the session bus"
+    rc, out = vm.ses(
+        "gdbus call --session -d org.kde.StatusNotifierWatcher"
+        " -o /StatusNotifierWatcher -m org.freedesktop.DBus.Properties.Get"
+        " org.kde.StatusNotifierWatcher IsStatusNotifierHostRegistered")
+    if rc != 0 or "true" not in out:
+        return False, f"watcher exists but hosts no tray (IsStatusNotifierHostRegistered={out.strip()!r})"
+    return True, ""
+
+
+def ensure_sni_host(vm):
+    """Make the panel able to show an SNI item, or say exactly why it cannot.
+
+    GNOME ships no StatusNotifier host of its own: the icon exists only with
+    the appindicator extension (ROADMAP.md §2 - which is why the .deb only
+    `Suggests:` it). mkvm.sh enables it for the vm user through a dconf
+    default; this covers a guest built before that commit. Enabling is not
+    enough by itself - gnome-shell scans the extension directories at boot,
+    so `gnome-extensions enable` on a shell that never saw the directory
+    reports "Extension does not exist" (measured) and the reason returned
+    here names the missing reboot. test_04 skips with that reason: a tray
+    test that asserts nothing is worse than a red one.
+    """
+    up, why = sni_watcher_up(vm)
+    if up:
+        return None
+    if not vm.vm.endswith("-gnome"):
+        return f"no StatusNotifier host in this session ({why}) - Plasma's tray is the host"
+    rc, out = vm.run(
+        "ls -d /usr/share/gnome-shell/extensions/*appindicator* "
+        "$HOME/.local/share/gnome-shell/extensions/*appindicator* 2>/dev/null")
+    uuids = [p.strip().rstrip("/").rsplit("/", 1)[-1] for p in out.splitlines() if p.strip()]
+    if not uuids:
+        return ("no StatusNotifier host and no appindicator extension installed "
+                f"({why}); traduku-gnome only Suggests gnome-shell-extension-appindicator "
+                "because the app translates without an icon")
+    uuid = uuids[0]
+    rc, cur = vm.ses("gsettings get org.gnome.shell enabled-extensions")
+    enabled = re.findall(r"'([^']+)'", cur)
+    changed = uuid not in enabled
+    if changed:
+        merged = ", ".join("'%s'" % u for u in enabled + [uuid])
+        vm.ses(f'gsettings set org.gnome.shell enabled-extensions "[{merged}]"')
+        vm.ses(f"gnome-extensions enable {uuid} 2>&1 || true")
+        for _ in range(10):
+            time.sleep(2)
+            up, why = sni_watcher_up(vm)
+            if up:
+                return None
+    return (f"appindicator extension {uuid} is installed"
+            + (" and was just enabled for the user" if changed else " and enabled in gsettings")
+            + f", but the running gnome-shell has no SNI host ({why}); the shell only "
+              "scans extension directories at boot - recreate the image "
+              "(tools/vms/mkvm.sh) or reboot the guest")
 
 
 def _prepare_gnome_session(vm):   # plain helper, not a fixture: `session` calls it
@@ -234,11 +306,70 @@ def app_running(env):
     env.start_app()
     import time
     time.sleep(4)
+    # Close whatever shell chrome a previous test left open. Observed on
+    # ubuntu-gnome after the layout switching of test_05: GNOME was still in
+    # the Activities overview, so the app mapped its window into a workspace
+    # thumbnail and test_06 reported "screen changed by only 0.000" for a
+    # product that had translated correctly (the journal line proved it).
+    env.keyseq("esc")
+    time.sleep(1)
     assert env.run("pgrep -x traduku")[0] == 0, "app did not (re)start"
     return env
 
 
-def restart_kwin(vm, layouts):
+def set_layouts(vm, layouts):
+    """Give the session two switchable layouts - the way THIS desktop does it.
+
+    test_05 has to press the same physical keys under another layout. Plasma
+    does that with kxkbrc + a KWin restart; running that recipe on GNOME is
+    not merely useless, it is fatal: kwriteconfig6 does not exist there, the
+    setxkbmap/KGlobalAccel polls can never succeed, and the helper burned two
+    minutes failing before the test body ran (measured on ubuntu-gnome:
+    "global shortcut never came back after the kwin restart", while the tests
+    below it reported a window that never appeared - the QMP screenshot shows
+    GNOME sitting in the Activities overview, which is what a static
+    framebuffer diff of 0.000 really was).
+
+    Both branches end with a usable session and a proven gesture, see
+    _gesture_is_alive.
+    """
+    if vm.vm.endswith("-gnome"):
+        _gnome_set_layouts(vm, layouts)
+        _gesture_is_alive(vm)
+        return
+    _plasma_set_layouts(vm, layouts)
+    if vm.run("command -v traduku")[0] != 0:
+        return               # nothing to register: the test body fails on its
+                             # own asserts with the real (no-app) reason
+    # KWin restart kills the KGlobalAccel registrations of every app;
+    # bring the translator back so its shortcut exists in the new KWin.
+    vm.start_app()
+    for _ in range(10):
+        time.sleep(1)
+        if vm.run("pgrep -x traduku")[0] == 0:
+            break
+    _gesture_is_alive(vm)
+
+
+def _gnome_set_layouts(vm, layouts):
+    """org.gnome.desktop.input-sources is read live by gnome-settings-daemon.
+
+    No compositor bounce - and that is the point: bouncing gnome-shell here
+    would take the session, and every test after it, down with it. Alt+Shift
+    comes from the xkb option, the same one the Plasma branch writes, because
+    test_05 switches layouts by pressing exactly that.
+    """
+    entries = ", ".join("('xkb', '%s')" % one.strip() for one in layouts.split(","))
+    vm.ses("gsettings set org.gnome.desktop.input-sources sources \"[" + entries + "]\";"
+           " gsettings set org.gnome.desktop.input-sources xkb-options"
+           " \"['grp:alt_shift_toggle']\"")
+    rc, out = vm.ses("gsettings get org.gnome.desktop.input-sources sources")
+    for one in [x.strip() for x in layouts.split(",")]:
+        assert ("'%s'" % one) in out, f"gnome-shell did not take the {one} layout: {out}"
+    capture_sessionenv(vm)
+
+
+def _plasma_set_layouts(vm, layouts):
     """Set the KDE keyboard layouts and restart KWin (kxkb reads the list
     at startup). The Wayland socket gets a new number -> re-capture."""
     # kxkbrc is the file the kxkb KCM (and KWin) use; restarting KWin is
@@ -283,33 +414,33 @@ def restart_kwin(vm, layouts):
         time.sleep(1)
     time.sleep(1)
     capture_sessionenv(vm)
+
+
+def _gesture_is_alive(vm):
+    """End-to-end readiness gate for both desktops: fire the pair gesture
+    until the app writes a FRESH 'translating' line.
+
+    On Plasma 6 kglobalaccel lives INSIDE kwin_wayland: a kwin restart drops
+    the app's registration, and the KDE client library re-registers only when
+    the bus name reappears - on a young session that lag exceeds any sane
+    sleep (observed in-suite: gesture dead for the whole test, alive ~30s
+    later; kwin's KGA-registry D-Bus does not expose the ephemeral component,
+    so probe the real path). A layout change the session never applied fails
+    here, with this sentence, instead of three tests later as "the window
+    never appeared". The warm-up translation is harmless (the sliding-window
+    journal checks in tests age it out; clipset reseeds).
+    """
     if vm.run("command -v traduku")[0] != 0:
-        return               # nothing to register: the test body fails on its
+        return               # nothing registered: the test body fails on its
                              # own asserts with the real (no-app) reason
-    # KWin restart kills the KGlobalAccel registrations of every app;
-    # bring the translator back so its shortcut exists in the new KWin.
-    vm.start_app()
-    for _ in range(10):
-        time.sleep(1)
-        rc, _ = vm.run("pgrep -x traduku")
-        if rc == 0:
-            break
-    # End-to-end readiness gate. On Plasma 6 kglobalaccel lives INSIDE
-    # kwin_wayland: a kwin restart drops the app's registration, and the
-    # KDE client library re-registers only when the bus name reappears -
-    # on a young session that lag exceeds any sane sleep (observed in
-    # suite: gesture dead for the whole test, alive ~30s later; kwin's
-    # KGA-registry D-Bus does not expose the ephemeral component, so
-    # probe the real path). Fire the pair gesture until it produces a
-    # FRESH journal line; the warm-up translation is harmless (the
-    # sliding-window journal checks in tests age it out; clipset reseeds).
     for attempt in range(15):
         cur = vm.cursor()
-        vm.clipset(f"restart_kwin warmup {attempt}")
+        vm.clipset(f"set_layouts warmup {attempt}")
         vm.double_ctrl_alt_c()
         for _ in range(4):
             time.sleep(1)
             if vm.journal_after(cur, grep="translating.*8931")[1].strip():
                 return
         time.sleep(3)
-    raise RuntimeError("global shortcut never came back after the kwin restart")
+    raise RuntimeError("the pair gesture produced no fresh 'translating' journal line "
+                       "after the layout change")
