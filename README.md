@@ -72,13 +72,41 @@ Two things this table deliberately does not hide:
 
 ## Install
 
-For end users, install the package of **your desktop** — the tray app, the
-desktop entry, the sounds and (GNOME) the uaccess rule:
+Packages for both desktops are on the [release page](https://github.com/traduku/traduku/releases);
+install the package of **your desktop** — the tray app, the desktop entry, the
+sounds and (GNOME) the uaccess rule:
 
-| platform | build it | install it |
+| platform | download | install it |
 |---|---|---|
-| Arch / CachyOS | `packaging/arch/mkrelease.sh` | `sudo pacman -U release-out/traduku-0.3.0-1-x86_64.pkg.tar.zst` (Plasma) or `…/traduku-gnome-0.3.0-1-x86_64.pkg.tar.zst` (GNOME) |
-| Debian / Ubuntu | `packaging/debian/` (debhelper, cmake+ninja) | `sudo apt install ./traduku_0.3.0-1_amd64.deb` or `./traduku-gnome_0.3.0-1_amd64.deb` |
+| Arch / CachyOS | `traduku-0.3.0-1-x86_64.pkg.tar.zst` (Plasma) or `traduku-gnome-0.3.0-1-x86_64.pkg.tar.zst` (GNOME) | `sudo pacman -U ./traduku-0.3.0-1-x86_64.pkg.tar.zst` |
+| Debian / Ubuntu | `traduku_0.3.0-1_amd64.deb` (Plasma) or `traduku-gnome_0.3.0-1_amd64.deb` (GNOME) | `sudo apt install ./traduku_0.3.0-1_amd64.deb` |
+
+The Arch packages are signed, and on Arch that is not decoration: with the
+default `SigLevel = Required`, `pacman -U` of a package whose signature the
+keyring cannot verify answers `package missing required signature` — it does
+not install and it does not ask. So the public key ships with the release
+(`traduku-release.asc`, also in the repo under `packaging/arch/`) and you trust
+it once:
+
+```sh
+gpg --show-keys traduku-release.asc   # fingerprint 6412BB09BC5E27F2D0FE2EE7DE28065CC5A065AC
+sudo pacman-key --add traduku-release.asc
+sudo pacman-key --lsign-key DE28065CC5A065AC
+sudo pacman -U ./traduku-0.3.0-1-x86_64.pkg.tar.zst
+```
+
+That is trust-on-first-use: the key is published by the same repository as the
+packages, so confirm the fingerprint over a second channel before signing it if
+that matters to you. To check a download without trusting anything:
+
+```sh
+sha256sum -c SHA256SUMS                              # names every package + the source tarball
+gpg --verify traduku-0.3.0-1-x86_64.pkg.tar.zst.sig
+```
+
+Building it yourself (`packaging/arch/mkrelease.sh` for Arch, `dpkg-buildpackage`
+with `packaging/debian/` for Debian/Ubuntu) needs no key at all, and is the
+path to take if you would rather not add one.
 
 One source, two flavours, because the two shells deliberately do not share a
 dependency set: the GNOME shell links **no KF6 at all** (GNOME ships none),
