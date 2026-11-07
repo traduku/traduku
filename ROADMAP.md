@@ -181,6 +181,10 @@ make build | test | selftest | install      # хост: ninja/ctest/install в ~
 make up|down|scratch|reset|check|guest|e2e|cycle|ssh|shot  VM=<vm>
                                  # грид; cycle = пакет -> гость -> e2e одной командой
 ```
+
+и то, чем они всё это делают:
+
+```
 tools/vms/vmctl.sh up|mkvm|start [scratch]|reset|ssh|keyseq|shot|vnc|status
                                 # грид; scratch = прогон на оверлее, reset = сброс
 tools/vms/check-grid.sh <vm>        # «это машина пользователя»: сессия, DE, пакетный менеджер
