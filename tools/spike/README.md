@@ -11,6 +11,7 @@ GNOME_PLAN.md. Nothing here is installed or linked into `traduku`.
 | `clip-spike seed "text"` | which path can WRITE the clipboard from the background | `QClipboard` on wayland: not owned; `wl-copy` ok; Qt on xcb ok |
 | `evdev-spike [list\|listen N]` | can the literal Ctrl+C+C be observed via `/dev/input`, and at what cost (group `input`) | 24 devices, all `EACCES` until the group is granted |
 | `portal-spike.py check` | does `GlobalShortcuts` accept a non-sandboxed caller; identity ladder: bus name + `org.freedesktop.Application`, `app_id` in options, installed `.desktop`, launched as a real app | all five: `portal.Error.NotAllowed: An app id is required` |
+| `tray-spike [info\|qtsys\|sni\|both]` | which tray protocol can paint an icon *and a menu* here: Qt's `QSystemTrayIcon` (which on Wayland is Qt's generic unix SNI client, not XEmbed) vs. our own `StatusNotifierItem` + `com.canonical.dbusmenu` | GNOME 50.1 / Ubuntu 26.04: both register, both visible; only the generated-from-spec menu implementation gets its calls matched |
 | `stage0.sh` | run the whole field test in the graphical session | log: `/tmp/traduku-stage0.log` |
 
 Build (they are on by default, `-DLT_BUILD_SPIKES=OFF` to skip):
