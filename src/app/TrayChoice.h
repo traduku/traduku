@@ -5,31 +5,39 @@
 namespace lt {
 
 /*!
- * Which tray implementation the shell must create.
+ * Which tray the shell must create.
  *
  * Two inputs, deliberately kept apart:
  *   - the build default (LT_TRAY, set by CMake, so a distro package decides);
- *   - TRADUKU_TRAY, a per-run override, so comparing the two trays in a live
- *     session is one command instead of a rebuild - "did you remember to
- *     rebuild the right one?" is not a measurement.
+ *   - TRADUKU_TRAY, a per-run override, so a packaging default can be
+ *     overridden in one command instead of a rebuild.
  *
- * Resolution is pure (no environment access here) so tests/unit/tst_traychoice
- * covers the typo case, which is the one that would silently compare the
- * wrong tray.
+ * There is only one tray implementation left - the QSystemTrayIcon one in
+ * src/platform/qt/QtTray.cpp - so the choices are "qt" and "none". The KDE
+ * variant (KStatusNotifierItem) is deleted: the Qt tray matched it entry for
+ * entry in Plasma and the KF6 item segfaulted when destroyed with a live
+ * session bus.
+ *
+ * The function still takes the build default and still warns, because
+ * `-DLT_TRAY=kde` sits in old packaging recipes and `TRADUKU_TRAY=kde` in old
+ * notes, and both must be answered out loud, not ignored.
+ *
+ * Resolution is pure (no environment access here) so
+ * tests/unit/tst_traychoice covers the typo case.
  */
 struct TrayChoice
 {
-    QString kind;        // "kde" | "qt"
+    QString kind;        // "qt" | "none"
     QString source;      // where the decision came from, for --backend-info
     QString warning;     // non-empty = the request was ignored, say why
 };
 
-/// @param buildDefault  LT_TRAY for this build ("kde" or "qt")
+/// @param buildDefault  LT_TRAY for this build ("qt" or "none")
 /// @param envValue      TRADUKU_TRAY, or empty when unset
 TrayChoice resolveTrayKind(const QString &buildDefault, const QString &envValue);
 
-/// What --backend-info prints: "kde (KStatusNotifierItem)",
-/// "qt (QSystemTrayIcon)", "none (no tray host)". Never empty.
+/// What --backend-info prints: "qt (QSystemTrayIcon)", "none (no tray host)".
+/// Never empty: the e2e suite greps this, and a blank reads as "fine".
 QString trayDisplayName(const QString &kind);
 
 } // namespace lt

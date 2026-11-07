@@ -14,7 +14,6 @@
 #include "core/translationengine.h"
 #include "platform/kde/KdeGlobalShortcut.h"
 #include "platform/kde/KdeNotifier.h"
-#include "platform/kde/KdeTray.h"
 #include "platform/qt/QtClipboard.h"
 #include "platform/qt/QtTray.h"
 #include "platform/qt/XdgAutostart.h"
@@ -43,16 +42,33 @@ using namespace lt;
 namespace {
 
 /// The tray the shell shows is configuration, not code (GNOME_PLAN.md D3 and
-/// Stage 6b): LT_TRAY sets the build default, TRADUKU_TRAY overrides it per
-/// run, so comparing KStatusNotifierItem against QSystemTrayIcon in a live
-/// Plasma session is one command and not a rebuild. Both speak ITray, so this
-/// is the only place that knows the two classes exist.
+/// A tray that is not there: LT_TRAY=none / TRADUKU_TRAY=none (kiosk images,
+/// --translate-only deployments). Returning an object instead of nullptr keeps
+/// every `connect(tray, ...)` below unconditional, so nobody has to remember
+/// which of them needs a null check.
+class HiddenTray : public ITray
+{
+public:
+    using ITray::ITray;
+    QMenu *menu() const override { return nullptr; }
+    void setBusy(bool) override {}
+    void setToolTipSub(const QString &) override {}
+    void show() override {}
+    void setStatusLabel(const QString &) override {}
+    bool isAvailable() const override { return false; }
+    QString backendName() const override { return QStringLiteral("none"); }
+};
+
+/// One tray for both shells. KdeTray (KStatusNotifierItem) was removed once
+/// the Qt tray matched it entry for entry in a live Plasma session; KF6's item
+/// additionally segfaulted when destroyed with a live session bus, which is
+/// exactly what `Quit` did in the released 0.2 build.
 ITray *createTray(const QString &kind, Settings *settings, IAutostart *autostart)
 {
-    if (kind == QLatin1String("qt")) {
-        return new QtTray(settings, autostart);
+    if (kind == QLatin1String("none")) {
+        return new HiddenTray;
     }
-    return new KdeTray(settings, autostart);
+    return new QtTray(settings, autostart);
 }
 
 } // namespace
@@ -155,11 +171,11 @@ int main(int argc, char **argv)
     ChunkedTranslator pipeline(&settings);
     AppController controller({&settings, clipboard.get(), &notifier, &sound,
                               &window, &pipeline});
-    // Deliberately never deleted: destroying a KStatusNotifierItem while the
-    // session bus is alive segfaults (measured on KF6 6.31: `delete menu;
-    // delete item` and the reverse order both crash, deleteLater does not). The
-    // tray used to be a stack object here, which meant that quitting the KDE
-    // app crashed on exit - tests/unit/tst_trayparity.cpp is what caught it.
+    // Deliberately never deleted: it is a process-lifetime object, and the
+    // KDE app used to crash on exit because the tray sat on the stack here and
+    // its destruction ran while the session bus was still alive
+    // (tests/unit/tst_trayparity.cpp pins the rule that killed it: a menu item
+    // must never tear the application down by itself).
     const TrayChoice trayChoice = resolveTrayKind(
         QLatin1String(LT_TRAY_DEFAULT), qEnvironmentVariable("TRADUKU_TRAY"));
     if (!trayChoice.warning.isEmpty()) {

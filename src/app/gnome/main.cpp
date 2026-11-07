@@ -334,9 +334,10 @@ int main(int argc, char **argv)
     // ---- tray ------------------------------------------------------------
     // QSystemTrayIcon, which on Wayland is Qt's generic DBus SNI client
     // (measured on this desktop; tools/spike/tray-spike.cpp compares it with
-    // our own SNI client). Behaviour copied from KdeTray: left click
-    // translates, right click is the menu. KdeTray stays until the Qt tray is
-    // verified in a live KDE session.
+    // our own SNI client). Its menu reproduces what the KDE tray used to
+    // offer - left click translates, right click is the menu - and the KDE
+    // implementation is now deleted, so this is the only tray in the tree -
+    // verified in a live Plasma session and in GNOME's appindicator host.
     XdgAutostart autostart(QStringLiteral("dev.traduku.Traduku"),
                            QCoreApplication::applicationFilePath());
     QtTray tray(&settings, &autostart);

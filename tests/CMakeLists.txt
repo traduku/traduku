@@ -108,9 +108,10 @@ target_include_directories(tst_qttray PRIVATE ${CMAKE_SOURCE_DIR}/src)
 # Stage 6b: the KDE and Qt trays must stay interchangeable until KdeTray is
 # deleted - same interface, same menu, same intents. Links KF6, so it is
 # configured only when the KDE layer is.
-if(TARGET lt::platform_kde)
+if(TARGET lt::platform_qt)
+    # The menu contract the KDE tray established, pinned on the Qt one.
     lt_add_test(tst_trayparity SOURCES unit/tst_trayparity.cpp
-        LIBS lt::platform_kde lt::platform_qt lt::core Qt6::Widgets Qt6::DBus)
+        LIBS lt::platform_qt lt::core Qt6::Widgets Qt6::DBus)
     target_include_directories(tst_trayparity PRIVATE ${CMAKE_SOURCE_DIR}/src)
 endif()
 

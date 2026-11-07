@@ -9,7 +9,7 @@ license=('GPL3')
 # KF6 component packages: un-prefixed names resolve on Arch (kf6-* Provides)
 # and on CachyOS (installed as bare names).
 depends=('qt6-base' 'qt6-multimedia' 'qt6-5compat'
-         'kstatusnotifieritem' 'knotifications' 'kglobalaccel'
+         'knotifications' 'kglobalaccel'
          'kdbusaddons' 'libx11' 'libxi' 'libxtst')
 makedepends=('cmake' 'ninja')
 optdepends=('wl-clipboard: clipboard access on Wayland (required on GNOME, Plasma usually has org.kde.KClipboard)'

@@ -21,11 +21,10 @@ if(NOT LT_SHELL STREQUAL "gnome")
     find_package(KF6Config QUIET)
     find_package(KF6DBusAddons QUIET)
     find_package(KF6I18n QUIET)
-    find_package(KF6StatusNotifierItem QUIET)
     find_package(KF6GlobalAccel QUIET)
     find_package(KF6Notifications QUIET)
     if(KF6CoreAddons_FOUND AND KF6Config_FOUND AND KF6DBusAddons_FOUND
-       AND KF6I18n_FOUND AND KF6StatusNotifierItem_FOUND
+       AND KF6I18n_FOUND
        AND KF6GlobalAccel_FOUND AND KF6Notifications_FOUND)
         set(LT_KDE_AVAILABLE TRUE)
     endif()
@@ -35,7 +34,7 @@ if(LT_SHELL STREQUAL "kde")
     if(NOT LT_KDE_AVAILABLE)
         message(FATAL_ERROR
             "LT_SHELL=kde but the KF6 stack (CoreAddons, Config, DBusAddons, "
-            "I18n, StatusNotifierItem, GlobalAccel, Notifications) is not "
+            "I18n, GlobalAccel, Notifications) is not "
             "installed. Install it or build the other shell with "
             "-DLT_SHELL=gnome.")
     endif()
