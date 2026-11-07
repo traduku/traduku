@@ -398,5 +398,17 @@ int main(int argc, char **argv)
         dlg.exec();
     });
 
+    // The "I am up" sentence. The E2E harness waits for this instead of
+    // sleeping (tests/e2e/grid.py wait_journal): 4 s per test of blind waiting
+    // became an event, and a startup that hangs now fails naming the backend
+    // it never got, rather than with an empty screenshot 4 s later.
+    lt::ReadyInfo ready;
+    ready.shell = QStringLiteral("kde");
+    ready.session = sessionType();
+    ready.clipboard = clipboard->backendName();
+    ready.hotkey = hotkey ? hotkey->backendName() : QString();
+    ready.trayAvailable = tray->isAvailable();
+    lt::logReady(ready);
+
     return app.exec();
 }
