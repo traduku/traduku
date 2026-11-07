@@ -35,6 +35,13 @@
 | **Два флейвора из одного дерева**: `traduku` (KF6) и `traduku-gnome` (без KF6) | `LT_SHELL=auto` брал KDE, стоило KF6 оказаться в системе; GNOME-слой обязан быть KF6-свободным — это проверяется `ldd` | `test_01` на arch-kde и ubuntu-gnome |
 | **Один CLI на обе оболочки** (`app/cli.cpp`) | KDE-`main.cpp` годами держал свой парсер: `--version` без номера, `--backend-info` = «Unknown option», своя копия one-shot с другим текстом ошибки | `tst_cli`, `--backend-info` на Plasma |
 | **Гости ничего не компилируют** | доставка — пакеты; компиляция в госте проверяла хост и маскировала отсутствующие runtime-Depends | `vm-install.sh`, `check-grid.sh` |
+| **Доказательство окна на Wayland — строка самого приложения** | клиент Wayland не вправе перечислять окна чужих клиентов, а у GNOME Shell нет KWin-скриптинга: список окон спрашиваем у KWin (Plasma) и у `xdotool` (X11), на Wayland читаем, что приложение сказало о своём окне, а QMP-диф остаётся перекрёстной проверкой, которую один источник не подделает | `grid.window_evidence` + `tst_appcontroller::gestureLogsTheWindowItMapped` (лог обязан совпадать с реальным окном) |
+| **Идентичность предмета в трее — по `ToolTip`, не по `Title`** | `Title`/`Id` Qt выводит из собственного application name — деталь версии Qt, а не продукта: один и тот же источник на Plasma даёт `Traduku`, на Ubuntu (Qt 6.8) — `traduku`; `ToolTip` пишет сам продукт («Traduku — Press Ctrl+C twice…»), и на обоих гостях он одинаков | `test_04` на arch-kde и ubuntu-gnome |
+| **display name задаёт `configureApplication`** | KDE-`main.cpp` ставил его, GNOME-ветка — нет: две оболочки настраивали один продукт по-разному; machine-id (config, D-Bus, пакет) остаются строчными | `tst_cli::panelNameIsTheSameOnBothShells` |
+| **GNOME-пакет сам кладёт autostart в `/etc/xdg/autostart`** | диалога первого запуска в GNOME-оболочке ещё нет (Stage 6), а «поставил → ребут → жму жест → тишина» — не результат; путь абсолютный: `CMAKE_INSTALL_SYSCONFDIR` при префиксе `/usr` даёт `/usr/etc/xdg/autostart`, что ни одна сессия не читает | `test_02a` на ubuntu-gnome, `test_03` после ребута |
+| **appindicator включается дефолтом dconf при сборке образа** | GNOME Shell сканирует каталог расширений до того, как кто-то может отреагировать: включить после старта шелла = не включить; Ubuntu отдаёт расширение выключенным, а `enabled-extensions` не имеет fallback — угадал неверно, остаёшься без трей-хоста | `mkvm.sh` (`30-tray`); без хоста `test_04` skip с этой причиной |
+| **харнес не даёт KDE-команды GNOME-гостю** | `restart_kwin()` в test_05 писал kxkbrc и убивал gnome-shell → семь красных тестов из-за одной команды; `set_layouts()` выбирает механизм десктопа (gsettings `input-sources` / kxkb+KWin), общий гейт `_gesture_is_alive` доказывает жест на любом десктопе | e2e 05 на arch-kde и ubuntu-gnome |
+| **прогон переиспользует: qcow2-оверлей и кэш `.deb` по хэшу содержимого** | golden-диск — post-install состояние, значит испорченный гость стоит удаления файла, а не пересборки образа; кэш по mtime врёт после `git checkout` (mtime сохраняется) и обслуживает протухший пакет | `vmctl.sh start <vm> scratch` / `reset`; замеры ниже в 4.5 |
 
 Отброшенные гипотезы, чтобы не возвращались: собственный `SniTray` +
 `com.canonical.dbusmenu` (референс остался в `tools/spike/tray-spike.cpp`),
@@ -53,63 +60,31 @@ Wayland, сборка в гостях.
 | юнит/интеграция, `LT_SHELL=kde` | **33/33** |
 | юнит/интеграция, `LT_SHELL=gnome` | **33/33** |
 | e2e `arch-kde` (пакеты, pacman) | **8/8** |
-| e2e `ubuntu-gnome` (пакеты, apt) | **4/8** |
+| e2e `ubuntu-gnome` (пакеты, apt) | **8/8** |
 
 ### Грид (`tools/vms/`, профили `arch-kde debian-kde debian-gnome ubuntu-kde ubuntu-gnome`)
 
 | профиль | пакет | примечание |
 |---|---|---|
 | `arch-kde` | `traduku-0.3.0-1` | зелёный целиком |
-| `ubuntu-gnome` | `traduku-gnome_0.3.0-1` | 05/07/08 зелёные = evdev-жест, `wl-paste` и запись результата на живом Wayland |
+| `ubuntu-gnome` | `traduku-gnome_0.3.0-1` | зелёный целиком: пакетный autostart переживает ребут, appindicator отдаёт трей-хост, жест/`wl-paste`/окно работают на живом Wayland; образ пересоздан с фиксами `mkvm.sh` (display manager + dconf) |
 | `debian-kde`, `debian-gnome`, `ubuntu-kde` | путь `.deb` проложен | не поднимались в этой сессии |
 
 ### Этапы GNOME
 
 0 спайки · 1 каркас+CLI · 1b отключение reasoning · 2 уведомления+один экземпляр ·
-3A жест evdev · 5 `QtTray` · 6b паритет трея и удаление `KdeTray` · 8 частично
+3A жест evdev · 5 `QtTray` · 6b паритет трея и удаление `KdeTray` ·
+7 частично (`ubuntu-gnome`: e2e 8/8, образ пересоздан) · 8 частично
 (версия 0.3.0, два флейвора, udev в пакете) — **готово**.
 4 (`X11Clipboard`), 3B (gsettings), 6 (первый запуск/HiDPI/звук),
-7 (грид-GNOME) и остаток 8 (README, релиз) — ниже.
+остаток 7 (`debian-gnome`, `ubuntu-kde`, `debian-kde` не поднимались)
+и остаток 8 (README, релиз) — ниже.
 
 ---
 
 ## 4. Что делать (порядок = список)
 
-### 4.1 e2e на GNOME — довести до 8/8
-
-Три красных теста красны не из-за продукта, а из-за того, что харнес знает
-только KWin. Каждый чинится отдельно и с причиной в имени.
-
-1. **`test_06_window`** — список окон это запрос к KWin-скриптингу
-   (`'Traduku' in ''` на GNOME). Нужен desktop-aware способ: на X11 —
-   `xdotool search --name`, на Wayland — journal-строка приложения об
-   открытии окна (у нас она есть) + скриншот-диф по QMP.
-2. **`test_04_tray`** — в госте нет `org.kde.StatusNotifierWatcher`.
-   `mkvm.sh` теперь ставит `gnome-shell-extension-appindicator`, но его надо
-   **включить** пользователю (`gnome-extensions enable
-   ubuntu-appindicators@ubuntu.com` / `org.gnome.shell enabled-extensions`).
-   Тест должен искать предмет на том watcher'е, который у DESKTOPA есть, и
-   явно `SKIP`иться без него — vacuous-зелёный хуже красного.
-3. **`test_02`/`test_03`** — они жмут Enter в KDE-диалоге первого запуска,
-   которого в GNOME нет (там XDG-autostart из пакета). Либо `skip` с
-   причиной, либо отдельный сценарий «пакетный autostart живёт после
-   ребута».
-
-Потом — **пересоздать образы**, иначе фиксы `mkvm.sh` живут только в
-запущенной VM:
-
-```bash
-./tools/vms/vmctl.sh mkvm ubuntu-gnome ubuntu gnome
-./tools/vms/vmctl.sh mkvm ubuntu-kde   ubuntu kde
-./tools/vms/vmctl.sh mkvm debian-gnome debian gnome
-./tools/vms/vmctl.sh mkvm debian-kde   debian kde
-./tools/vms/check-grid.sh <vm>          # ворота перед прогоном
-```
-
-Прогоны гонять **последовательно**: два грида одновременно на 6 ядрах дают
-тайминг-флейки (измерено: 1 фейл из 8 прогонов).
-
-### 4.2 Stage 4 — `X11Clipboard` и цепочка приоритетов
+### 4.1 Stage 4 — `X11Clipboard` и цепочка приоритетов
 
 `XGetSelectionOwner`/`XConvertSelection` на чтение,
 `XSetSelectionOwner` + ответ на `SelectionRequest` на запись,
@@ -118,14 +93,14 @@ Wayland, сборка в гостях.
 `ClipboardFactory`: `wl-paste` → X11 → Qt. Это закрывает обещание
 «Ubuntu 24.04 / Debian 13» и не зависит от VM.
 
-### 4.3 Stage 6 — автономность GNOME-оболочки
+### 4.2 Stage 6 — автономность GNOME-оболочки
 
 Первый запуск (что нажимать, если иконки нет), иконки Yaru/Adwaita, HiDPI,
 нелатинская локаль, звук через PipeWire, перелогин → процесс жив.
 KDE-диалог первого запуска при этом не должен переехать в GNOME: там
 автозапуск из пакета.
 
-### 4.4 Stage 3B — gsettings-fallback (по критерию, не «на всякий случай»)
+### 4.3 Stage 3B — gsettings-fallback (по критерию, не «на всякий случай»)
 
 `org.gnome.settings-daemon.plugins.media-keys custom-keybindings` +
 `gdbus call … dev.traduku.Traduku gesturePressed`. Делать, когда появится
@@ -133,7 +108,7 @@ KDE-диалог первого запуска при этом не должен
 политикой). До этого — не писать: evdev работает, а второй путь обязан ещё
 и тестироваться.
 
-### 4.5 Stage 8 — релиз
+### 4.4 Stage 8 — релиз
 
 - README: таблица «что работает на каком DE/сессии», «какой пакет куда»,
   раздел про udev-правило и почему группа `input` — плохое решение,
@@ -142,15 +117,35 @@ KDE-диалог первого запуска при этом не должен
   гостях (это уже делает `test_01`).
 - Теги. В `master` не пушить без явного запроса.
 
-### 4.6 Скорость VM-цикла — сначала измерить
+### 4.5 Скорость VM-цикла — измерено
 
-Сейчас таймингов одного полного прогона (`mkvm → up → install → pytest`) нет,
-и оптимизировать на глаз рано. Кандидаты: btrfs-снапшоты базовых образов,
-переиспользование qcow2-оверлеев, ccache/предсобранные зависимости в базе,
-прогрев гостей. Разработческий прогон может ставить **хостовый** бинарник,
-но CI обязан ставить пакет — иначе Depends никто не проверяет.
+Один прогон `ubuntu-gnome`, 13:00–13:20: сборка `.deb` в контейнере **71 s**
+(было ~6,5 min: гейт больше не конфигурирует лишние два дерева), кэш по
+хэшу содержимого на незаменённом дереве — **3 s**, установка в гостя **2 s**,
+`vm-install.sh` целиком **74 s**, полный e2e-прогон **2:36** (8 тестов),
+два теста на scratch-госте без установки пакета — **39 s**.
 
-### 4.7 Гигиена
+Закрыто: `start <vm> scratch` (оверлей поверх golden-диска) + `reset`
+(удаление оверлея, отказ при запущенном госте), кэш `.deb` в `.cache/vm-deb`
+с fingerprint от `git ls-files -co --exclude-standard`, verbose-первая
+попытка сборки, тайминги в последней строке — только те числа, которые
+ветка действительно измеряла.
+
+Осталось: пересоздать `ubuntu-kde`, `debian-kde`, `debian-gnome` (образ
+`ubuntu-gnome` пересоздан), и посмотреть ccache в контейнере-сборщике, если
+сборка снова станет самым долгим шагом. Разработческий прогон может ставить
+**хостовый** бинарник, но CI обязан ставить пакет — иначе Depends никто не
+проверяет.
+
+Отдельно, заодно с замерами: `mkrelease.sh` копировал только `PKGBUILD`, и
+с тех пор как в нём появился `install=`, makepkg падал на
+`traduku-gnome.install does not exist`, а `vm-install` этого не замечал —
+pacman не ставил ничего, и все гейты зелёнили **уже стоявший** в госте
+пакет. Теперь вспомогательные файлы копируются, а ветка Arch обязана
+выдать пакет новее начала прогона. Красная сборка, которую харнес спутал с
+зелёным прогоном, дороже любой скорости.
+
+### 4.6 Гигиена
 
 - `tests/cmake/test_versions_agree.sh` уже валит сборку при дрейфе версий;
   добавить в него `README.md`, когда там появится строка с версией.
@@ -175,7 +170,8 @@ KDE-диалог первого запуска при этом не должен
 ## 6. Инфраструктура: что где лежит
 
 ```
-tools/vms/vmctl.sh up|mkvm|start|ssh|keyseq|shot|vnc|status   # грид
+tools/vms/vmctl.sh up|mkvm|start [scratch]|reset|ssh|keyseq|shot|vnc|status
+                                # грид; scratch = прогон на оверлее, reset = сброс
 tools/vms/check-grid.sh <vm>        # «это машина пользователя»: сессия, DE, пакетный менеджер
 tools/vms/vm-install.sh <vm>        # собрать пакет (контейнер) + поставить + гейт ctest
 packaging/arch/mkrelease.sh release-out   # traduku + traduku-gnome (.sig)
