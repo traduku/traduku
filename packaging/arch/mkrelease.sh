@@ -11,6 +11,14 @@ git -C "$ROOT" archive --format=tar.gz \
     --prefix="traduku-${VER}/" HEAD \
     -o "$OUT/traduku-${VER}.tar.gz"
 cp "$HERE/PKGBUILD" "$OUT/"
+# makepkg resolves install= (and any .install hook) relative to the directory
+# it reads the PKGBUILD from, not from $HERE: copying only the PKGBUILD gave
+# "install file (traduku-gnome.install) does not exist" and - because the
+# caller did not check for a package - the grid then tested whatever was
+# already installed. Any auxiliary file the PKGBUILD names comes along.
+for aux in "$HERE"/*.install "$HERE"/*.hook; do
+  [ -f "$aux" ] && cp "$aux" "$OUT/"
+done
 # --sign: detached .pkg.tar.zst.sig next to the package — pacman -U verifies
 # it automatically when installing (the release channel ships both files).
 (cd "$OUT" && makepkg -sf --noconfirm --needed --sign "$@")
