@@ -209,7 +209,8 @@ bool tryQtSystemTray(const QString &iconName, const QList<QImage> &images)
 // --------------------------------------------------------------- SNI client
 
 bool trySni(const QString &iconName, const QList<QImage> &images,
-            const QList<QImage> &attentionImages, bool itemIsMenu, QDBusConnection &bus)
+            const QList<QImage> &attentionImages, bool itemIsMenu, QDBusConnection &bus,
+            bool withMenu = true)
 {
     say(QStringLiteral("--- our own StatusNotifierItem (what SniTray will do) ---"));
     registerSniMetaTypes();
@@ -229,8 +230,17 @@ bool trySni(const QString &iconName, const QList<QImage> &images,
     item->pixmaps = toPixmaps(images);
     item->attentionPixmaps = toPixmaps(attentionImages);
     item->itemIsMenu = itemIsMenu;
-    say(QStringLiteral("ItemIsMenu: %1  (false = this host never opened the menu)")
-            .arg(itemIsMenu ? QStringLiteral("true") : QStringLiteral("false")));
+    if (!withMenu) {
+        // The decisive measurement for Traduku: while the item has a working
+        // menu this host answers EVERY click with the menu (measured on the Qt
+        // item: 3 clicks -> 3 dbusmenu Event("opened"), zero Activate, even
+        // though Qt asks for Activate via ItemIsMenu=false). Does it send
+        // Activate when there is no menu? Spec: empty object path = no menu.
+        item->menuPath = QStringLiteral("/");
+    }
+    say(QStringLiteral("ItemIsMenu: %1  menu path: %2  (no menu = does Activate arrive?)")
+            .arg(itemIsMenu ? QStringLiteral("true") : QStringLiteral("false"),
+                 item->menuPath));
     new SniAdaptor(item);
     if (!bus.registerObject(QLatin1String(kItemPath), item,
                             QDBusConnection::ExportAdaptors)) {
@@ -321,6 +331,10 @@ int main(int argc, char *argv[])
         QStringLiteral("SNI ItemIsMenu: 1 (default) or 0 - hosts differ in what "
                        "they do with clicks; see the comment in tray-object.h."),
         QStringLiteral("0|1"), QStringLiteral("1"));
+    QCommandLineOption noMenuOpt(
+        QStringLiteral("no-menu"),
+        QStringLiteral("Advertise no dbusmenu (empty menu path) to see whether "
+                       "the host sends Activate instead of opening a menu."));
     QCommandLineOption noPixmapOpt(
         QStringLiteral("no-pixmap"),
         QStringLiteral("Send only IconName (reproduces the '...' fallback icon)."));
@@ -328,6 +342,7 @@ int main(int argc, char *argv[])
     parser.addOption(secondsOpt);
     parser.addOption(noPixmapOpt);
     parser.addOption(itemIsMenuOpt);
+    parser.addOption(noMenuOpt);
     parser.addPositionalArgument(QStringLiteral("mode"),
                                  QStringLiteral("info | qtsys | sni | both (default both)"),
                                  QStringLiteral("[mode]"));
@@ -366,12 +381,13 @@ int main(int argc, char *argv[])
         ok = tryQtSystemTray(iconName, images);
     } else if (mode == QLatin1String("sni")) {
         ok = trySni(iconName, parser.isSet(noPixmapOpt) ? QList<QImage>() : images,
-                    attentionImages, itemIsMenu, bus);
+                    attentionImages, itemIsMenu, bus, !parser.isSet(noMenuOpt));
     } else if (mode == QLatin1String("both")) {
         const bool qtOk = tryQtSystemTray(iconName, images);
         const bool sniOk = trySni(iconName,
                                   parser.isSet(noPixmapOpt) ? QList<QImage>() : images,
-                                  attentionImages, itemIsMenu, bus);
+                                  attentionImages, itemIsMenu, bus,
+                                  !parser.isSet(noMenuOpt));
         say(QStringLiteral("summary: Qt tray %1, our SNI %2")
                 .arg(qtOk ? QStringLiteral("available") : QStringLiteral("unavailable"),
                      sniOk ? QStringLiteral("registered") : QStringLiteral("rejected")));
