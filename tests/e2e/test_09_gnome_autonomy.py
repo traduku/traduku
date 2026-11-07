@@ -399,3 +399,69 @@ def test_non_latin_text_survives_the_whole_path(env):
     assert "rc=0" in out, f"one-shot translation of non-latin text failed:\n{out}"
     assert "Привет" in out, (
         f"the non-latin text did not survive the request path:\n{out}")
+
+def test_a_relogin_starts_it_again(session):
+    """Logout, login, no reboot: the app has to come back on its own.
+
+    "Did it come back?" is the first question after an install, and the two
+    desktops answer it through different files - traduku-gnome installs
+    /etc/xdg/autostart/traduku.desktop, Plasma writes ~/.config/autostart only
+    if the user said yes in the first-run dialog. Both are exercised here,
+    because both are a promise the package makes.
+
+    The session is torn down by restarting the display manager. `loginctl
+    terminate-user vm` was tried first and is not equivalent on this image: it
+    leaves the user manager with no session at all (measured - no
+    gnome-session-binary, no autostart apps, the display sits at a dead
+    session), which measures the image's autologin rather than our entry.
+    """
+    import time
+
+    from conftest import capture_sessionenv
+
+    vm = session
+    dm = "gdm" if vm.vm.endswith("-gnome") else "sddm"
+    rc, active = vm.sudo(f"systemctl is-active {dm}")
+    if "active" not in active:
+        pytest.skip(f"no {dm} on {vm.vm}; the session is started another way there")
+
+    # The state the desktop itself would put the app in at login.
+    if vm.vm.endswith("-gnome"):
+        vm.run("rm -f ~/.config/autostart/traduku.desktop")   # the package decides
+        rc, packaged = vm.run(f"test -f {PACKAGED_AUTOSTART} && echo packaged")
+        assert "packaged" in packaged, f"nothing installs {PACKAGED_AUTOSTART}"
+    else:
+        rc, out = vm.ses("traduku --autostart=on 2>&1")
+        assert "enabled" in out.lower(), f"could not enable autostart: {out}"
+
+    vm.run("pkill -x traduku; true")
+    vm.sudo(f"systemctl restart {dm}")
+
+    back = 0
+    deadline = time.time() + 150
+    while time.time() < deadline:
+        time.sleep(5)
+        rc, back_out = vm.run("pgrep -cx traduku 2>/dev/null || echo 0")
+        try:
+            back = int(back_out.strip().splitlines()[-1])
+        except ValueError:
+            back = 0
+        if back:
+            break
+    # The display manager restart also drops the harness' view of the session,
+    # so put it back before anything else reads it.
+    try:
+        capture_sessionenv(vm)
+    except Exception as exc:                       # noqa: BLE001 - reported below
+        pytest.skip(f"session did not come back to a usable state: {exc}")
+
+    rc, who = vm.run("pgrep -af '^/usr/bin/traduku$' ; pgrep -x traduku | head -1")
+    assert back, (
+        f"traduku did not come back after a {dm} restart on {vm.vm}. "
+        "On GNOME that means the packaged "
+        f"{PACKAGED_AUTOSTART} is not honoured by the session; on Plasma the "
+        "entry the first-run dialog wrote is. Either way the user's next login "
+        f"is a silent one. pgrep: {who}")
+    rc, out = vm.run("pgrep -a traduku | head -2")
+    assert "/usr/bin/traduku" in out, (
+        f"something named traduku came back but not the installed binary: {out}")

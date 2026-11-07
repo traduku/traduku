@@ -264,6 +264,13 @@ void QtTray::syncLanguageChecks()
 
 void QtTray::syncAutostartCheck()
 {
+    // Blocker, not a bare setChecked: the action is checkable and its toggled
+    // signal is wired to IAutostart::setEnabled(). Setting the state the
+    // machine already has would otherwise be *written back* - which is exactly
+    // what happened once the packaged GNOME entry made isEnabled() true: every
+    // start created ~/.config/autostart/traduku.desktop, an entry no user
+    // asked for. Reading must not change the machine (tests/unit/tst_qttray).
+    const QSignalBlocker blocker(m_autostartAction);
     m_autostartAction->setChecked(m_autostart->isEnabled());
 }
 

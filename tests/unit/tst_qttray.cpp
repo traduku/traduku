@@ -13,6 +13,8 @@
     tests/unit/tst_trayparity.cpp keeps the contract it defined.
 */
 #include <QtTest>
+#include <QDir>
+#include <QAction>
 #include <QAction>
 #include <QMenu>
 #include <QSignalSpy>
@@ -59,12 +61,46 @@ QStringList menuTexts(const QMenu *menu)
 class TestQtTray : public QObject
 {
     Q_OBJECT
+    int m_n = 0;
     QTemporaryDir m_dir;
     QString path() const { return m_dir.path() + QStringLiteral("/config.ini"); }
 
 private slots:
+    void readingTheAutostartStateMustNotWriteIt()
+    {
+        // The regression this pins: on GNOME the package installs
+        // /etc/xdg/autostart/traduku.desktop, so isEnabled() legitimately
+        // returns true; syncAutostartCheck() pushed that into a checkable
+        // QAction, whose toggled signal is wired to setEnabled() - and every
+        // start of the app wrote ~/.config/autostart/traduku.desktop, an entry
+        // nobody asked for, making the user's machine differ from the package
+        // for no reason. Measured on ubuntu-gnome: the file appeared with the
+        // app's own timestamp after a test only opened the menu.
+        Settings s(QDir::temp().filePath(QStringLiteral("tray-read-only-%1.ini").arg(m_n++)));
+        FakeAutostart autostart;
+        autostart.m_on = true;          // what a packaged entry means
+        QtTray tray(&s, &autostart);
+        QVERIFY2(autostart.m_calls == 0,
+                 "constructing the tray wrote the autostart entry: the menu's "
+                 "toggled signal fires on setChecked, so the sync has to block it");
+
+        // ... while the one path that IS the user's decision still writes it.
+        QAction *toggle = nullptr;
+        for (QAction *a : tray.menu()->actions()) {
+            if (a->text() == QStringLiteral("Launch on Login")) {
+                toggle = a;
+            }
+        }
+        QVERIFY(toggle);
+        QCOMPARE(toggle->isChecked(), true);      // honest state, read not written
+        toggle->setChecked(false);
+        QCOMPARE(autostart.m_calls, 1);
+        QCOMPARE(autostart.m_on, false);
+    }
+
     void menuCopiesTheKdeTray()
     {
+
         Settings s(path());
         FakeAutostart autostart;
         QtTray tray(&s, &autostart);
