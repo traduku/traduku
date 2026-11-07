@@ -113,15 +113,21 @@ BackendReport collectBackends(Settings *settings)
     }
     r.desktop = qEnvironmentVariable("XDG_CURRENT_DESKTOP");
 
-    // Named without spawning a subprocess: --backend-info must also answer
-    // on a machine where the clipboard is unreachable.
-    const bool wayland = isWaylandSession();
-    if (wayland && WlClipboard::isUsable({}, nullptr)) {
-        r.clipboard = QStringLiteral("wl-clipboard");
-    } else {
-        auto cb = createClipboard(r.sessionType, {}, QGuiApplication::clipboard());
-        r.clipboard = cb->backendName();
-        r.clipboardHint = cb->diagnostic();
+    // One decision for both questions: what the report says and what the app
+    // does must come from the same call. This used to hardcode "wl-clipboard"
+    // here whenever the tools were present, which meant the report kept
+    // saying wl-clipboard after the user set TRADUKU_CLIPBOARD=x11 - the knob
+    // and the diagnostic disagreed, and the user could not tell which one was
+    // lying. The factory already answers without blocking: it only constructs
+    // a reader after the probe said it works.
+    auto cb = createClipboard(r.sessionType, {}, QGuiApplication::clipboard());
+    r.clipboard = cb->backendName();
+    r.clipboardHint = cb->diagnostic();
+    if (r.clipboardHint.isEmpty()) {
+        // A forced TRADUKU_CLIPBOARD that did not take effect is the one case
+        // where the chosen backend has nothing to complain about and the user
+        // still has a question.
+        r.clipboardHint = forcedBackendProblem(r.clipboard);
     }
 
     // gesture/notifier/tray: the gesture is probed for real (start/stop),

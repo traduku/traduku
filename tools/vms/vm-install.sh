@@ -55,45 +55,52 @@ verify_flavour() {
 
 case "$VM" in
   arch-*)
-    # build on the host: fresh pkg tarball?
-    if [ "$REBUILD" = --rebuild ] || [ ! -f "$PKG" ] || [ -n "$(find src tests CMakeLists.txt -newer "$PKG" 2>/dev/null | head -1)" ]; then
-      echo "== host build (makepkg, ctest gate)"
-      QT_QPA_PLATFORM=offscreen ctest --test-dir "$ROOT/build" --output-on-failure >/dev/null 2>&1 || {
-        cmake -B "$ROOT/build" -G Ninja -DCMAKE_BUILD_TYPE=Release >/dev/null && cmake --build "$ROOT/build" >/dev/null
-        QT_QPA_PLATFORM=offscreen ctest --test-dir "$ROOT/build" --output-on-failure
-      }
+    # Two fences, and they used to disagree. mkrelease.sh packed HEAD while
+    # the .deb container and the host suite build the working tree: an
+    # uncommitted fix got a green grid against a package that did not contain
+    # it. So what reaches makepkg is the working tree (--allow-dirty), and it
+    # is reused only when its CONTENT is what built the cached package - tar
+    # rewrites every mtime, so "is anything newer than the package" is not a
+    # question with an answer here.
+    FP=$( { git -C "$ROOT" ls-files -co --exclude-standard -z \
+            | xargs -0 -r sha256sum; } | sha256sum | cut -d' ' -f1 )
+    ART=$ROOT/.cache/vm-arch
+    # `|| true` is load-bearing: pipefail makes a find on a directory that
+    # does not exist yet kill the script, and "no cache yet" is the first run.
+    CACHED=$(find "$ART" -maxdepth 1 -name 'traduku*.pkg.tar.zst' 2>/dev/null | head -1 || true)
+
+    # The suite runs on every invocation, not "when a file looks newer": a
+    # conditional gate is how a change that left mtimes alone skipped the only
+    # thing that could have caught it. It costs seconds when nothing changed.
+    echo "== host suite (gate before any package is built)"
+    QT_QPA_PLATFORM=offscreen ctest --test-dir "$ROOT/build" --output-on-failure >/dev/null 2>&1 || {
+      cmake -B "$ROOT/build" -G Ninja -DCMAKE_BUILD_TYPE=Release >/dev/null && cmake --build "$ROOT/build" >/dev/null
+      QT_QPA_PLATFORM=offscreen ctest --test-dir "$ROOT/build" --output-on-failure
+    }
+
+    T_PKG=0; t0=$SECONDS
+    # Taken now, before anything is built: the check below is "did THIS run
+    # produce a package", and a stamp made afterwards would accept last week's
+    # tarball as this run's output.
+    STAMP=$(mktemp)
+    if [ "$REBUILD" != --rebuild ] && [ -n "$CACHED" ] \
+       && [ "$(cat "$ART/.fingerprint" 2>/dev/null)" = "$FP" ]; then
+      echo "== arch cache hit ($FP): reusing $(basename "$CACHED")"
+      rm -rf "$ROOT/release-out"; mkdir -p "$ROOT/release-out"
+      cp "$ART"/* "$ROOT/release-out"/
+    else
+      "$ROOT/packaging/arch/mkrelease.sh" "$ROOT/release-out" --allow-dirty --nocheck
       # A build that dies quietly is worse than a slow one: without this check
       # a red makepkg left the guest on whatever package it already had, and
-      # every gate below passed while testing code nobody built. Compare
-      # against a stamp taken now, so an old tarball in release-out cannot
-      # count as this run's output.
-      # Two fences have to agree. mkrelease.sh packs HEAD; everything else in
-      # this script - the host ctest above, the .deb container below - tests
-      # the working tree. While they disagreed, an uncommitted fix got a green
-      # grid against a package that did not contain it. So: pack the working
-      # tree (--allow-dirty), and since tar rewrites every mtime, decide
-      # "nothing changed" by CONTENT like the .deb path does.
-      FP=$( { git -C "$ROOT" ls-files -co --exclude-standard -z \
-              | xargs -0 -r sha256sum; } | sha256sum | cut -d' ' -f1 )
-      ART=$ROOT/.cache/vm-arch
-      CACHED=$(ls "$ART"/traduku*.pkg.tar.zst 2>/dev/null | head -1)
-      T_PKG=0; t0=$SECONDS
-      if [ "$REBUILD" != --rebuild ] && [ -n "$CACHED" ] \
-         && [ "$(cat "$ART/.fingerprint" 2>/dev/null)" = "$FP" ]; then
-        echo "== arch cache hit ($FP): reusing $(basename "$CACHED")"
-        rm -rf "$ROOT/release-out"; mkdir -p "$ROOT/release-out"
-        cp "$ART"/* "$ROOT/release-out"/
-      else
-      "$ROOT/packaging/arch/mkrelease.sh" "$ROOT/release-out" --allow-dirty --nocheck
+      # every gate below passed while testing code nobody built.
       NEW=$(find "$ROOT/release-out" -name "traduku*.pkg.tar.zst" -newer "$STAMP" | head -1)
-      rm -f "$STAMP"
-      [ -n "$NEW" ] || { echo "FAIL: mkrelease produced no package in this run (build is red above), refusing to test a stale one" >&2; exit 1; }
+      [ -n "$NEW" ] || { echo "FAIL: mkrelease produced no package in this run (build is red above), refusing to test a stale one" >&2; rm -f "$STAMP"; exit 1; }
       T_PKG=$((SECONDS-t0))
       mkdir -p "$ART"; rm -f "$ART"/*
       cp "$ROOT/release-out"/traduku* "$ART"/ 2>/dev/null || true
       echo "$FP" > "$ART/.fingerprint"
-      fi
     fi
+    rm -f "$STAMP"
     echo "== push + pacman -U on $VM"
     # QEMU user-net needs a resolver (baked images predate the resolved patch)
     Q "grep -q DNS /etc/systemd/network/99-dhcp.network 2>/dev/null || echo vm | sudo -S sh -c '

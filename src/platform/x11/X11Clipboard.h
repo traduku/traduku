@@ -102,6 +102,11 @@ public:
     /// answer is "no", and Qt keeps its place as the last resort.
     static bool isUsable(const Options &options = {});
 
+    /// Why isUsable() said no ("" when it said yes). --backend-info needs the
+    /// reason, not just the verdict: "no X server" and "X server refused us
+    /// because of the cookie" are different fixes for the user.
+    static QString unusabilityReason(const Options &options = {});
+
     QString text() const override;
     bool setText(const QString &text) override;
     QString backendName() const override { return QStringLiteral("x11"); }

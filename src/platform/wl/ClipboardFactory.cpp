@@ -62,13 +62,64 @@ ClipboardBackend chooseClipboard(bool waylandSession, bool haveWlClipboardTools,
     return ClipboardBackend::Qt;
 }
 
+QString forcedBackendProblem(const QString &chosenBackend, const QString &forced,
+                            bool forcedIsUsable, const QString &reason)
+{
+    const QString forcedLower = forced.toLower();
+    if (forcedLower.isEmpty() || forcedLower == chosenBackend) {
+        return {};                     // honoured, or never asked for
+    }
+    if (forcedLower == QLatin1String("qt")) {
+        return {};                     // Qt is always available
+    }
+    if (forcedLower == QLatin1String("wl")) {
+        return QStringLiteral("TRADUKU_CLIPBOARD=wl could not be used: "
+                              "wl-paste/wl-copy are not installed or do not run");
+    }
+    if (forcedLower == QLatin1String("x11")) {
+        if (forcedIsUsable) {
+            // The server is there and we still did not use it: that is a bug
+            // in the choice, not a limitation of the machine, and the report
+            // has to say so rather than let the user debug our logic.
+            return QStringLiteral("TRADUKU_CLIPBOARD=x11 was ignored although an "
+                                  "X server is reachable");
+        }
+        return QStringLiteral("TRADUKU_CLIPBOARD=x11 could not be used: %1")
+            .arg(reason.isEmpty() ? QStringLiteral("no reason given") : reason);
+    }
+    return QStringLiteral("TRADUKU_CLIPBOARD=%1 is not a known backend "
+                          "(wl, x11, qt)").arg(forced);
+}
+
+QString forcedBackendProblem(const QString &chosenBackend)
+{
+    const QString forced = qEnvironmentVariable("TRADUKU_CLIPBOARD").toLower();
+    if (forced.isEmpty() || forced == chosenBackend || forced == QLatin1String("qt")) {
+        return {};
+    }
+    if (forced == QLatin1String("x11")) {
+        return forcedBackendProblem(chosenBackend, forced, X11Clipboard::isUsable(),
+                                    X11Clipboard::unusabilityReason());
+    }
+    return forcedBackendProblem(chosenBackend, forced, false, QString());
+}
+
 std::unique_ptr<IClipboard> createClipboard(const QString &platformName,
                                             const WlClipboard::ToolFinder &finder,
                                             QClipboard *qtClipboard,
                                             const WlClipboard::ToolRunner &runner,
                                             const XAvailability &xAvailable)
 {
-    const bool wayland = (platformName == QLatin1String("wayland"));
+    // The caller passes what it believes the session is, and the backend
+    // report decorates that same string ("wayland (qpa=offscreen)") to be
+    // honest about what it measured. An exact == here let that decoration
+    // change which reader the app uses: a decorated wayland box silently lost
+    // wl-clipboard. Match the first word; keep the decoration harmless.
+    QString firstWord = platformName.section(QLatin1Char(' '), 0, 0);
+    if (firstWord.startsWith(QLatin1Char('('))) {
+        firstWord.clear();   // "(qpa=offscreen)" alone is not a session type
+    }
+    const bool wayland = firstWord.compare(QLatin1String("wayland"), Qt::CaseInsensitive) == 0;
     const bool haveTools = WlClipboard::isUsable(runner, finder);
     const bool haveX11 = xAvailable ? xAvailable() : X11Clipboard::isUsable();
 
@@ -85,7 +136,16 @@ std::unique_ptr<IClipboard> createClipboard(const QString &platformName,
     if (!qtClipboard) {
         qtClipboard = QGuiApplication::clipboard();
     }
-    if (wayland) {
+    // The hint is a claim about the machine: "the wl-clipboard tools are not
+    // installed". It belongs to that fact, not to "we are on wayland and ended
+    // up in Qt" - which is also what the user asked for when they set
+    // TRADUKU_CLIPBOARD=qt. On ubuntu-gnome the forced-Qt case told a user to
+    // install a package they had installed, and a diagnostic that misfires
+    // trains people to ignore the ones that are right.
+    const bool userAskedForQt =
+        qEnvironmentVariable("TRADUKU_CLIPBOARD").compare(QLatin1String("qt"),
+                                                           Qt::CaseInsensitive) == 0;
+    if (wayland && !haveTools && !userAskedForQt) {
         // Blind by construction - carry the instruction to install the tools.
         return std::make_unique<QtClipboard>(qtClipboard, missingToolsHint());
     }

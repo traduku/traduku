@@ -43,4 +43,19 @@ enum class ClipboardBackend
 ClipboardBackend chooseClipboard(bool waylandSession, bool haveWlClipboardTools,
                                  bool haveX11Server, const QString &forced);
 
+/*!
+ * Why a forced TRADUKU_CLIPBOARD did not take effect, or empty when it did.
+ *
+ * The knob exists so a user can separate "our reader is broken" from "the
+ * compositor is broken". Silently substituting another backend destroys that
+ * distinction - forcing x11 on a machine where X is unreachable and getting
+ * wl-clipboard with no explanation looks like the knob being ignored (measured
+ * on ubuntu-gnome). Stated as a pure function so the wording is tested rather
+ * than trusted.
+ */
+QString forcedBackendProblem(const QString &chosenBackend, const QString &forced,
+                             bool forcedIsUsable, const QString &reason);
+/// Same, reading TRADUKU_CLIPBOARD and probing what it asked for.
+QString forcedBackendProblem(const QString &chosenBackend);
+
 } // namespace lt
