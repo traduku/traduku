@@ -52,6 +52,18 @@ bool looksLikeText(const QString &type)
             return false;
         }
     }
+    // text/uri-list is text-shaped but it is not text to translate: it is what
+    // a file manager puts on the clipboard when the user copies a *file*, and
+    // shipping file:// URIs to an LLM is not what anyone meant. (Caught by
+    // nonTextOffersReadAsEmpty, which only stayed green while the TARGETS
+    // parser was truncating every list to its first item.)
+    static const QStringList notOurText{QStringLiteral("text/uri-list"),
+                                        QStringLiteral("text/uri-list;charset=utf-8")};
+    for (const QString &t : notOurText) {
+        if (type.compare(t, Qt::CaseInsensitive) == 0) {
+            return false;
+        }
+    }
     return type.startsWith(QLatin1String("text/"), Qt::CaseInsensitive)
            || type.compare(QLatin1String("UTF8_STRING"), Qt::CaseInsensitive) == 0
            || type.compare(QLatin1String("TEXT"), Qt::CaseInsensitive) == 0

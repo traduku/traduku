@@ -38,6 +38,17 @@ public:
     /// (utf-8 default; windows-1251 / iso-8859-1 / ... via QTextCodec).
     static QString decodeWithCharset(const QByteArray &data, const QString &mimeType);
 
+    /// What to ask `wl-paste` for, in order; an empty entry means "ask with no
+    /// -t at all".
+    ///
+    /// The untyped read is not an optimization, it is the reason a clipboard
+    /// with an owner that advertises nonsense is still readable. Measured on
+    /// ubuntu-kde with Klipper in charge: `wl-paste -l` printed `jMIHoY` - not
+    /// a MIME type at all - while `wl-paste` returned the text the user had
+    /// copied. An offer list is another program's claim about itself; the
+    /// bytes are the fact, and the reader has to go and get them.
+    static QStringList readTypes(const QStringList &offered);
+
     QString text() const override;
     bool setText(const QString &text) override;
     QString backendName() const override { return QStringLiteral("wl-clipboard"); }

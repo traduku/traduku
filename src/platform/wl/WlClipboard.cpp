@@ -73,28 +73,58 @@ QString WlClipboard::decodeWithCharset(const QByteArray &data,
     return TextTargets::decodeWithCharset(data, mimeType);
 }
 
+QStringList WlClipboard::readTypes(const QStringList &offered)
+{
+    // Negotiate first, then distrust. A source that offers real MIME types
+    // gets asked by name, because the charset in the name is what
+    // decodeWithCharset needs; the untyped read closes the list for the owner
+    // that advertises something unusable (Klipper: "jMIHoY"), which is the
+    // only way its data is reachable at all.
+    QStringList plan;
+    const QString best = TextTargets::pickBestMime(offered);
+    if (!best.isEmpty()) {
+        plan << best;
+    }
+    plan << QString();
+    return plan;
+}
+
 QString WlClipboard::text() const
 {
     // -l lists every offered MIME type; then fetch the best text target
     // (the charset matters: browsers serving legacy-codec pages offer
-    // charset-tagged text/plain variants).
+    // charset-tagged text/plain variants). A failing -l is not an answer about
+    // the clipboard, only about the offer list, so the plan still ends with
+    // the untyped read.
     QByteArray list;
+    QStringList offered;
     if (m_run(QStringLiteral("wl-paste"), {QStringLiteral("-n"), QStringLiteral("-l")},
               QByteArray(), &list)
-        != 0) {
-        return QString();
+        == 0) {
+        offered = QString::fromUtf8(list)
+                      .split(QLatin1Char('\n'), Qt::SkipEmptyParts);
     }
-    QStringList offered = QString::fromUtf8(list)
-                              .split(QLatin1Char('\n'), Qt::SkipEmptyParts);
-    const QString type = pickBestType(offered);
-    if (type.isEmpty()) {
-        return QString();
+
+    for (const QString &type : readTypes(offered)) {
+        QByteArray out;
+        QStringList args{QStringLiteral("-n")};
+        if (!type.isEmpty()) {
+            args << QStringLiteral("-t") << type;
+        }
+        if (m_run(QStringLiteral("wl-paste"), args, QByteArray(), &out) != 0) {
+            continue;      // this offer is not fetchable; ask the next way
+        }
+        // No -t means no charset was named, and UTF-8 is what the Wayland
+        // text/plain convention promises.
+        const QString decoded = type.isEmpty()
+                                    ? QString::fromUtf8(out)
+                                    : TextTargets::decodeWithCharset(out, type);
+        if (decoded.trimmed().isEmpty()) {
+            continue;
+        }
+        return decoded;
     }
-    QByteArray out;
-    const int rc = m_run(QStringLiteral("wl-paste"),
-                         {QStringLiteral("-n"), QStringLiteral("-t"), type},
-                         QByteArray(), &out);
-    return rc == 0 ? decodeWithCharset(out, type) : QString();
+    return QString();
 }
 
 bool WlClipboard::setText(const QString &text)

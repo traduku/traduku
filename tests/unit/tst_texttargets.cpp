@@ -69,6 +69,22 @@ private slots:
         QVERIFY(TextTargets::pickBestMime({}).isEmpty());
     }
 
+    void copiedFilesAreNotTextToTranslate()
+    {
+        // Copying a file in a file manager puts text/uri-list on the
+        // clipboard. It starts with "text/" and is therefore text-shaped to a
+        // naive filter - and Traduku would translate file:// URIs and report a
+        // successful translation of a file copy.
+        const QStringList uris{QStringLiteral("image/png"),
+                               QStringLiteral("text/uri-list")};
+        QVERIFY(TextTargets::pickBestAtom(uris).isEmpty());
+        QVERIFY(TextTargets::pickBestMime(uris).isEmpty());
+        // A real text target alongside it is still the right answer.
+        QCOMPARE(TextTargets::pickBestAtom({QStringLiteral("text/uri-list"),
+                                            QStringLiteral("UTF8_STRING")}),
+                 QStringLiteral("UTF8_STRING"));
+    }
+
     // ---- X11 selection TARGETS: atom names, not MIME types
     void pickBestAtomKnowsTheX11Names()
     {
