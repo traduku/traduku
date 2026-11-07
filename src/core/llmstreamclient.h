@@ -1,10 +1,11 @@
 #pragma once
 
+#include <QNetworkReply>   // the error enum appears in a public signature
 #include <QObject>
 #include <QString>
+#include <QUrl>
 
 class QNetworkAccessManager;
-class QNetworkReply;
 
 namespace lt {
 
@@ -53,6 +54,22 @@ public:
     /// request was retried without them.
     int extraOptionsRejectedCount() const { return m_extraRejected; }
 
+    /// The sentences the user reads, as pure functions. What a misconfigured
+    /// endpoint *is* is the feature under test, and it must be testable without
+    /// a socket, a timeout or a race: "HTTP status 0" is what the old build
+    /// printed for a server that was simply not running.
+    static QString httpFailureMessage(int status, const QString &reasonPhrase,
+                                      const QUrl &url);
+    static QString transportFailureMessage(QNetworkReply::NetworkError error,
+                                           const QString &errorString,
+                                           const QUrl &url);
+    /// 200 OK that carried no completion text. `contentType` decides whether
+    /// this reads as "the model said nothing" or "that is an HTML page, not an
+    /// API" - a proxy login page used to be reported as an empty translation,
+    /// pointing the user at the model instead of at the URL.
+    static QString emptyCompletionMessage(const QUrl &url,
+                                          const QString &contentType);
+
 Q_SIGNALS:
     void delta(const QString &text);
     void completed();
@@ -74,6 +91,7 @@ private:
     ChatRequest m_pending;   // as the caller asked for, for the extras retry
     bool m_usedExtras = false;
     int m_extraRejected = 0;
+    bool m_sawContent = false;   // any non-empty delta in this reply?
 };
 
 } // namespace lt
