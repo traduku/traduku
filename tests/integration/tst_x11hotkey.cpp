@@ -76,6 +76,47 @@ private slots:
         }
     }
 
+    void theNameNamesTheListenerThatRuns()
+    {
+        // backendName() was a constant, so it could not be wrong - and it was:
+        // on arch-kde the journal printed "traduku: X RECORD key listener
+        // active on :0 (helper pid 2154)" while the ready line and
+        // `--backend-info` said "hotkey=x11-xi2", because Mutter injects
+        // Wayland keystrokes into the VDevice master and chooseMode() has
+        // always picked RECORD there. A name that cannot disagree with the
+        // machine is not a report. (The clipboard had this same bug; the fix
+        // was to make the report ask the decision - 86ed059.)
+        QCOMPARE(X11HotkeyBackend::modeName(X11HotkeyBackend::Mode::Xi2Raw),
+                 QStringLiteral("x11-xi2"));
+        QCOMPARE(X11HotkeyBackend::modeName(X11HotkeyBackend::Mode::Record),
+                 QStringLiteral("x11-record"));
+        QCOMPARE(X11HotkeyBackend::modeName(X11HotkeyBackend::Mode::Disabled),
+                 QStringLiteral("x11-none"));
+        QVERIFY(X11HotkeyBackend::modeName(X11HotkeyBackend::Mode::Record)
+                != X11HotkeyBackend::modeName(X11HotkeyBackend::Mode::Xi2Raw));
+    }
+
+    void reportAndStartMakeTheSameChoice()
+    {
+        // probeMode() answers `--backend-info`; start() is what runs. One
+        // decision behind both, or the console describes a listener the app
+        // would never have started.
+        const X11HotkeyBackend::Mode probed = X11HotkeyBackend::probeMode();
+        X11HotkeyBackend b;
+        if (probed == X11HotkeyBackend::Mode::Disabled) {
+            // No X server in this sandbox (the host runs the suite headless):
+            // nothing may claim an X listener, and start() must decline.
+            QCOMPARE(b.backendName(),
+                     X11HotkeyBackend::modeName(X11HotkeyBackend::Mode::Disabled));
+            QVERIFY(!b.start());
+            QSKIP("no X server reachable here; the `make x11test` gate runs the "
+                  "live branch of this assertion against Xvfb");
+        }
+        QVERIFY(b.start());
+        QCOMPARE(b.backendName(), X11HotkeyBackend::modeName(probed));
+        b.stop();
+    }
+
     void singleCtrlCNoFire()
     {
         m_fires = 0;
