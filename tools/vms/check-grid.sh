@@ -37,7 +37,11 @@ case "$VM" in
 esac
 chk "graphical session active on seat0" "loginctl list-sessions --no-legend | grep seat0 | grep -q 'tty[12]'"
 chk "DE shell running" "pgrep -x gnome-shell || pgrep -x kwin_wayland || pgrep -x kwin_x11"
-chk "autologined user=vm" "who | grep -q 'vm '"
+# `who` reads utmp, and a gdm/sddm autologin session does not necessarily
+# write one - so `who` came back empty on a seat0 session that loginctl was
+# perfectly happy to name. loginctl is the authority here anyway.
+SEATUSER=$($S "loginctl list-sessions --no-legend 2>/dev/null | awk '\$4==\"seat0\"{print \$3}' | head -1" 2>/dev/null | tail -1)
+chk "autologined user=vm" "test '$SEATUSER' = vm || echo 'seat0 session owner: $SEATUSER' >&2; test '$SEATUSER' = vm"
 
 # The desktop the profile claims must be the desktop that is running: an
 # ubuntu-gnome VM that came up on X11/KDE would run the wrong tray host and

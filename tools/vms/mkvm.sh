@@ -36,8 +36,8 @@ if [ "$DE" = kde ]; then
   DE_SETUP=kde_setup
   [ "$DISTRO" = debian ] && DE_PKGS="kde-plasma-desktop konsole"
 else
-  DE_PKGS="gdm3 gnome-shell gnome-session gnome-control-center gnome-terminal nautilus ubuntu-session gnome-settings-daemon"
-  [ "$DISTRO" = debian ] && DE_PKGS="gdm3 gnome-shell gnome-session gnome-control-center gnome-terminal nautilus gnome-settings-daemon"
+  DE_PKGS="gdm3 gnome-shell gnome-session gnome-control-center gnome-terminal nautilus ubuntu-session gnome-settings-daemon gnome-shell-extension-appindicator"
+  [ "$DISTRO" = debian ] && DE_PKGS="gdm3 gnome-shell gnome-session gnome-control-center gnome-terminal nautilus gnome-settings-daemon gnome-shell-extension-appindicator"
   DE_SETUP=gnome_setup
 fi
 
@@ -117,12 +117,38 @@ write_files:
         fi
         systemctl enable sddm
       else
+        # GNOME boots on Wayland, which is the whole reason this shell exists:
+        # the /dev/input gesture and wl-clipboard are the Wayland answers. On an
+        # Xorg GNOME guest the app falls back to the X clipboard and the X
+        # listener and the suite goes green without having tested the code it
+        # was written for - so Wayland is the default and Xorg is the opt-in.
+        # GRID_GNOME_X11=1 ./tools/vms/mkvm.sh ubuntu-gnome ubuntu gnome
+        # buys the old Xorg session back (mutter with no GL in a VM is slow).
         cat >> /etc/gdm3/custom.conf <<GDM
       [daemon]
-      WaylandEnable=False
       AutomaticLoginEnable=True
       AutomaticLogin=vm
       GDM
+        [ "${GRID_GNOME_X11:-0}" = 1 ] && sed -i '/^\[daemon\]/a WaylandEnable=False' /etc/gdm3/custom.conf
+        # gdm has to be *wanted* by graphical.target, not merely installed.
+        # Ubuntu 25.10 ships gdm3.service with no [Install] section (the distro
+        # starts it through the display-manager.service alias, which a cloud
+        # image does not pull in), so `systemctl enable gdm3` prints a lecture
+        # and enables nothing: the box boots to a dead tty, loginctl shows no
+        # seat0 session, and the grid reports "DE shell not running" for a
+        # package set that is otherwise complete. The wants symlink is what the
+        # target actually reads, independent of unit metadata.
+        systemctl enable gdm3 2>/dev/null || true
+        DMUNIT=$(systemctl show -p FragmentPath gdm3.service 2>/dev/null | cut -d= -f2)
+        [ -n "\$DMUNIT" ] && [ -f "\$DMUNIT" ] || DMUNIT=$(systemctl show -p FragmentPath gdm.service 2>/dev/null | cut -d= -f2)
+        if [ -n "\$DMUNIT" ] && [ -f "\$DMUNIT" ]; then
+          mkdir -p /etc/systemd/system/graphical.target.wants
+          ln -sf "\$DMUNIT" "/etc/systemd/system/graphical.target.wants/$(basename "\$DMUNIT")"
+          echo "grid-setup: enabled display manager \$DMUNIT"
+        else
+          echo "grid-setup: WARNING no gdm unit found; graphical.target will have nothing to start"
+        fi
+        systemctl daemon-reload
         X11SESS=gnome
         [ "$DISTRO" = ubuntu ] && X11SESS=ubuntu
         mkdir -p /var/lib/AccountsService/users

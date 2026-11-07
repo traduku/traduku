@@ -24,10 +24,18 @@ def capture_sessionenv(vm):
     discovered from the runtime dir, never from kwin's own environ.
     """
     vm.run(
-        "P=$(pgrep -u vm -x kwin_wayland | head -1); [ -z \"$P\" ] && P=$(pgrep -u vm -x kwin_x11 | head -1);"
+        "P=$(pgrep -u vm -x kwin_wayland | head -1); [ -z \"$P\" ] && P=$(pgrep -u vm -x kwin_x11 | head -1); [ -z \"$P\" ] && P=$(pgrep -u vm -x gnome-shell | head -1);"
         " echo vm | sudo -S cat /proc/$P/environ | tr '\\0' '\\n'"
-        " | grep -E '^(DISPLAY|XAUTHORITY|DBUS_SESSION_BUS_ADDRESS|XDG_RUNTIME_DIR|XDG_SESSION_TYPE)='"
+        " | grep -E '^(DISPLAY|XAUTHORITY|DBUS_SESSION_BUS_ADDRESS|XDG_RUNTIME_DIR|XDG_SESSION_TYPE|XDG_DATA_DIRS|XDG_CURRENT_DESKTOP)='"
         " | sed 's/^/export /' > /tmp/session.env;"
+        # XDG_DATA_DIRS belongs to the compositor, not to the ssh shell: an ssh
+        # session has none, and without it KNotification cannot find
+        # /usr/share/knotifications6/traduku.notifyrc - the app then logs
+        # "No event config could be found" and the notification asserts test a
+        # deliberately impoverished environment instead of the desktop.
+        " D=$(echo vm | sudo -S cat /proc/$P/environ | tr '\\0' '\\n' | grep -E '^XDG_DATA_DIRS=' | sed 's/^/export /');"
+        " [ -n \"$D\" ] && echo \"$D\" >> /tmp/session.env;"
+        " grep -q XDG_DATA_DIRS /tmp/session.env || echo 'export XDG_DATA_DIRS=/usr/local/share:/usr/share' >> /tmp/session.env;"
         # the compositor publishes its socket under the runtime dir — trust
         # the socket (kwin does not put WAYLAND_DISPLAY in its own environ)
         " W=$(ls /run/user/1000/ 2>/dev/null | grep -E '^wayland-[0-9]+$' | head -1);"
@@ -40,9 +48,37 @@ def capture_sessionenv(vm):
     )
 
 
+def _prepare_gnome_session(vm):   # plain helper, not a fixture: `session` calls it
+    """GNOME prep, because the KDE prep is not desktop-neutral.
+
+    It bakes a wallpaper through KWin's scripting D-Bus, silences the idle
+    lock with kwriteconfig6 and bounces plasma-kglobalaccel - none of which
+    exists on GNOME. The first attempt to run the suite on a gnome profile
+    died in this fixture on `pgrep kwin_wayland`, which is how a "gnome"
+    column in the grid had never actually executed a test.
+    """
+    rc, out = vm.run("pgrep -u vm -x gnome-shell")
+    assert rc == 0, "no GNOME session in the guest (gdm autologin broken?)"
+    capture_sessionenv(vm)
+    vm.sudo("loginctl unlock-sessions")
+    # The idle lock is the same noise source as on Plasma. The guest image
+    # sets these through dconf at build time; assert them instead of trusting
+    # the image - a locked screen mid-test swallows the window and every
+    # screenshot assert below it dies for an unrelated reason.
+    vm.ses("gsettings set org.gnome.desktop.screensaver lock-enabled false; "
+           "gsettings set org.gnome.desktop.session idle-delay 0; "
+           "gsettings get org.gnome.desktop.screensaver lock-enabled")
+
+
 @pytest.fixture(scope="session")
 def session(vm):
     """Prepare the graphical session: env capture, no idle-lock, mock LLM, config."""
+    if vm.vm.endswith("-gnome"):
+        # Its own preparation; see _prepare_gnome_session.
+        _prepare_gnome_session(vm)
+        capture_sessionenv(vm)
+        vm.run("rm -f ~/.config/traduku/config.ini; pkill -x traduku; true")
+        return vm
     rc, out = vm.run("pgrep -u vm -x kwin_wayland || pgrep -u vm -x kwin_x11")
     assert rc == 0, "no KDE session in the guest (autologin broken?)"
     capture_sessionenv(vm)

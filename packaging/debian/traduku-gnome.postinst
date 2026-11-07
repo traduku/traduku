@@ -1,0 +1,19 @@
+#!/bin/sh
+# The gesture reads /dev/input/event* and needs an ACL from logind; the ACL is
+# handed out by the uaccess tag this package ships in
+# /usr/lib/udev/rules.d. Installing a rules file does not apply it - udev
+# evaluates rules when the device appears - so without this a fresh install
+# means "reboot and it works", which is a bad first run for a program whose
+# whole interface is a key gesture. Safe either way: a trigger re-runs the
+# rules for existing devices.
+set -e
+
+if [ "$1" = configure ]; then
+    if command -v udevadm >/dev/null 2>&1; then
+        udevadm control --reload-rules 2>/dev/null || true
+        udevadm trigger --action=add --subsystem-match=input 2>/dev/null || true
+    fi
+fi
+
+#DEBHELPER#
+exit 0

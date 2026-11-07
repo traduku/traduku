@@ -139,9 +139,12 @@ def _install_deb(vm):
     rc, out = vm.sudo(
         "DEBIAN_FRONTEND=noninteractive apt-get install -y "
         f"/home/vm/$(ls ~/{pkg}_*_amd64.deb | head -1 | xargs basename) 2>&1 | tail -8")
-    assert f"Setting up {pkg}" in out, f"install output: {out}"
-    rc, out = vm.run(f"dpkg -l {pkg} 2>/dev/null | grep -a '^ii'")
-    assert rc == 0 and pkg in out, f"not installed in the dpkg DB: {out}"
+    # apt's prose is not the contract: the tail of its output is needrestart
+    # chatter, and re-installing the version already on disk prints almost
+    # nothing. dpkg's own state is the thing a user's system ends up in.
+    rc, out = vm.sudo(f"dpkg-query -W -f='${{Status}} ${{Version}}' {pkg}")
+    assert "install ok installed" in out, f"not installed in the dpkg DB: {out}"
+    assert _PKGVER in out, f"installed version is not the released one: {out}"
 
 
 def test_install_from_release_package_with_distro_manager(session):
