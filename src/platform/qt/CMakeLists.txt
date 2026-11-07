@@ -5,4 +5,4 @@ add_library(lt_platform_qt STATIC
     QtClipboard.cpp XdgAutostart.cpp SessionInfo.cpp QtTray.cpp QtTray.h)
 add_library(lt::platform_qt ALIAS lt_platform_qt)
 target_include_directories(lt_platform_qt PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/../..)
-target_link_libraries(lt_platform_qt PUBLIC Qt6::Gui Qt6::Widgets lt::core lt::interfaces)
+target_link_libraries(lt_platform_qt PUBLIC Qt6::Gui Qt6::Widgets Qt6::DBus lt::core lt::interfaces)

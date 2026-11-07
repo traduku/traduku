@@ -42,7 +42,14 @@ public:
 
     /// Without constructing a tray: does this session have a tray host at all?
     /// Used by --backend-info, which must not create an icon to answer.
-    static bool hostSupportsTray() { return QSystemTrayIcon::isSystemTrayAvailable(); }
+    /// Is there anything in this session that will draw a StatusNotifier item?
+    ///
+    /// Not just QSystemTrayIcon::isSystemTrayAvailable(): that answers through
+    /// the QPA plugin, so it says "no tray" whenever the platform is offscreen -
+    /// and `--backend-info` is built to run headless, where the honest answer
+    /// about a Plasma/GNOME session is "yes, the watcher is there". The bus is
+    /// asked as well, because the bus is what the tray actually talks to.
+    static bool hostSupportsTray();
 
     QMenu *menu() const override { return m_menu; }
     QString backendName() const override

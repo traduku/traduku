@@ -3,9 +3,14 @@
 #include "core/settings.h"
 #include "core/translationengine.h"
 
+#include "platform/qt/SessionInfo.h"
+#include "platform/wl/ClipboardFactory.h"
+
 #include <QCommandLineOption>
 #include <QCommandLineParser>
 #include <QCoreApplication>
+#include <QGuiApplication>
+#include <QTextStream>
 
 #include <functional>
 #include <memory>
@@ -188,6 +193,44 @@ void runOneShotTranslation(Settings *settings, const QString &text,
                          engine->deleteLater();
                      });
     engine->translate(text.trimmed());
+}
+
+
+int runOneShotMode(QCoreApplication &app, Settings &settings, const CliOptions &cli)
+{
+    // Chosen by session, not by QPA plugin: under a forced offscreen platform
+    // the Qt clipboard reads nothing on Wayland while wl-paste works.
+    auto clipboard = createClipboard(sessionType(), {}, QGuiApplication::clipboard());
+    const QString text =
+        (cli.text.isNull() ? clipboard->text() : cli.text).trimmed();
+    if (text.isEmpty()) {
+        // The backend knows when it is structurally blind (no wl-clipboard on
+        // Wayland): say that instead of blaming the user's copy.
+        const QString hint = clipboard->diagnostic();
+        QTextStream(stderr) << (hint.isEmpty()
+                                    ? QStringLiteral("traduku: nothing to translate "
+                                                     "(clipboard is empty).\n")
+                                    : hint + QLatin1Char('\n'));
+        return 1;
+    }
+    int rc = 1;
+    runOneShotTranslation(&settings, text,
+                          [](const QString &chunk) {
+                              QTextStream out(stdout);
+                              out << chunk;
+                              out.flush();          // stream into the pipe
+                          },
+                          [&rc](int code, const QString &error) {
+                              rc = code;
+                              if (code == 0) {
+                                  QTextStream(stdout) << '\n';
+                              } else {
+                                  QTextStream(stderr) << "traduku: " << error << '\n';
+                              }
+                              qApp->quit();
+                          });
+    app.exec();
+    return rc;
 }
 
 } // namespace lt

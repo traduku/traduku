@@ -50,6 +50,15 @@ QString prettyShellName(const QString &shell);
 /// Text for --help (same thing the parser would have printed).
 QString cliHelpText(QCoreApplication &app, const QString &shell);
 
+/// `traduku --translate`, in one place. It used to be written twice, once per
+/// shell, and the two copies had already diverged: the KDE one reported an
+/// empty clipboard where the GNOME one reported the *reason* (a missing
+/// wl-clipboard is not an empty clipboard). Exit code is 0 on a translation,
+/// 1 on an empty input or a failed request; text comes from --text, or the
+/// clipboard when --text was not given.
+int runOneShotMode(QCoreApplication &app, class Settings &settings,
+                   const CliOptions &cli);
+
 /// One-shot translation for `traduku --translate`: streams `onDelta` per
 /// chunk, then calls `onDone(exitCode, errorText)` exactly once. Deliberately
 /// free of GUI, tray and clipboard - the caller decides where the text came

@@ -153,11 +153,8 @@ bool X11HotkeyBackend::start()
     return false;
 }
 
-bool X11HotkeyBackend::startRecordHelper()
+QString X11HotkeyBackend::helperPath()
 {
-    // libXtst's blocking RECORD cannot be stopped from this process and its
-    // async variant does not dispatch on Xwayland, so RECORD runs in a child
-    // that prints key events and is killed on stop().
     QString helper = qEnvironmentVariable("TRADUKU_RECORD_HELPER");
     if (helper.isEmpty()) {
         const QString dir = QCoreApplication::applicationDirPath();
@@ -176,6 +173,15 @@ bool X11HotkeyBackend::startRecordHelper()
         helper = QStandardPaths::findExecutable(
             QStringLiteral("traduku-record-keys"));
     }
+    return helper;
+}
+
+bool X11HotkeyBackend::startRecordHelper()
+{
+    // libXtst's blocking RECORD cannot be stopped from this process and its
+    // async variant does not dispatch on Xwayland, so RECORD runs in a child
+    // that prints key events and is killed on stop().
+    QString helper = helperPath();
     if (helper.isEmpty()) {
         return false;
     }
