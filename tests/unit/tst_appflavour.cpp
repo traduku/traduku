@@ -16,11 +16,47 @@ using lt::QpaDecision;
 using lt::qtCanPickAPlatform;
 using lt::needsWidgets;
 using lt::prepareCliEnvironment;
+using lt::planFirstRun;
+using lt::FirstRunPlan;
 
 class TestAppFlavour : public QObject
 {
     Q_OBJECT
 private slots:
+    // First run is where a tray-less desktop is won or lost: the app is
+    // installed, there is no icon (GNOME shows one only with the appindicator
+    // extension), and nobody has told the user that Ctrl+C twice is the whole
+    // interface. The shells must not share this decision blindly - Plasma asks
+    // about autostart because nothing else does, GNOME must not ask because
+    // the package already installed the entry.
+    void firstRunGuidanceDiffersByShellWithoutDivergingInCode()
+    {
+        const FirstRunPlan gnomeNoTray = planFirstRun(QStringLiteral("gnome"), false);
+        QVERIFY(gnomeNoTray.greet);
+        QVERIFY(!gnomeNoTray.askAboutAutostart);
+        QVERIFY(gnomeNoTray.explainMissingIcon);
+
+        // With an SNI host the icon exists; extension advice would then be the
+        // same noise as telling someone to install what they installed.
+        const FirstRunPlan gnomeWithTray = planFirstRun(QStringLiteral("gnome"), true);
+        QVERIFY(gnomeWithTray.greet);
+        QVERIFY(!gnomeWithTray.explainMissingIcon);
+        QVERIFY(!gnomeWithTray.askAboutAutostart);
+
+        const FirstRunPlan plasma = planFirstRun(QStringLiteral("kde"), true);
+        QVERIFY(plasma.greet);
+        QVERIFY(plasma.askAboutAutostart);
+        QVERIFY(!plasma.explainMissingIcon);
+
+        // Whether to put the settings dialog in front of someone depends on
+        // whether there is anything to configure: an app autostarted at login
+        // that demands its API endpoint is the app not starting, and an app
+        // that demands it when the endpoint is already set is a nag.
+        QVERIFY(!planFirstRun(QStringLiteral("gnome"), true, true).openSettings);
+        QVERIFY(planFirstRun(QStringLiteral("gnome"), true, false).openSettings);
+        QVERIFY(planFirstRun(QStringLiteral("kde"), true, true).openSettings);
+    }
+
     void onlyTheModesThatDrawNeedWidgets()
     {
         // The tray app is the default (no mode flag) and must keep wanting a
@@ -38,6 +74,23 @@ private slots:
         QVERIFY(!needsWidgets({QStringLiteral("traduku"), QStringLiteral("--text"),
                                QStringLiteral("hi")}));
         QVERIFY(!needsWidgets({QStringLiteral("traduku"), QStringLiteral("--notify-test")}));
+        // --autostart writes one file and prints a line. Without this entry it
+        // is treated as "no mode flag" -> QApplication -> qFatal on a machine
+        // with no display, which is where the user without a panel icon is.
+        QVERIFY(!needsWidgets({QStringLiteral("traduku"), QStringLiteral("--autostart"),
+                               QStringLiteral("status")}));
+        // Same option in its --flag=value form, which is what a user types and
+        // what the e2e runs. Comparing whole tokens made this form count as
+        // "no mode flag" -> QApplication -> abort on a machine with no
+        // display, and the unit test above passed anyway because it happened
+        // to use the two-token spelling.
+        QVERIFY(!needsWidgets({QStringLiteral("traduku"),
+                               QStringLiteral("--autostart=status")}));
+        QVERIFY(!needsWidgets({QStringLiteral("traduku"),
+                               QStringLiteral("--autostart=off")}));
+        QVERIFY(!needsWidgets({QStringLiteral("traduku"),
+                               QStringLiteral("--text=hello"),
+                               QStringLiteral("--translate")}));
         QVERIFY(!needsWidgets({QStringLiteral("traduku"), QStringLiteral("--help")}));
         QVERIFY(!needsWidgets({QStringLiteral("traduku"), QStringLiteral("--version")}));
     }

@@ -6,9 +6,13 @@
 
 #include "AppFlavour.h"
 
+#include "platform/qt/XdgAutostart.h"
+
 
 #include <QByteArray>
+#include <QCoreApplication>
 #include <QStringList>
+#include <QTextStream>
 
 namespace lt {
 
@@ -24,6 +28,7 @@ const QStringList &cliOnlyFlags()
         QStringLiteral("--text"),
         QStringLiteral("--backend-info"),
         QStringLiteral("--notify-test"),
+        QStringLiteral("--autostart"),
         QStringLiteral("--help"), QStringLiteral("-h"),
         QStringLiteral("--version"),
     };
@@ -37,7 +42,11 @@ bool needsWidgets(const QStringList &argv)
     // --selftest is the CLI mode that shows a window (it screenshots itself),
     // so it is deliberately NOT in cliOnlyFlags: it needs widgets and a QPA.
     for (const QString &a : argv) {
-        if (cliOnlyFlags().contains(a)) {
+        // Compare the option, not the whole token: users write
+        // --autostart=off, and matching the full string made that form look
+        // like "no mode flag" - QApplication, then qFatal with no display.
+        const QString name = a.section(QLatin1Char('='), 0, 0);
+        if (cliOnlyFlags().contains(name)) {
             return false;
         }
     }
@@ -88,6 +97,18 @@ QpaDecision decideQpa(const QStringList &argv, bool qpaSetByHuman, bool qtCanPic
     return QpaDecision::ForceOffscreen;
 }
 
+FirstRunPlan planFirstRun(const QString &shell, bool trayAvailable,
+                          bool endpointConfigured)
+{
+    FirstRunPlan plan;
+    plan.greet = true;
+    const bool kde = (shell == QLatin1String("kde"));
+    plan.askAboutAutostart = kde;      // Plasma has no packaged entry to ask for
+    plan.explainMissingIcon = !kde && !trayAvailable;
+    plan.openSettings = kde ? true : !endpointConfigured;
+    return plan;
+}
+
 void prepareCliEnvironment(const QStringList &argv)
 {
     const QpaDecision decision = decideQpa(argv, qEnvironmentVariableIsSet("QT_QPA_PLATFORM"),
@@ -106,6 +127,29 @@ void prepareCliEnvironment(const QStringList &argv)
     // both of which require a QGuiApplication - see AppFlavour.h.
     qputenv("QT_QPA_PLATFORM", "offscreen");
     g_forcedOffscreen = true;
+}
+
+
+int runAutostartCommand(const QString &action)
+{
+    QTextStream out(stdout), err(stderr);
+    // The same object the tray menu drives - one implementation of a promise,
+    // reached two ways. A second copy here would eventually disagree with the
+    // menu, and the user would have no way to tell which one lied.
+    XdgAutostart autostart(QStringLiteral("traduku"),
+                           QCoreApplication::applicationFilePath());
+    if (action == QLatin1String("status")) {
+        out << "autostart: " << autostart.diagnostic() << '\n';
+        return 0;                       // a question, not an assertion
+    }
+    const bool on = (action == QLatin1String("on"));
+    if (!autostart.setEnabled(on)) {
+        err << "traduku: could not " << (on ? "enable" : "disable")
+            << " autostart in " << autostart.filePath() << '\n';
+        return 1;
+    }
+    out << "autostart: " << autostart.diagnostic() << '\n';
+    return 0;
 }
 
 } // namespace lt

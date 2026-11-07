@@ -32,6 +32,9 @@ struct BackendReport
     QString notifier;
     QString tray;
     QString audio;
+    /// Whether the app comes back at login, and who decided: the package
+    /// (/etc/xdg/autostart) or the user (~/.config/autostart).
+    QString autostart;
     /// What we asked the model to do about its hidden reasoning channel
     /// ("skipped (request options sent)" / "NOT disabled - ..."). Empty when
     /// the shell has no LLM path at all.

@@ -60,6 +60,12 @@ void addOptions(QCommandLineParser &parser, const QString &shell)
          QStringLiteral("Send one test notification through the desktop "
                         "service and report whether it was accepted. "
                         "Support-friendly: no clipboard, no model call.")},
+        {QStringLiteral("autostart"),
+         QStringLiteral("on | off | status: whether Traduku starts at login. "
+                        "The tray menu is the only other way to reach this, "
+                        "and on GNOME the panel icon needs a shell extension "
+                        "to be visible at all."),
+         QStringLiteral("on|off|status")},
         {QStringLiteral("backend-info"),
          QStringLiteral("Print which backend was chosen for clipboard, "
                         "gesture, notifications, tray and audio - and what "
@@ -117,15 +123,17 @@ CliOptions parseCommandLine(QCoreApplication &app, const QStringList &args,
     const bool selftest = parser.isSet(QStringLiteral("selftest"));
     const bool info = parser.isSet(QStringLiteral("backend-info"));
     const bool notifyTest = parser.isSet(QStringLiteral("notify-test"));
+    const bool autostart = parser.isSet(QStringLiteral("autostart"));
     o.live = parser.isSet(QStringLiteral("live"));
     if (parser.isSet(QStringLiteral("config"))) {
         o.configPath = parser.value(QStringLiteral("config"));
     }
 
-    if (int(translate) + int(selftest) + int(info) + int(notifyTest) > 1) {
+    if (int(translate) + int(selftest) + int(info) + int(notifyTest)
+        + int(autostart) > 1) {
         o.errors << QStringLiteral(
             "only one of --translate, --selftest, --backend-info, "
-            "--notify-test can be used at a time");
+            "--notify-test, --autostart can be used at a time");
         o.exitCode = 2;
         return o;
     }
@@ -137,6 +145,19 @@ CliOptions parseCommandLine(QCoreApplication &app, const QStringList &args,
         o.mode = CliOptions::Mode::BackendInfo;
     } else if (notifyTest) {
         o.mode = CliOptions::Mode::NotifyTest;
+    } else if (autostart) {
+        o.mode = CliOptions::Mode::Autostart;
+        o.autostartValue = parser.value(QStringLiteral("autostart")).toLower();
+        if (o.autostartValue != QLatin1String("on")
+            && o.autostartValue != QLatin1String("off")
+            && o.autostartValue != QLatin1String("status")) {
+            // Not "the option was ignored, here is a tray instead": someone
+            // typed a command and is entitled to the error.
+            o.errors << QStringLiteral("--autostart wants on, off or status "
+                                       "(got '%1')").arg(o.autostartValue);
+            o.exitCode = 2;
+            return o;
+        }
     }
 
     if (parser.isSet(QStringLiteral("text"))) {
