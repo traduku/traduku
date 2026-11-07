@@ -70,4 +70,17 @@ done
 test -f "$src/packaging/gnome/$base.desktop" \
     || fail "packaging/gnome/$base.desktop: the file name is part of the identity"
 
+# The README prints the file name a user is going to hand to pacman and apt.
+# That makes its version a promise executed by hand, and it had drifted: the
+# install section told people about `traduku-0.1-1-x86_64.pkg.tar.zst` while
+# the build produced 0.3.0 - a copy-paste that cannot work and reads like the
+# project is two releases behind its own docs. Only artifact lines are read,
+# so "Qt 6.4+" and "CMake >= 3.21" stay out of it.
+if [ -f "$src/README.md" ]; then
+    for v in $(grep -E 'pkg\.tar\.zst|amd64\.deb' "$src/README.md" \
+                 | grep -oE '[0-9]+\.[0-9]+(\.[0-9]+)?' | sort -u); do
+        [ "$v" = "$cmake_ver" ] || fail "README.md pins artifact version $v while the packages are $cmake_ver - the install command it prints names a file nothing builds"
+    done
+fi
+
 echo ok
