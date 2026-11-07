@@ -79,6 +79,26 @@ bool qpaWasForcedByUs()
     return g_forcedOffscreen;
 }
 
+QString displayAdviceForMissingDisplay(const QStringList &argv, bool canPickPlatform)
+{
+    if (canPickPlatform || !needsWidgets(argv)) {
+        return QString();
+    }
+    // A QPA the human set is their answer to the question - offscreen, vnc,
+    // whatever they chose. Only the case where nobody said anything is ours to
+    // explain. Note this must be consulted AFTER prepareCliEnvironment(): the
+    // console modes get offscreen from us, and qpaWasForcedByUs() distinguishes
+    // that from a human's choice.
+    if (qEnvironmentVariableIsSet("QT_QPA_PLATFORM")) {
+        return QString();
+    }
+    return QStringLiteral(
+        "traduku: this mode opens a window, and there is no display Qt can open "
+        "one on (no DISPLAY, no WAYLAND_DISPLAY). Run it from your desktop "
+        "session, or set QT_QPA_PLATFORM=offscreen to exercise it without a "
+        "screen. traduku --backend-info answers without any display.");
+}
+
 QpaDecision decideQpa(const QStringList &argv, bool qpaSetByHuman, bool qtCanPickPlatform)
 {
     // Only the console modes get the rescue. The tray app with no display is

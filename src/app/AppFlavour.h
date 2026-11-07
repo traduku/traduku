@@ -63,6 +63,18 @@ void prepareCliEnvironment(const QStringList &argv);
 /// their session is gone, when what is gone is our knowledge of it.
 bool qpaWasForcedByUs();
 
+/// What to tell the user - and the exit code 2 to use - when the mode they
+/// asked for draws a window and this machine cannot give Qt a platform to do it
+/// in. Empty when the mode can run.
+///
+/// `traduku --selftest` over plain ssh used to produce `Aborted (core dumped)`
+/// and rc 134: QApplication reached Qt's createPlatformIntegration fatal, which
+/// is a message about Qt rather than about Traduku, and nothing the user can
+/// act on. A mode that needs a screen may refuse; it may not crash. The console
+/// modes are not refused - they are what a user reaches for when the desktop is
+/// broken - and a QT_QPA_PLATFORM of the user's own is treated as their answer.
+QString displayAdviceForMissingDisplay(const QStringList &argv, bool canPickPlatform);
+
 } // namespace lt
 
 namespace lt {

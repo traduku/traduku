@@ -122,7 +122,7 @@ case "$VM" in
       T_PKG=$((SECONDS-t0))
       mkdir -p "$ART"; rm -f "$ART"/*
       cp "$ROOT/release-out"/traduku* "$ART"/ 2>/dev/null || true
-      echo "$FP" > "$ART/.fingerprint"
+      echo "$FP" > "$ART/.fingerprint.$PKGNAME"
     fi
     rm -f "$STAMP"
     echo "== push + pacman -U on $VM"
@@ -142,6 +142,7 @@ case "$VM" in
     # rc was once swallowed by '| tail -3': a lock-blocked pacman left the
     # VM uninstalled and the suite ran 8-red on a phantom product.
     Q "echo vm | sudo -S pacman -U --noconfirm ~/${PKGNAME}-${VER}-1-x86_64.pkg.tar.zst >/tmp/pacman-install.log 2>&1 || true; tail -3 /tmp/pacman-install.log; pacman -Q ${PKGNAME} >/dev/null && pacman -Qi ${PKGNAME} | grep -E \"^(Version|Name)\" || { echo "FAIL: ${PKGNAME} is not installed on $VM" >&2; exit 1; }"
+    verify_installed "$PKG"
     verify_flavour
     ;;
   *-kde|*-gnome)
@@ -171,7 +172,7 @@ case "$VM" in
     T_BUILD=0
     t0=$SECONDS
     if [ "$REBUILD" != --rebuild ] && compgen -G "$ART/${PKGNAME}_*.deb" >/dev/null \
-        && [ "$(cat "$ART/.fingerprint" 2>/dev/null)" = "$FP" ]; then
+        && [ "$(cat "$ART/.fingerprint.$PKGNAME" 2>/dev/null)" = "$FP" ]; then
       echo "== .deb cache hit ($FP): the tree is identical to the one that built $PKGNAME"
       echo "   (force one with: vm-install.sh $VM --rebuild)"
     else
@@ -212,7 +213,13 @@ case "$VM" in
       cp /traduku*.deb /out/'
       mkdir -p "$ART"; rm -f "$ART"/*.deb
       cp "$STAGE"/traduku*.deb "$ART"/
-      echo "$FP" > "$ART/.fingerprint"
+      # ONE fingerprint per flavour. There were two packages and one stamp, so
+      # building debian-kde recorded the tree as built, and the very next
+      # debian-gnome run found its own (older) traduku-gnome .deb in the cache,
+      # saw a fingerprint that another flavour had just written, and called it a
+      # hit. The guest kept a binary from before --autostart and the suite
+      # reported an installed, tested product.
+      echo "$FP" > "$ART/.fingerprint.$PKGNAME"
     fi
     T_BUILD=$((SECONDS-t0))
     if [ "$FLAVOUR" = gnome ]; then
@@ -232,6 +239,7 @@ case "$VM" in
     # all-red suite after rebuild). Stop the timer, wait for the lock, and
     # VERIFY the package state afterwards - install is a gate, not a hint.
     Q "echo vm | sudo -S sh -c 'systemctl stop unattended-upgrades apt-daily.service apt-daily-upgrade.timer apt-daily-upgrade.service 2>/dev/null || true; i=0; while fuser /var/lib/dpkg/lock-frontend >/dev/null 2>&1 && [ \$i -lt 60 ]; do sleep 2; i=\$((i+1)); done; DEBIAN_FRONTEND=noninteractive apt-get install -y --reinstall /home/vm/${PKGNAME}_*.deb >/tmp/apt-install.log 2>&1' ; tail -3 /tmp/apt-install.log; grep -q '^Setting up ${PKGNAME}' /tmp/apt-install.log && dpkg -l ${PKGNAME} | grep -aq '^ii.*${PKGNAME}'"
+    verify_installed "$DEB"
     verify_flavour
     T_INSTALL=$((SECONDS-t0))
     ;;

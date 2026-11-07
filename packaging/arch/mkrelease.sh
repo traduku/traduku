@@ -75,9 +75,34 @@ cp "$HERE/PKGBUILD" "$OUT/"
 for aux in "$HERE"/*.install "$HERE"/*.hook; do
   [ -f "$aux" ] && cp "$aux" "$OUT/"
 done
-# --sign: detached .pkg.tar.zst.sig next to the package — pacman -U verifies
-# it automatically when installing (the release channel ships both files).
-(cd "$OUT" && makepkg -sf --noconfirm --needed --sign "${MAKEPKG_ARGS[@]+"${MAKEPKG_ARGS[@]}"}")
+# --sign: a detached .pkg.tar.zst.sig next to the package. This is not
+# decoration. On a stock Arch install `pacman -U ./traduku-*.pkg.tar.zst` of an
+# UNSIGNED file fails with "package missing required signature" (SigLevel is
+# Required and LocalFileSigLevel inherits it), so the README's install line only
+# works for a user who can trust our key - which means the key has to be
+# published with the release, not sit on the maintainer's laptop.
+#
+# The development key is refused even though it signs the grid's packages: its
+# uid says what it is ("dev channel"), and a package downloaded from a release
+# page whose signature names a development channel is not something to rely on.
+SIGN_KEY="${TRADUKU_SIGN_KEY:-DE28065CC5A065AC}"
+if ! gpg --list-keys --with-colons "$SIGN_KEY" >/dev/null 2>&1; then
+  echo "mkrelease.sh: signing key $SIGN_KEY is not in this keyring - import packaging/arch/traduku-release.asc, or set TRADUKU_SIGN_KEY" >&2
+  exit 1
+fi
+sign_uid=$(gpg --list-keys --with-colons "$SIGN_KEY" | awk -F: '/^uid/{print $10; exit}')
+case "$sign_uid" in
+  *"dev channel"*)
+    echo "mkrelease.sh: refusing to publish a release signed by \"$sign_uid\" - that is the development key" >&2
+    exit 1 ;;
+esac
+(cd "$OUT" && makepkg -sf --noconfirm --needed --sign --key "$SIGN_KEY" "${MAKEPKG_ARGS[@]+"${MAKEPKG_ARGS[@]}"}")
+
+# The public half travels with the release: without it the .sig files are
+# decoration nobody can check.
+cp "$HERE/traduku-release.asc" "$OUT/"
+# And the cheap check that needs no key at all: sha256sum -c SHA256SUMS.
+(cd "$OUT" && sha256sum -- ./*.pkg.tar.zst ./*.tar.gz > SHA256SUMS)
 echo
 echo "Release artifacts in $OUT:"
 ls -1 "$OUT"

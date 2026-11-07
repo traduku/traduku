@@ -220,6 +220,16 @@ int main(int argc, char **argv)
 
     lt::prepareCliEnvironment(argvList);
 
+    // Same promise as the KDE shell: a mode that draws, with nothing to draw on,
+    // says so in a sentence. `traduku --selftest` over ssh took a Qt fatal and
+    // left a core dump instead, and a core dump is not an instruction.
+    if (const QString noDisplay = lt::displayAdviceForMissingDisplay(
+            argvList, lt::qtCanPickAPlatform());
+        !noDisplay.isEmpty()) {
+        qWarning().noquote() << noDisplay;
+        return 2;
+    }
+
     std::unique_ptr<QCoreApplication> app(
         lt::needsWidgets(argvList)
             ? static_cast<QCoreApplication *>(new QApplication(argc, argv))

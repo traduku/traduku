@@ -131,6 +131,43 @@ private slots:
         QVERIFY(!needsWidgets({QStringLiteral("traduku"), QStringLiteral("--version")}));
     }
 
+    // A mode that needs a real display, on a machine that cannot give Qt one,
+    // must SAY so and exit - not abort. Measured over plain ssh on arch-kde:
+    // `traduku --selftest` produced "Aborted (core dumped)", rc 134, and no
+    // sentence to read, because QApplication reached Qt's createPlatformIntegration
+    // fatal. The gate passes an explicit offscreen QPA and is unaffected; this is
+    // about the human who types the command in a support thread and gets a core
+    // file instead of an instruction.
+    void aModeThatNeedsADisplaySaysSoInsteadOfCrashing()
+    {
+        // The suite runs under QT_QPA_PLATFORM=offscreen (ctest sets it), and this
+        // function deliberately reads that variable - a user who set one has
+        // answered the question. So the cases that expect advice have to say what
+        // the machine they model actually looks like.
+        QProcessEnvironmentGuard g;
+        qunsetenv("QT_QPA_PLATFORM");
+        qunsetenv("DISPLAY");
+        qunsetenv("WAYLAND_DISPLAY");
+        QVERIFY(lt::displayAdviceForMissingDisplay(
+                    {QStringLiteral("traduku"), QStringLiteral("--selftest")}, false)
+                .contains(QStringLiteral("QT_QPA_PLATFORM")));
+        QVERIFY(!lt::displayAdviceForMissingDisplay(
+                     {QStringLiteral("traduku")}, false).isEmpty());
+        // The console modes are rescued by decideQpa() and must not be refused:
+        // they are the commands a user runs precisely when the desktop is broken.
+        QVERIFY(lt::displayAdviceForMissingDisplay(
+                    {QStringLiteral("traduku"), QStringLiteral("--backend-info")}, false).isEmpty());
+        QVERIFY(lt::displayAdviceForMissingDisplay(
+                    {QStringLiteral("traduku"), QStringLiteral("--autostart=off")}, false).isEmpty());
+        // With a display - or with a QPA of the user's own - there is nothing to
+        // advise, and the modes run as they always did.
+        QVERIFY(lt::displayAdviceForMissingDisplay(
+                    {QStringLiteral("traduku"), QStringLiteral("--selftest")}, true).isEmpty());
+        qputenv("QT_QPA_PLATFORM", "offscreen");   // the user answered already
+        QVERIFY(lt::displayAdviceForMissingDisplay(
+                    {QStringLiteral("traduku"), QStringLiteral("--selftest")}, false).isEmpty());
+    }
+
     void aHumanChosenQpaIsNeverOverwritten()
     {
         QProcessEnvironmentGuard g;

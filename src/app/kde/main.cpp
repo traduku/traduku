@@ -210,6 +210,16 @@ int main(int argc, char **argv)
     // while GNOME answered it.
     lt::prepareCliEnvironment(argvList);
 
+    // A mode that draws, on a machine with nothing to draw on, says so in a
+    // sentence instead of taking a Qt fatal and a core dump (measured over ssh:
+    // `traduku --selftest` gave "Aborted (core dumped)", rc 134).
+    if (const QString noDisplay = lt::displayAdviceForMissingDisplay(
+            argvList, lt::qtCanPickAPlatform());
+        !noDisplay.isEmpty()) {
+        qWarning().noquote() << noDisplay;
+        return 2;
+    }
+
     QApplication app(argc, argv);
     configureApplication(app, QStringLiteral("kde"), QStringLiteral(LT_VERSION));
     QApplication::setQuitOnLastWindowClosed(false);   // tray-only app
