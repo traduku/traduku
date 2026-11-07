@@ -17,6 +17,7 @@
 #include "app/AppController.h"
 #include "app/BackendInfo.h"
 #include "app/SelfTest.h"
+#include "app/TrayChoice.h"
 #include "app/SingleInstance.h"
 #include "app/cli.h"
 #include "core/chunkedtranslator.h"
@@ -151,7 +152,11 @@ BackendReport collectBackends(Settings *settings)
     r.reasoning = settings && settings->disableReasoning()
         ? QStringLiteral("skipped (request options sent)")
         : QStringLiteral("NOT disabled - the model may stream hidden reasoning");
-    r.tray = QString();
+    // GNOME 50 + the appindicator extension gives an SNI watcher, and Qt's
+    // QSystemTrayIcon is Qt's own generic SNI client there (D3). Without a
+    // watcher the app still works - so report, do not fail.
+    r.tray = QtTray::hostSupportsTray() ? trayDisplayName(QStringLiteral("qt"))
+                                       : trayDisplayName(QStringLiteral("none"));
     return r;
 }
 

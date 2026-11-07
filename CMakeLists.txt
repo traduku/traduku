@@ -33,6 +33,19 @@ if(NOT LT_SHELL MATCHES "^(auto|kde|gnome)$")
     message(FATAL_ERROR "LT_SHELL must be one of auto, kde, gnome (got '${LT_SHELL}')")
 endif()
 
+# Which tray the KDE shell shows (GNOME_PLAN.md Stage 6b). The GNOME shell has
+# no KF6 to link, so it always uses QtTray; the value is validated and passed
+# through anyway, so a packaging typo fails at configure time in either
+# package rather than shipping the tray nobody tested.
+#   kde - KStatusNotifierItem (KF6), the historical default
+#   qt  - QSystemTrayIcon, the same code the GNOME shell runs
+# TRADUKU_TRAY overrides it per run so the comparison needs no rebuild.
+set(LT_TRAY "kde" CACHE STRING "Tray implementation for the KDE shell: kde|qt")
+set_property(CACHE LT_TRAY PROPERTY STRINGS kde qt)
+if(NOT LT_TRAY MATCHES "^(kde|qt)$")
+    message(FATAL_ERROR "LT_TRAY must be one of kde, qt (got '${LT_TRAY}')")
+endif()
+
 add_subdirectory(src)
 add_subdirectory(tests)
 if(LT_BUILD_SPIKES)

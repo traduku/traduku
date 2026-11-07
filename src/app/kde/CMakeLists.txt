@@ -1,5 +1,7 @@
 # The KDE application: thin composition root (see PLAN.md).
 add_executable(traduku main.cpp)
+# Which tray main.cpp instantiates (see LT_TRAY / TRADUKU_TRAY).
+target_compile_definitions(traduku PRIVATE LT_TRAY_DEFAULT="${LT_TRAY}")
 target_link_libraries(traduku PRIVATE
     lt::app lt::ui lt::core lt::interfaces
     lt::platform_kde lt::platform_qt lt::platform_wl)

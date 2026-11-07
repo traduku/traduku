@@ -105,6 +105,26 @@ lt_add_test(tst_qttray SOURCES unit/tst_qttray.cpp
     LIBS lt::platform_qt lt::core Qt6::Widgets Qt6::DBus)
 target_include_directories(tst_qttray PRIVATE ${CMAKE_SOURCE_DIR}/src)
 
+# Stage 6b: the KDE and Qt trays must stay interchangeable until KdeTray is
+# deleted - same interface, same menu, same intents. Links KF6, so it is
+# configured only when the KDE layer is.
+if(TARGET lt::platform_kde)
+    lt_add_test(tst_trayparity SOURCES unit/tst_trayparity.cpp
+        LIBS lt::platform_kde lt::platform_qt lt::core Qt6::Widgets Qt6::DBus)
+    target_include_directories(tst_trayparity PRIVATE ${CMAKE_SOURCE_DIR}/src)
+endif()
+
+# LT_TRAY (build default) vs TRADUKU_TRAY (per-run override for the Stage 6b
+# comparison): pure, so the choice is tested rather than trusted.
+lt_add_test(tst_traychoice SOURCES unit/tst_traychoice.cpp LIBS lt::app lt::core)
+target_include_directories(tst_traychoice PRIVATE ${CMAKE_SOURCE_DIR}/src)
+
+# The switch itself is a build-time guarantee: a typo must fail at configure.
+add_test(NAME cmake_lt_tray_option
+         COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/cmake/test_lt_tray_option.sh
+                 ${CMAKE_SOURCE_DIR} ${CMAKE_CURRENT_BINARY_DIR}/cmake-scratch)
+set_tests_properties(cmake_lt_tray_option PROPERTIES TIMEOUT 180)
+
 # selftest --live must use the config file it was handed (--config), not the
 # user's default path
 lt_add_test(tst_selftest SOURCES integration/tst_selftest.cpp
