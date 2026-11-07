@@ -1,12 +1,16 @@
 /*
     Which tray a build shows, and how the operator overrides it for a run.
 
-    Stage 6b is a comparison: the same traduku binary, first with KdeTray,
-    then with the Qt one, in a live Plasma session. A compile-time switch
-    alone would make that two builds, and "did you rebuild the right one?" is
-    not a measurement. So LT_TRAY sets the build default (packaging) and
-    TRADUKU_TRAY overrides it per run (measurement) - and this decision is
-    pure, so it is tested instead of trusted.
+    There used to be two implementations to compare (KStatusNotifierItem and
+    QSystemTrayIcon). The KDE one is gone - it segfaulted on destruction with a
+    live session bus (pinned by a coredump of the released 0.2 build), and the
+    Qt tray matched it item for item in Plasma - so the only tray left is the
+    Qt one. The switch and this contract stay, because:
+
+      * a packaging default is still worth having (LT_TRAY=none for a build
+        that ships without a panel icon), and
+      * people have old instructions, and `TRADUKU_TRAY=kde` must say *why* it
+        does nothing instead of silently ignoring them.
 */
 #include <QtTest>
 
@@ -20,62 +24,75 @@ class TestTrayChoice : public QObject
 private slots:
     void buildDefaultWinsWithoutOverride()
     {
-        const TrayChoice c = resolveTrayKind(QStringLiteral("kde"), QString());
-        QCOMPARE(c.kind, QStringLiteral("kde"));
+        const TrayChoice c = resolveTrayKind(QStringLiteral("qt"), QString());
+        QCOMPARE(c.kind, QStringLiteral("qt"));
         QCOMPARE(c.source, QStringLiteral("built-in default"));
     }
 
     void emptyEnvIsNotAnOverride()
     {
-        QCOMPARE(resolveTrayKind(QStringLiteral("kde"), QString()).kind,
-                 QStringLiteral("kde"));
-        QCOMPARE(resolveTrayKind(QStringLiteral("kde"), QStringLiteral("")).kind,
-                 QStringLiteral("kde"));
+        QCOMPARE(resolveTrayKind(QStringLiteral("qt"), QString()).kind,
+                 QStringLiteral("qt"));
+        QCOMPARE(resolveTrayKind(QStringLiteral("qt"), QStringLiteral("")).kind,
+                 QStringLiteral("qt"));
     }
 
-    void envSelectsTheQtTray()
+    void envSelectsNoTray()
     {
-        const TrayChoice c = resolveTrayKind(QStringLiteral("kde"),
-                                             QStringLiteral("qt"));
-        QCOMPARE(c.kind, QStringLiteral("qt"));
+        // A kiosk or a --translate-only deployment: no panel icon at all.
+        const TrayChoice c = resolveTrayKind(QStringLiteral("qt"),
+                                             QStringLiteral("none"));
+        QCOMPARE(c.kind, QStringLiteral("none"));
         QCOMPARE(c.source, QStringLiteral("TRADUKU_TRAY"));
     }
 
     void envIsCaseInsensitiveAndTrimmed()
     {
-        // Typed at a terminal: " QT ", "Qt" must work.
-        QCOMPARE(resolveTrayKind(QStringLiteral("kde"),
-                                QStringLiteral(" QT ")).kind,
-                 QStringLiteral("qt"));
+        // Typed at a terminal: " NONE ", "None" must work.
         QCOMPARE(resolveTrayKind(QStringLiteral("qt"),
-                                QStringLiteral("Kde")).kind,
-                 QStringLiteral("kde"));
+                                QStringLiteral(" NONE ")).kind,
+                 QStringLiteral("none"));
+        QCOMPARE(resolveTrayKind(QStringLiteral("none"),
+                                QStringLiteral("Qt")).kind,
+                 QStringLiteral("qt"));
+    }
+
+    void theRemovedKdeTrayIsExplainedNotIgnored()
+    {
+        // `TRADUKU_TRAY=kde` is in old READMEs and old muscle memory. It must
+        // not fall on the floor silently: the operator would think they were
+        // looking at KStatusNotifierItem.
+        const TrayChoice c = resolveTrayKind(QStringLiteral("qt"),
+                                             QStringLiteral("kde"));
+        QCOMPARE(c.kind, QStringLiteral("qt"));         // still usable
+        QVERIFY(!c.warning.isEmpty());
+        QVERIFY(c.warning.contains(QStringLiteral("kde")));
+        QVERIFY(c.warning.contains(QStringLiteral("removed"))
+                || c.warning.contains(QStringLiteral("no longer")));
     }
 
     void anUnknownValueIsLoudNotSilent()
     {
-        // "TRADUKU_TRAY=kde" on a GNOME build, or a typo, must not quietly
-        // show the other tray: the operator would compare the wrong thing.
-        const TrayChoice c = resolveTrayKind(QStringLiteral("kde"),
+        // A typo must not quietly show something else: the operator would
+        // compare the wrong thing and report on it.
+        const TrayChoice c = resolveTrayKind(QStringLiteral("qt"),
                                              QStringLiteral("qyt"));
-        QCOMPARE(c.kind, QStringLiteral("kde"));          // still usable
-        QVERIFY2(!c.warning.isEmpty(),
-                 "a typo in TRADUKU_TRAY has to be reported, not ignored");
-        QVERIFY(c.warning.contains(QStringLiteral("qyt")));
-        QVERIFY(c.warning.contains(QStringLiteral("qt")));   // name the choices
+        QCOMPARE(c.kind, QStringLiteral("qt"));         // still usable
+        QVERIFY(!c.warning.isEmpty());
+        QVERIFY(c.warning.contains(QStringLiteral("qyt")));   // says what it saw
+        QVERIFY(c.warning.contains(QStringLiteral("qt")));    // says what to type
     }
 
-    void namesAreWhatBackendInfoShouldPrint()
+    void displayNameIsNeverEmpty()
     {
-        QCOMPARE(trayDisplayName(QStringLiteral("kde")),
-                 QStringLiteral("kde (KStatusNotifierItem)"));
-        QCOMPARE(trayDisplayName(QStringLiteral("qt")),
-                 QStringLiteral("qt (QSystemTrayIcon)"));
-        QCOMPARE(trayDisplayName(QStringLiteral("none")),
-                 QStringLiteral("none (no tray host)"));
-        // Unknown must not print an empty value: --backend-info is read by
-        // humans and grepped by e2e.
-        QVERIFY(!trayDisplayName(QStringLiteral("wat")).isEmpty());
+        // --backend-info prints this; an empty cell reads as "no tray".
+        QVERIFY(!trayDisplayName(QStringLiteral("qt")).isEmpty());
+        QVERIFY(!trayDisplayName(QStringLiteral("none")).isEmpty());
+        QVERIFY(!trayDisplayName(QStringLiteral("wat?")).isEmpty());
+        QVERIFY(trayDisplayName(QStringLiteral("qt"))
+                .contains(QStringLiteral("QSystemTrayIcon")));
+        QVERIFY(trayDisplayName(QStringLiteral("none"))
+                .contains(QStringLiteral("no tray")));
     }
 };
 

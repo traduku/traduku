@@ -40,10 +40,19 @@ endif()
 #   kde - KStatusNotifierItem (KF6), the historical default
 #   qt  - QSystemTrayIcon, the same code the GNOME shell runs
 # TRADUKU_TRAY overrides it per run so the comparison needs no rebuild.
-set(LT_TRAY "kde" CACHE STRING "Tray implementation for the KDE shell: kde|qt")
-set_property(CACHE LT_TRAY PROPERTY STRINGS kde qt)
-if(NOT LT_TRAY MATCHES "^(kde|qt)$")
-    message(FATAL_ERROR "LT_TRAY must be one of kde, qt (got '${LT_TRAY}')")
+# Which tray a build starts with. "none" is for builds that must not put an
+# icon in the panel (kiosk, --translate-only image). There used to be a "kde"
+# value selecting KStatusNotifierItem; the Qt tray replaced it in Plasma and the
+# KDE one is deleted, so asking for it is now a configuration error - old
+# packaging recipes carry `-DLT_TRAY=kde` and must fail here, not silently ship
+# something else.
+set(LT_TRAY "qt" CACHE STRING "Tray implementation for the KDE shell: qt|none")
+set_property(CACHE LT_TRAY PROPERTY STRINGS qt none)
+if(NOT LT_TRAY MATCHES "^(qt|none)$")
+    message(FATAL_ERROR "LT_TRAY must be one of qt, none (got '${LT_TRAY}'). "
+        "The KDE (KStatusNotifierItem) tray was removed; both shells use the Qt "
+        "one, which registers with the same StatusNotifier hosts (Plasma, "
+        "GNOME appindicator).")
 endif()
 
 add_subdirectory(src)

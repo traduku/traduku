@@ -10,16 +10,18 @@ namespace lt {
 /*!
  * Tray presence, whatever draws it.
  *
- * Two implementations exist deliberately during the port: `KdeTray`
- * (KF6 KStatusNotifierItem) and `QtTray` (QSystemTrayIcon, which is Qt's
- * generic DBus SNI client on Wayland - GNOME_PLAN.md D3). The shell holds an
- * ITray*, so switching one against the other is a configuration decision
- * (LT_TRAY / TRADUKU_TRAY) and not an edit in main.cpp - which is what makes
- * the Stage 6b comparison "same binary, two trays" possible.
+ * One implementation today - `QtTray` (QSystemTrayIcon, which on Wayland is
+ * Qt's own generic DBus SNI client; GNOME_PLAN.md D3 records the measurement
+ * that chose it). `KdeTray` (KF6 KStatusNotifierItem) is deleted: the Qt tray
+ * reproduced its menu entry for entry in a live Plasma session, and KF6's item
+ * segfaulted when destroyed with a live session bus, which is what `Quit` did
+ * in the released 0.2 build.
  *
- * Tests pin the two together (tests/unit/tst_trayparity.cpp): identical menu,
- * identical intents. KdeTray may only be deleted once that test is green
- * against the Qt tray in a real Plasma session.
+ * The interface stays, because three things still depend on it: the shells
+ * connect intents once and do not care who draws the icon; `TRADUKU_TRAY=none`
+ * swaps in a tray that is not there; and tests/unit/tst_trayparity.cpp pins
+ * the menu contract this interface encodes, so a future tray cannot quietly
+ * drop an entry or wire `Quit` to QApplication::quit().
  */
 class ITray : public QObject
 {
@@ -31,7 +33,7 @@ public:
     /// The menu the host shows on right click. Owned by the tray.
     virtual QMenu *menu() const = 0;
 
-    /// "Working on it". KdeTray paints an overlay icon, QtTray has none and
+    /// "Working on it". QSystemTrayIcon has no overlay icons, so QtTray puts
     /// puts it in the tooltip; both must surface it somehow.
     virtual void setBusy(bool busy) = 0;
     virtual void setToolTipSub(const QString &sub) = 0;
@@ -41,7 +43,7 @@ public:
     /// extension). Running tray-less is supported, not a failure.
     virtual bool isAvailable() const = 0;
 
-    /// For --backend-info: "kde (KStatusNotifierItem)", "qt (QSystemTrayIcon)".
+    /// For --backend-info: "qt (QSystemTrayIcon)", "none (no tray host)".
     virtual QString backendName() const = 0;
 
     /// A disabled, informative row at the top of the menu: which build this is

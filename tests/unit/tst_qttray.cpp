@@ -7,9 +7,10 @@
     works on GNOME 50.1 and in Plasma, so a hand-rolled SNI client is not
     needed - see tools/spike/tray-spike.cpp for the comparison that decided it.
 
-    The behaviour is a copy of KdeTray (the operator's instruction): left click
-    translates, right click opens the app menu. KdeTray stays until the Qt one
-    is verified in a live KDE session.
+    The menu and the click semantics reproduce the KDE tray the operator used
+    for a year - left click translates, right click opens the app menu - and
+    that implementation (KdeTray, KF6 KStatusNotifierItem) is now deleted;
+    tests/unit/tst_trayparity.cpp keeps the contract it defined.
 */
 #include <QtTest>
 #include <QAction>
