@@ -62,6 +62,9 @@ int main(int argc, char **argv)
     QApplication app(argc, argv);
     QApplication::setApplicationName(QStringLiteral("traduku"));
     QApplication::setApplicationDisplayName(QStringLiteral("Traduku"));
+    // Without this, --version printed a name and no number - half of "which
+    // build is in my panel?" (the GNOME shell has set it since Stage 1).
+    QApplication::setApplicationVersion(QStringLiteral(LT_VERSION));
     QApplication::setQuitOnLastWindowClosed(false);   // tray-only app
 
     QCommandLineParser parser;
@@ -166,6 +169,12 @@ int main(int argc, char **argv)
           qUtf8Printable(trayDisplayName(trayChoice.kind)),
           qUtf8Printable(trayChoice.source));
     ITray *tray = createTray(trayChoice.kind, &settings, &autostart);
+    // Say which build and which tray this is, in the panel itself: during the
+    // Stage 6b comparison a Start-Menu relaunch quietly restarted the
+    // *installed* binary and nothing on screen could tell them apart.
+    tray->setStatusLabel(QStringLiteral("Traduku %1 · tray %2 [%3]")
+                             .arg(QCoreApplication::applicationVersion(),
+                                  trayChoice.kind, trayChoice.source));
     tray->show();
 
     // Hotkeys: passive X11/XWayland monitor first (needs no permission,

@@ -44,6 +44,13 @@ public:
     /// For --backend-info: "kde (KStatusNotifierItem)", "qt (QSystemTrayIcon)".
     virtual QString backendName() const = 0;
 
+    /// A disabled, informative row at the top of the menu: which build this is
+    /// and which tray it drew. The operator restarted the app from the Start
+    /// Menu during the Stage 6b comparison and could not say afterwards which
+    /// binary had been in the panel - a tray that cannot answer "which build
+    /// am I" makes every report about it ambiguous.
+    virtual void setStatusLabel(const QString &text) = 0;
+
 Q_SIGNALS:
     void translateRequested();
     void targetLanguagePicked(const QString &code);

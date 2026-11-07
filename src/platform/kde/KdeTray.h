@@ -39,6 +39,7 @@ public:
     void show() override;
     bool isAvailable() const override;
     QString backendName() const override;
+    void setStatusLabel(const QString &text) override;
 
 private:
     void buildMenu();
@@ -51,6 +52,7 @@ private:
     IAutostart *m_autostart;
     QHash<QString, QAction *> m_languageActions;
     QAction *m_autostartAction = nullptr;
+    QAction *m_statusAction = nullptr;
 };
 
 } // namespace lt

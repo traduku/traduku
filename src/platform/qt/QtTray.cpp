@@ -167,6 +167,18 @@ QIcon QtTray::createIcon()
     return icon;
 }
 
+void QtTray::setStatusLabel(const QString &text)
+{
+    if (!m_statusAction) {
+        // First row, disabled: a header, not something to click.
+        m_statusAction = m_menu->addAction(text);
+        m_statusAction->setEnabled(false);
+        m_menu->insertSeparator(m_statusAction);   // row, then the real items
+        return;
+    }
+    m_statusAction->setText(text);
+}
+
 void QtTray::buildMenu()
 {
     // Unparented (QMenu wants a QWidget*, the tray is a QObject); freed in
