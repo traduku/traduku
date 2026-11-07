@@ -33,21 +33,31 @@ def test_app_autostarts_after_reboot(session):
                    "package (GNOME) nor the first-run answer (Plasma) installed one, "
                    "so this test would prove nothing - run E2E-2 first")
 
+    # What the guest was running BEFORE the reboot is the promise to check
+    # against afterwards - not a guess from the profile's name. Measured on
+    # debian-kde: it boots Plasma on X11, so waiting 180 s for kwin_wayland and
+    # then asserting XDG_SESSION_TYPE=wayland made a correct reboot fail, and
+    # cost three minutes doing it.
+    _, before_shell = vm.run(
+        "for s in kwin_wayland kwin_x11 gnome-shell plasmashell; do "
+        "pgrep -u vm -x $s >/dev/null 2>&1 && echo $s && break; done")
+    before_shell = before_shell.strip()
+    rc, before_type = vm.ses("echo $XDG_SESSION_TYPE")
+    before_type = before_type.strip()
+    assert before_shell, ("nothing was running before the reboot, so the reboot "
+                          "could not be expected to bring anything back")
+
     vm.sudo("systemctl reboot")
     assert vm.wait_ssh(300), "VM did not come back after reboot"
     # Wait for the two things this test is about, in order, instead of for a
-    # quarter of a minute: the session shell this profile promises, then the
-    # process the autostart entry exists to start. `sleep 15` after "the shell
-    # exists" stood in for both - paid in full on every fast boot, and still a
-    # guess on a slow one.
-    shells = ["gnome-shell"] if vm.vm.endswith("-gnome") else ["kwin_wayland", "kwin_x11"]
-    for shell in shells:
-        rc, _ = vm.wait_process(shell, timeout=180 if shell == shells[0] else 5, tick=1)
-        if rc == 0:
-            break
+    # quarter of a minute: the session shell the guest was actually running,
+    # then the process the autostart entry exists to start. `sleep 15` after
+    # "the shell exists" stood in for both - paid in full on every fast boot,
+    # and still a guess on a slow one.
+    rc, _ = vm.wait_process(before_shell, timeout=180, tick=1)
     assert rc == 0, (
-        f"no session shell came back after the reboot (looked for {shells}); "
-        "the profile promises one of them before autostart can mean anything")
+        f"{before_shell} - the shell that ran before the reboot - did not come "
+        "back; the profile promises it before autostart can mean anything")
     rc, _ = vm.wait_process("traduku", timeout=120, tick=0.5)
     assert rc == 0, (
         f"traduku did not autostart after reboot within 120 s (entries: {found}). "
@@ -58,4 +68,9 @@ def test_app_autostarts_after_reboot(session):
     pid = vm.app_pid()
     assert pid, "the traduku that autostarted vanished between the two looks"
     rc, out = vm.run(f"tr '\\0' ' ' < /proc/{pid}/environ | grep -o 'XDG_SESSION_TYPE=\\w*'")
-    assert "XDG_SESSION_TYPE=wayland" in out, f"autostarted outside a wayland session: {out}"
+    # The same kind of session it autostarted into before, whatever that was:
+    # a Wayland guest must come back on Wayland, an X11 guest on X11. Hardcoding
+    # "wayland" here failed a healthy Plasma-on-X11 reboot.
+    assert f"XDG_SESSION_TYPE={before_type}" in out, (
+        f"autostarted into a {out.strip() or '?'} session where the guest ran "
+        f"{before_type} before the reboot")

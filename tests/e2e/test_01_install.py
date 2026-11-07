@@ -32,6 +32,8 @@ Red checks (verified during development):
 import re
 from pathlib import Path
 
+import pytest
+
 # One version, three places that must agree (CMakeLists, PKGBUILD, changelog)
 # - tests/cmake/test_versions_agree.sh fails the build when they drift, so
 # taking it from PKGBUILD here is reading the same truth the package used,
@@ -111,6 +113,51 @@ def test_backend_info_survives_a_plain_ssh_session(vm):
     assert "shell:" in out, f"--backend-info answered without saying which shell: {out}"
     assert "clipboard:" in out, (
         f"--backend-info named every backend but the one users call broken: {out}")
+
+
+def test_the_hotkey_the_report_names_is_the_listener_running(env):
+    """`hotkey chosen:` must name the listener the journal says is active.
+
+    Measured on arch-kde before this test existed: the journal printed
+
+        traduku: X RECORD key listener active on :0 (helper pid 2154)
+
+    while the ready line and `--backend-info` both said `x11-xi2`, because
+    X11HotkeyBackend::backendName() was a constant - a name that cannot
+    disagree with the machine cannot agree with it either. Mutter injects
+    Wayland keystrokes into the VDevice master, so chooseMode() has always
+    picked RECORD under GNOME/KWin-on-Wayland; a user debugging a dead gesture
+    from that report would have gone looking at the XI2 code, which was not
+    running. The clipboard had the same bug and the same shape of fix (the
+    report asks the decision - 86ed059).
+    """
+    vm = env
+    cur = vm.cursor()
+    vm.start_app()                      # waits for the app's own ready line
+
+    rc, rep = vm.run("QT_QPA_PLATFORM=offscreen traduku --backend-info 2>&1")
+    chosen = ""
+    for line in rep.splitlines():
+        if line.startswith("hotkey chosen:"):
+            chosen = line.split(":", 1)[1].strip()
+    assert chosen, f"--backend-info printed no hotkey decision:\n{rep}"
+    if not chosen.startswith("x11"):
+        pytest.skip(f"{vm.vm}: the hotkey decision is '{chosen}', not an X "
+                    "listener; the naming below is an X-session claim")
+
+    rc, log = vm.journal_after(cur, "listener active")
+    assert "listener active" in log, (
+        f"the app claims '{chosen}' but never said which X listener it "
+        f"started; journal after the cursor said: {log!r}")
+    if "X RECORD" in log:
+        assert chosen.startswith("x11-record"), (
+            f"journal: RECORD helper is running, report says '{chosen}':\n{log}")
+    elif "XI2 raw" in log:
+        assert chosen.startswith("x11-xi2"), (
+            f"journal: the XI2 raw listener is running, report says "
+            f"'{chosen}':\n{log}")
+    else:
+        assert False, f"journal names a listener this test does not know: {log!r}"
 
 
 def test_clipboard_backend_is_the_one_the_session_needs(vm, session):
