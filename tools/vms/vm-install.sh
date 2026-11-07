@@ -67,13 +67,32 @@ case "$VM" in
       # every gate below passed while testing code nobody built. Compare
       # against a stamp taken now, so an old tarball in release-out cannot
       # count as this run's output.
+      # Two fences have to agree. mkrelease.sh packs HEAD; everything else in
+      # this script - the host ctest above, the .deb container below - tests
+      # the working tree. While they disagreed, an uncommitted fix got a green
+      # grid against a package that did not contain it. So: pack the working
+      # tree (--allow-dirty), and since tar rewrites every mtime, decide
+      # "nothing changed" by CONTENT like the .deb path does.
+      FP=$( { git -C "$ROOT" ls-files -co --exclude-standard -z \
+              | xargs -0 -r sha256sum; } | sha256sum | cut -d' ' -f1 )
+      ART=$ROOT/.cache/vm-arch
+      CACHED=$(ls "$ART"/traduku*.pkg.tar.zst 2>/dev/null | head -1)
       T_PKG=0; t0=$SECONDS
-      STAMP=$(mktemp)
-      "$ROOT/packaging/arch/mkrelease.sh" "$ROOT/release-out" --nocheck
+      if [ "$REBUILD" != --rebuild ] && [ -n "$CACHED" ] \
+         && [ "$(cat "$ART/.fingerprint" 2>/dev/null)" = "$FP" ]; then
+        echo "== arch cache hit ($FP): reusing $(basename "$CACHED")"
+        rm -rf "$ROOT/release-out"; mkdir -p "$ROOT/release-out"
+        cp "$ART"/* "$ROOT/release-out"/
+      else
+      "$ROOT/packaging/arch/mkrelease.sh" "$ROOT/release-out" --allow-dirty --nocheck
       NEW=$(find "$ROOT/release-out" -name "traduku*.pkg.tar.zst" -newer "$STAMP" | head -1)
       rm -f "$STAMP"
       [ -n "$NEW" ] || { echo "FAIL: mkrelease produced no package in this run (build is red above), refusing to test a stale one" >&2; exit 1; }
       T_PKG=$((SECONDS-t0))
+      mkdir -p "$ART"; rm -f "$ART"/*
+      cp "$ROOT/release-out"/traduku* "$ART"/ 2>/dev/null || true
+      echo "$FP" > "$ART/.fingerprint"
+      fi
     fi
     echo "== push + pacman -U on $VM"
     # QEMU user-net needs a resolver (baked images predate the resolved patch)
@@ -196,7 +215,11 @@ Q "QT_QPA_PLATFORM=offscreen traduku --help 2>&1 | head -3"
 if [ -n "${T_BUILD+x}" ]; then
   echo "== timing: deb build ${T_BUILD}s (0 = cache hit), guest install ${T_INSTALL}s, total $((SECONDS-T0))s"
 else
-  echo "== timing: package build+gates ${T_PKG:-n/a}s, guest install ${T_INSTALL:-n/a}s, total $((SECONDS-T0))s"
+  # Only the numbers this branch has. "n/as" read like a measurement that
+  # went wrong rather than a step this path does not take.
+  out="== timing: package build+gates ${T_PKG}s"
+  [ -n "${T_INSTALL+x}" ] && out="$out, guest install ${T_INSTALL}s"
+  echo "$out, total $((SECONDS-T0))s"
 fi
 [ "$REBUILD" = --shell ] && $SSH -t vm@127.0.0.1 bash
 exit 0
