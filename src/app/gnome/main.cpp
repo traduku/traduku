@@ -15,6 +15,7 @@
 // Ctrl+C+C.
 
 #include "app/AppController.h"
+#include "app/AppFlavour.h"
 #include "app/BackendInfo.h"
 #include "app/SelfTest.h"
 #include "app/TrayChoice.h"
@@ -51,30 +52,11 @@ using namespace lt;
 
 namespace {
 
-/// Which QApplication flavour does this invocation need? Widgets require a
-/// QApplication, and one cannot be created after a QGuiApplication, so the
-/// decision has to be made before the first app object exists (from argv,
-/// because QCoreApplication::arguments() needs an instance). Console-only
-/// modes must not need a display: `traduku --backend-info` has to answer on
-/// a machine where nothing graphical runs yet.
-bool cliNeedsWidgets(const QStringList &argv)
-{
-    static const QStringList cliFlags = {
-        QStringLiteral("--translate"), QStringLiteral("-t"),
-        QStringLiteral("--selftest"), QStringLiteral("--backend-info"),
-        QStringLiteral("--text"), QStringLiteral("--live"),
-        QStringLiteral("--notify-test"),
-        QStringLiteral("--help"), QStringLiteral("-h"),
-        QStringLiteral("--version"),
-    };
-    for (const QString &a : argv) {
-        if (cliFlags.contains(a)) {
-            return a == QLatin1String("--selftest");   // only selftest shows a window
-        }
-    }
-    return true;                                       // no mode flag: tray mode
-}
-
+/// Which QApplication flavour: widgets need QApplication, and one cannot be
+/// created after a QGuiApplication, so the choice is made from argv before the
+/// first app object exists. The rule itself is shared with the KDE shell -
+/// app/AppFlavour.cpp - because two copies of it is how KDE ended up with no
+/// headless path at all.
 /// The gesture stack (ROADMAP.md §2): /dev/input is the primary because
 /// it is the only channel that sees the literal Ctrl+C+C on Wayland. The
 /// gsettings shortcut fallback lands in the next commit; until then a box
@@ -123,6 +105,11 @@ BackendReport collectBackends(Settings *settings)
     }
     if (r.sessionType.isEmpty()) {
         r.sessionType = QGuiApplication::platformName();   // last resort
+    }
+    if (qpaWasForcedByUs()) {
+        // Same wording as the KDE shell: "offscreen" alone reads as "no
+        // session", when what is missing is our knowledge of it.
+        r.sessionType = QStringLiteral("%1 (no display here)").arg(r.sessionType);
     }
     r.desktop = qEnvironmentVariable("XDG_CURRENT_DESKTOP");
 
@@ -202,8 +189,10 @@ int main(int argc, char **argv)
         argvList << QString::fromLocal8Bit(argv[i]);
     }
 
+    lt::prepareCliEnvironment(argvList);
+
     std::unique_ptr<QCoreApplication> app(
-        cliNeedsWidgets(argvList)
+        lt::needsWidgets(argvList)
             ? static_cast<QCoreApplication *>(new QApplication(argc, argv))
             : static_cast<QCoreApplication *>(new QGuiApplication(argc, argv)));
     if (auto *widgetApp = qobject_cast<QApplication *>(app.get())) {
