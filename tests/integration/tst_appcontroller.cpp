@@ -193,6 +193,24 @@ private slots:
         QVERIFY(m_window->isVisible());
     }
 
+    void aSecondLaunchSurfacesTheWindowTheMessagePromises()
+    {
+        // Both shells print "Traduku is already running (asked it to surface
+        // its window)" when a second copy is launched - the message is the
+        // interface for someone who clicked the icon and saw nothing. It was
+        // a lie: SingleInstance::activateRequested (and KDBusService::Activate
+        // on Plasma) had no connection anywhere, so the running instance did
+        // nothing at all. The promise and the wiring are asserted together
+        // here, because a message nobody can hear is how this stayed green.
+        QVERIFY(!m_window->isVisible());
+        m_app->surfaceWindow();
+        QVERIFY2(m_window->isVisible(),
+                 "the running instance was asked to surface its window and "
+                 "left it hidden - the activation signal goes nowhere");
+        QTRY_VERIFY_WITH_TIMEOUT(logLine(QStringLiteral("window shown")).size() > 0,
+                                 10000);
+    }
+
     void gestureRunsDocument()
     {
         m_clip.m_text = QStringLiteral("hello world");

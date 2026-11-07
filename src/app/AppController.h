@@ -52,6 +52,13 @@ public slots:
     /// The one-shot entry point (hotkey, tray click, DBus, CLI activation).
     void translateNow();
 
+    /// Bring the window to the front. Connected to SingleInstance's
+    /// activateRequested (and to KDBusService::Activate on Plasma): the second
+    /// copy prints "asked it to surface its window", and a message that asks
+    /// nothing is worse than silence - the user who clicked an icon and saw
+    /// nothing has no way to know which of the two happened.
+    void surfaceWindow();
+
 Q_SIGNALS:
     /// Emitted when the window's Settings button is clicked; the shell
     /// opens its settings dialog (dialog lives in the shell: the window

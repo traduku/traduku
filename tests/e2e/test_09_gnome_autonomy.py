@@ -221,6 +221,49 @@ def test_backend_info_reports_autostart(session):
 
 
 # ---------------------------------------------------------------------------
+def test_the_window_still_fits_the_screen_at_200_percent(session):
+    """200% scaling is the default on a HiDPI laptop, not a setting to dig for.
+
+    The window asked for 980x560 logical pixels unconditionally. At scale 2
+    that is 1960x1120 device pixels: on this 1280x800 display the bottom of
+    the window - the buttons - is off the panel, and a Wayland client cannot
+    drag it back. Measured through the QMP screendump rather than the X
+    screen, because the number that matters is the scanout, not what
+    Xwayland tells a client.
+    """
+    import re
+    import time
+
+    vm = session
+    sw, sh = vm.screen_size()
+    assert sw >= 800, f"the display is {sw}x{sh}, too small to conclude anything"
+
+    vm.run("pkill -x traduku; true")
+    vm.start_app(extra_env=["QT_SCALE_FACTOR=2"])
+    time.sleep(4)
+    cur = vm.cursor()
+    # Second launch asks the running instance to surface its window - the
+    # same path a user reaches by clicking the (here: missing) icon twice.
+    vm.ses("timeout 15 traduku >/dev/null 2>&1; true")
+    rc, line = vm.journal_after(cur, grep="window shown")
+    try:
+        vm.run("pkill -x traduku; true")
+    except Exception:
+        pass
+    m = re.search(r'window shown "[^"]*" (\d+)x(\d+) \((\d+)x(\d+) px\)', line)
+    assert m, (
+        "no 'window shown <title> WxH (WxH px)' line after surfacing the "
+        f"window at 200%:\n{line}")
+    lw, lh, dw, dh = (int(g) for g in m.groups())
+    assert dw <= sw and dh <= sh, (
+        f"window is {dw}x{dh} device px ({lw}x{lh} logical at scale 2) on a "
+        f"{sw}x{sh} screen: the bottom of it is unreachable, and the user "
+        "cannot move a Wayland window back onto the panel")
+    assert (lw, lh) != (980, 560), (
+        "the window kept its hard-coded 980x560 at 200% - fitToScreen was "
+        "not consulted on show")
+
+
 def test_non_latin_text_survives_the_whole_path(env):
     """Cyrillic in, Cyrillic out: clipboard -> window -> back to clipboard.
 

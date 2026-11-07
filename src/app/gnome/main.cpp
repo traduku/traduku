@@ -277,6 +277,9 @@ int main(int argc, char **argv)
     // One Traduku per session: a second launch wakes the running one instead
     // of starting a duplicate tray (ROADMAP.md §2).
     SingleInstance instance;
+    // Declared before the controller is built? No: connected below, once the
+    // controller exists. Kept next to instance.start() so the pair cannot be
+    // separated by a future edit.
     if (!instance.start()) {
         out << QStringLiteral("Traduku is already running (asked it to surface "
                               "its window).\n");
@@ -307,6 +310,10 @@ int main(int argc, char **argv)
     AppController controller({&settings, clipboard.get(), &notifier, &sound,
                               &window, &pipeline});
     controller.setHotkey(gesture.chosen);
+    // "Traduku is already running (asked it to surface its window)" is
+    // printed above; this is the half that makes it true.
+    QObject::connect(&instance, &SingleInstance::activateRequested, &controller,
+                     &AppController::surfaceWindow);
 
     auto openSettings = [&settings]() {
         SettingsDialog dlg(&settings);

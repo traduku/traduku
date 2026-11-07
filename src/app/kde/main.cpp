@@ -311,6 +311,16 @@ int main(int argc, char **argv)
 
     controller.setHotkey(monitor ? static_cast<IHotkeyBackend *>(monitor)
                                  : hotkey.get());
+    // KF6's KDBusService::Unique exits the second copy for us and emits
+    // Activate in the first. Without this connection an icon click is a no-op
+    // indistinguishable from a dead app - the GNOME shell has the same pair
+    // (SingleInstance::activateRequested), and the message both shells print
+    // promises exactly this.
+    // activateRequested, not Activate: KF6 made Activate private and this is
+    // the public spelling (extra QVariantMap argument is dropped - Qt lets a
+    // slot take fewer arguments than the signal carries).
+    QObject::connect(&service, &KDBusService::activateRequested, &controller,
+                     &AppController::surfaceWindow);
     QObject::connect(tray, &ITray::translateRequested,
                      &controller, &AppController::translateNow);
     QObject::connect(tray, &ITray::quitRequested, &app,
