@@ -441,6 +441,18 @@ bool X11Clipboard::isUsable(const Options &options)
     return probe.openConnection();
 }
 
+QString X11Clipboard::unusabilityReason(const Options &options)
+{
+    X11Clipboard probe(options);
+    if (probe.openConnection()) {
+        return {};
+    }
+    // connect() keeps the failure text: an Xlib refusal is only visible in
+    // the return of XOpenDisplay, and losing it turns "install xauth" into an
+    // afternoon of guessing.
+    return probe.diagnostic();
+}
+
 int X11Clipboard::connectionFd() const
 {
     return m_display ? ConnectionNumber(m_display) : -1;

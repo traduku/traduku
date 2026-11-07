@@ -114,27 +114,69 @@ def test_backend_info_survives_a_plain_ssh_session(vm):
 
 
 def test_clipboard_backend_is_the_one_the_session_needs(vm, session):
-    """Which clipboard reader the app picks, asked from inside the session.
+    """The reader the app picks has to follow the machine, not our assumptions.
 
-    On Arch there is no wl-clipboard at all (AUR only), so the choice is
-    X11-or-Qt, and Qt is not neutral there: its xcb backend reads a plain
-    TEXT offer as latin-1 and hands back mojibake for Cyrillic. On GNOME the
-    package hard-depends on wl-clipboard, so picking anything else means the
-    dependency is decorative.
+    The first version of this test asserted "x11" on Arch, believing
+    wl-clipboard is AUR-only there. It is in the repository - the image has it
+    - so the app was right and the assertion was an opinion about a machine it
+    had not looked at. The expectation is therefore built from what the guest
+    actually has (wl-paste present? session wayland?), read here and not from
+    the app's own report.
     """
+    have_wl = vm.run("command -v wl-paste")[0] == 0
+    session_type = vm.ses('echo "$XDG_SESSION_TYPE"')[1].strip().lower()
     rc, out = vm.ses("traduku --backend-info 2>&1")
     lines = [l for l in out.splitlines() if l.startswith("clipboard:")]
     assert lines, f"no clipboard line from --backend-info (rc={rc}):\n{out}"
     got = lines[0].split(":", 1)[1].strip()
-    if vm.vm.endswith("-gnome"):
-        assert got == "wl-clipboard", (
-            f"{vm.vm}: wl-clipboard is a hard Depends, so the app should read the "
-            f"compositor's clipboard through it, not through {got!r}")
-    elif vm.vm.startswith("arch"):
-        assert got == "x11", (
-            f"{vm.vm}: no wl-clipboard in the repos, so the wayland clipboard is "
-            f"reachable through XWayland only - {got!r} is the reader that garbles "
-            f"a plain TEXT offer")
+
+    if session_type == "wayland" and have_wl:
+        # The compositor owns the clipboard; XWayland only mirrors it, and a
+        # GNOME package that hard-depends on wl-clipboard must use it.
+        expected = "wl-clipboard"
+    else:
+        # Qt's xcb backend reads a plain TEXT offer as latin-1 and returns
+        # mojibake for Cyrillic, so where an X server is reachable the X11
+        # reader is not a fallback - it is the correct one.
+        expected = "x11"
+    assert got == expected, (
+        f"{vm.vm}: session={session_type!r}, wl-paste installed={have_wl} - "
+        f"expected {expected!r}, the app chose {got!r}")
+
+
+def test_clipboard_knob_works_on_a_real_desktop(vm, session):
+    """TRADUKU_CLIPBOARD is the knob a user reaches for with a broken paste.
+
+    Honouring it is not cosmetic: it is how "is it the reader or the
+    compositor?" gets answered without rebuilding anything. Checked where it
+    can be checked - a live session with an X server, so forcing x11 has to
+    produce a reader that claims the server, not a silent empty clipboard.
+    """
+    rc, out = vm.ses("TRADUKU_CLIPBOARD=x11 traduku --backend-info 2>&1")
+    lines = [l for l in out.splitlines() if l.startswith("clipboard:")]
+    assert lines, f"no clipboard line with the knob set (rc={rc}):\n{out}"
+    got = lines[0].split(":", 1)[1].strip()
+    hints = [l.split(":", 1)[1].strip() for l in out.splitlines()
+             if l.startswith("clipboard hint:")]
+    if got != "x11":
+        # Refusing the knob is allowed - the backend may genuinely not work
+        # here - but never in silence: the knob is how a user tells our reader
+        # apart from the compositor, and an unexplained substitution teaches
+        # them that the knob does nothing.
+        assert hints, (
+            f"{vm.vm}: TRADUKU_CLIPBOARD=x11 chose {got!r} and said nothing. "
+            f"Either honour the knob or explain the refusal:\n{out}")
+        assert "TRADUKU_CLIPBOARD" in hints[0], (
+            f"{vm.vm}: the hint does not mention the knob the user set: {hints[0]!r}")
+        assert "no reason given" not in hints[0], (
+            f"{vm.vm}: the refusal had no reason in it: {hints[0]!r}")
+    # And it must not be an x11 that cannot reach anything: the session has an
+    # XWayland, so a reader that prints a hint here is reporting a bug. The
+    # report prints "clipboard hint: ..." only when the backend complains
+    # (BackendInfo.cpp), so an exact prefix is the difference between an
+    # assertion and decoration.
+    else:
+        assert not hints, f"the forced x11 reader complained on a live session: {hints}"
 
 
 def _install_arch(vm):

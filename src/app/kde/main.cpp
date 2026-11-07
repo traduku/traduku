@@ -105,6 +105,12 @@ BackendReport collectBackends(Settings *settings)
     auto cb = createClipboard(r.sessionType, {}, QGuiApplication::clipboard());
     r.clipboard = cb->backendName();
     r.clipboardHint = cb->diagnostic();
+    if (r.clipboardHint.isEmpty()) {
+        // A forced TRADUKU_CLIPBOARD that did not take effect is the one case
+        // where the chosen backend has nothing to complain about and the user
+        // still has a question.
+        r.clipboardHint = forcedBackendProblem(r.clipboard);
+    }
 
 #ifdef LT_HAVE_X11
     // Conditions, not a probe: starting the X listener would spawn a child

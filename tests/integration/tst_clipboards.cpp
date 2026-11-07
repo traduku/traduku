@@ -200,6 +200,17 @@ private slots:
         // owns the clipboard, XWayland only mirrors it.
         auto c6 = createClipboard(QStringLiteral("wayland"), both, qcb, r.runner(), haveX);
         QCOMPARE(c6->backendName(), QString("wl-clipboard"));
+
+        // The report decorates the session string it hands back
+        // ("wayland (qpa=offscreen)") to say what it actually measured. That
+        // must not be allowed to change the product: an exact comparison made
+        // a decorated wayland box lose wl-clipboard and read through X11.
+        auto c7 = createClipboard(QStringLiteral("wayland (qpa=offscreen)"), both, qcb,
+                                  r.runner(), haveX);
+        QCOMPARE(c7->backendName(), QString("wl-clipboard"));
+        auto c8 = createClipboard(QStringLiteral("wayland (no display here)"), none, qcb,
+                                  r.runner(), haveX);
+        QCOMPARE(c8->backendName(), QString("x11"));
     }
 
     void forcedBackendIsHonouredOnlyWhenItCanWork()
@@ -232,6 +243,65 @@ private slots:
                                      qcb, {}, haveX);
         QCOMPARE(forced->backendName(), QString("qt"));
         qunsetenv("TRADUKU_CLIPBOARD");
+    }
+
+    void aChosenBackendNeverBlamesSomethingThatIsFine()
+    {
+        // On ubuntu-gnome, TRADUKU_CLIPBOARD=qt printed "the wl-clipboard
+        // tools are not installed (sudo apt install wl-clipboard)" on a box
+        // where they are installed and working: the hint was attached to
+        // "we are on wayland and ended up in Qt", not to "the tools are
+        // missing". A diagnostic that sends the user to install what they
+        // already have is worse than silence.
+        auto *qcb = QGuiApplication::clipboard();
+        const auto noX = [] { return false; };
+        const auto haveX = [] { return true; };
+
+        qputenv("TRADUKU_CLIPBOARD", "qt");
+        auto forced = createClipboard(QStringLiteral("wayland"),
+                                      finderWith({"wl-paste", "wl-copy"}), qcb, {}, noX);
+        QCOMPARE(forced->backendName(), QString("qt"));
+        QVERIFY2(!forced->diagnostic().contains(QStringLiteral("not installed")),
+                 qPrintable(QStringLiteral("blamed a missing package that is there: ")
+                            + forced->diagnostic()));
+        // Same when the user opted out of a working X server.
+        auto forcedX = createClipboard(QStringLiteral("xcb"), finderWith({}), qcb, {}, haveX);
+        QCOMPARE(forcedX->backendName(), QString("qt"));
+        QVERIFY(forcedX->diagnostic().isEmpty());
+        qunsetenv("TRADUKU_CLIPBOARD");
+
+        // And the honest case still speaks: wayland, no tools, nothing to
+        // force - that is the one time "install wl-clipboard" is the truth.
+        auto blind = createClipboard(QStringLiteral("wayland"), finderWith({}), qcb, {}, noX);
+        QCOMPARE(blind->backendName(), QString("qt"));
+        QVERIFY(blind->diagnostic().contains(QStringLiteral("wl-clipboard")));
+    }
+
+    void aForcedBackendThatWasIgnoredSaysWhy()
+    {
+        // The knob exists so a user can separate "the reader is broken" from
+        // "the compositor is broken". Being ignored in silence destroys that:
+        // TRADUKU_CLIPBOARD=x11 on a machine where X is unreachable, or =wl
+        // where the tools are missing, has to come back with a reason, not
+        // with a different backend and a smile. Measured on ubuntu-gnome,
+        // where forcing x11 quietly returned wl-clipboard.
+        QCOMPARE(forcedBackendProblem(QStringLiteral("qt"), QStringLiteral("x11"), false,
+                                      QStringLiteral("Xlib: connection refused")),
+                 QStringLiteral("TRADUKU_CLIPBOARD=x11 could not be used: "
+                                "Xlib: connection refused"));
+        QCOMPARE(forcedBackendProblem(QStringLiteral("qt"), QStringLiteral("wl"), false,
+                                      QString()),
+                 QStringLiteral("TRADUKU_CLIPBOARD=wl could not be used: "
+                                "wl-paste/wl-copy are not installed or do not run"));
+        // honoured: nothing to report
+        QVERIFY(forcedBackendProblem(QStringLiteral("x11"), QStringLiteral("x11"), true,
+                                     QString()).isEmpty());
+        // no knob set: never a complaint
+        QVERIFY(forcedBackendProblem(QStringLiteral("qt"), QString(), false,
+                                     QStringLiteral("whatever")).isEmpty());
+        // An unusable reason we do not know the shape of must still be shown.
+        QVERIFY(forcedBackendProblem(QStringLiteral("qt"), QStringLiteral("x11"), false,
+                                     QString()).contains(QStringLiteral("no reason given")));
     }
 
     void waylandWithoutToolsAdvisesInstallingWlClipboard()
