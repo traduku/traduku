@@ -29,6 +29,42 @@ private slots:
     // interface. The shells must not share this decision blindly - Plasma asks
     // about autostart because nothing else does, GNOME must not ask because
     // the package already installed the entry.
+    void readyLineNamesWhatTheHarnessWaitsFor()
+    {
+        // The E2E harness used to wait `sleep 4` for "the app is probably up
+        // now": 4 s per test x 22 tests of pure waiting, and still flaky when
+        // a VM was loaded. The product already knows when it is ready, so it
+        // says so, and the harness waits for the sentence instead of a guess.
+        lt::ReadyInfo i;
+        i.shell = QStringLiteral("gnome");
+        i.session = QStringLiteral("wayland");
+        i.clipboard = QStringLiteral("x11");
+        i.hotkey = QStringLiteral("x11-record");
+        i.trayAvailable = true;
+        const QString line = lt::readyLine(i);
+        QVERIFY2(line.startsWith(QStringLiteral("traduku: ready")),
+                 qPrintable(QStringLiteral("got: ") + line));
+        QVERIFY(line.contains(QStringLiteral("gnome")));
+        QVERIFY(line.contains(QStringLiteral("wayland")));
+        QVERIFY(line.contains(QStringLiteral("clipboard=x11")));
+        QVERIFY(line.contains(QStringLiteral("hotkey=x11-record")));
+        QVERIFY(line.contains(QStringLiteral("tray=yes")));
+        // One line. The harness greps a single journal line; a wrapped or
+        // multi-line "ready" is invisible to it and the suite goes back to
+        // sleeping - quietly, because the wait would just time out.
+        QVERIFY2(!line.contains(QLatin1Char('\n')) && !line.contains(QLatin1Char('\r')),
+                 qPrintable(QStringLiteral("readyLine must be one line, got: ") + line));
+
+        // Tray-less is the normal GNOME case (no appindicator extension) and
+        // still has to be reported, not omitted: "no tray" and "the app is
+        // hung before the tray" have to stay distinguishable in the journal.
+        i.trayAvailable = false;
+        i.hotkey = QString();
+        const QString bare = lt::readyLine(i);
+        QVERIFY(bare.contains(QStringLiteral("tray=no")));
+        QVERIFY(bare.contains(QStringLiteral("hotkey=none")));
+    }
+
     void firstRunGuidanceDiffersByShellWithoutDivergingInCode()
     {
         const FirstRunPlan gnomeNoTray = planFirstRun(QStringLiteral("gnome"), false);

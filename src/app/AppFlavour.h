@@ -119,4 +119,51 @@ int runAutostartCommand(const QString &action);
  */
 QString desktopBaseName();
 
+/*!
+ * What the shell decided at startup, in the shape the journal line must have.
+ *
+ * The E2E harness used to wait for the app with `sleep 4` - four seconds of
+ * every test, on both desktops, and still red when a VM was loaded. The
+ * product knows exactly when it finished starting up, so it says so in one
+ * line and the harness waits for that sentence: faster, and a startup that
+ * hangs now fails with the reason instead of with an empty screenshot.
+ *
+ * Pure, so the format - a single line, `key=value` fields - is testable
+ * (tests/unit/tst_appflavour) rather than something the harness learns by
+ * timing out.
+ */
+struct ReadyInfo
+{
+    QString shell;              ///< "gnome" | "kde"
+    QString session;            ///< sessionType(), e.g. "wayland"
+    QString clipboard;          ///< IClipboard::backendName()
+    QString hotkey;             ///< IHotkeyBackend::backendName(), empty = none
+    bool trayAvailable = false;
+};
+
+/// "traduku: ready (gnome, wayland; clipboard=x11 hotkey=x11-record tray=yes)"
+QString readyLine(const ReadyInfo &info);
+
+/// qInfo() of readyLine(), split out so both shells log the same sentence.
+void logReady(const ReadyInfo &info);
+
+/*!
+ * What to tell the user when SingleInstance::start() refused.
+ *
+ * "Traduku is already running" is true for exactly one of start()'s failures -
+ * the bus name being owned. The shells used to print it for all of them, so a
+ * bus-less `traduku` (env -i, ssh, a broken session) told its user to go look
+ * for a copy that was never there. The reason comes from the object that
+ * knows it; the rule over which sentence to print lives here, once, so the two
+ * shells cannot disagree (tests/integration/tst_singleinstance.cpp).
+ */
+struct SingleInstanceVerdict
+{
+    QString message;   ///< what to print, with the reason that was measured
+    int exitCode = 0;  ///< 0 for a duplicate (nothing went wrong), 1 otherwise
+    bool duplicate = false;
+};
+
+SingleInstanceVerdict singleInstanceVerdict(const QString &errorText);
+
 } // namespace lt

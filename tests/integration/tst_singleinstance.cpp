@@ -3,6 +3,7 @@
 #include <QSignalSpy>
 
 #include "app/SingleInstance.h"
+#include "app/AppFlavour.h"
 #include "fakebus.h"
 
 using namespace lt;
@@ -71,6 +72,47 @@ private slots:
         QVERIFY(!dead.isConnected());
         QVERIFY(!s.start(dead));
         QVERIFY2(!s.errorText().isEmpty(), "the operator gets no reason");
+        // Measured, not styled: `env -i .../traduku` - how the harness and any
+        // user over ssh invokes the binary - answered "Traduku is already
+        // running (asked it to surface its window)" with nothing running, and
+        // exited 0. Both shells printed the duplicate sentence for every
+        // failure of start(), so a missing session bus was reported as a
+        // second copy the user should go and look for.
+        QVERIFY2(s.errorText().contains(QStringLiteral("no session bus")),
+                 qPrintable(s.errorText()));
+        QVERIFY2(!s.errorText().contains(QStringLiteral("already")),
+                 qPrintable(QStringLiteral("a bus-less start is not a duplicate: ")
+                            + s.errorText()));
+    }
+
+    void theShellMessageNamesTheReasonItRefusedToStart()
+    {
+        // The decision both shells print, in one shared function so neither
+        // drifts back to one sentence for every failure.
+        const QString owned =
+            QStringLiteral("dev.traduku.Traduku is already owned by a running Traduku");
+        const lt::SingleInstanceVerdict dup = lt::singleInstanceVerdict(owned);
+        QVERIFY2(dup.message.contains(QStringLiteral("already running")),
+                 "the duplicate case keeps the sentence users and e2e know");
+        QVERIFY2(dup.message.contains(QStringLiteral("surface")),
+                 "and it still promises the half that makes it true: the window came up");
+        QVERIFY2(dup.duplicate && dup.exitCode == 0,
+                 "a duplicate is not a failure: the user has a running Traduku");
+
+        const QString said = lt::singleInstanceVerdict(
+            QStringLiteral("no session bus: cannot guarantee a single instance")).message;
+        QVERIFY2(!said.contains(QStringLiteral("already running")),
+                 qPrintable(QStringLiteral("lied about a duplicate: ") + said));
+        QVERIFY2(said.contains(QStringLiteral("session bus")),
+                 qPrintable(QStringLiteral("did not pass the reason through: ") + said));
+
+        const lt::SingleInstanceVerdict otherV =
+            lt::singleInstanceVerdict(QStringLiteral("some other reason"));
+        const QString other = otherV.message;
+        QCOMPARE(otherV.exitCode, 1);
+        QVERIFY2(!otherV.duplicate, "an unknown failure is not a duplicate");
+        QVERIFY2(other.contains(QStringLiteral("some other reason")),
+                 qPrintable(QStringLiteral("dropped the reason: ") + other));
     }
 };
 

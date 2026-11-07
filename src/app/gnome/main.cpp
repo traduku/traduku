@@ -281,9 +281,15 @@ int main(int argc, char **argv)
     // controller exists. Kept next to instance.start() so the pair cannot be
     // separated by a future edit.
     if (!instance.start()) {
-        out << QStringLiteral("Traduku is already running (asked it to surface "
-                              "its window).\n");
-        return 0;
+        // Not one sentence for every failure. "Already running" is true only
+        // when the bus name is owned; a start that could not check (no session
+        // bus - `env -i traduku`, ssh, a broken user session) used to print
+        // exactly that and exit 0, sending the user to look for a copy that
+        // was never there. The verdict names the reason and the status.
+        const lt::SingleInstanceVerdict verdict = lt::singleInstanceVerdict(instance.errorText());
+        out << verdict.message;
+        out.flush();
+        return verdict.exitCode;
     }
 
     // A tray app that silently never reacts to Ctrl+C+C is worse than a
@@ -419,6 +425,18 @@ int main(int argc, char **argv)
     // No tray icon yet (Stage 5), so the window needs a way out.
     auto *quit = new QShortcut(QKeySequence(QStringLiteral("Ctrl+Q")), &window);
     QObject::connect(quit, &QShortcut::activated, app.get(), []() { qApp->quit(); });
+
+    // See kde/main.cpp: one sentence saying startup finished, waited for by
+    // the harness instead of a sleep. tray=no is the honest GNOME default
+    // (no appindicator extension), and it is printed as a fact rather than
+    // omitted, so "no tray" stays distinguishable from "hung before the tray".
+    lt::ReadyInfo ready;
+    ready.shell = QStringLiteral("gnome");
+    ready.session = sessionType();
+    ready.clipboard = clipboard->backendName();
+    ready.hotkey = gesture.chosen ? gesture.chosen->backendName() : QString();
+    ready.trayAvailable = tray.isAvailable();
+    lt::logReady(ready);
 
     out << QStringLiteral("Traduku is running (GNOME, %1 session): press "
                           "Ctrl+C twice to translate. Ctrl+Q quits.\n")

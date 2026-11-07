@@ -11,6 +11,7 @@
 
 #include <QByteArray>
 #include <QCoreApplication>
+#include <QDebug>
 #include <QStringList>
 #include <QTextStream>
 
@@ -158,6 +159,49 @@ int runAutostartCommand(const QString &action)
     }
     out << "autostart: " << autostart.diagnostic() << '\n';
     return 0;
+}
+
+QString readyLine(const ReadyInfo &info)
+{
+    // One line, key=value: the harness greps it (tests/e2e/grid.py
+    // wait_journal), and a line that wrapped would make the suite fall back to
+    // sleeping - invisibly, because a wait that never matches just times out.
+    // Every field names a backend the app chose, so the same line answers
+    // "which clipboard did it pick this time?" without --backend-info.
+    const QString hotkey = info.hotkey.isEmpty() ? QStringLiteral("none") : info.hotkey;
+    return QStringLiteral("traduku: ready (%1, %2; clipboard=%3 hotkey=%4 tray=%5)")
+        .arg(info.shell.isEmpty() ? QStringLiteral("unknown") : info.shell,
+             info.session.isEmpty() ? QStringLiteral("unknown") : info.session,
+             info.clipboard.isEmpty() ? QStringLiteral("none") : info.clipboard,
+             hotkey,
+             info.trayAvailable ? QStringLiteral("yes") : QStringLiteral("no"));
+}
+
+void logReady(const ReadyInfo &info)
+{
+    qInfo("%s", qUtf8Printable(readyLine(info)));
+}
+
+SingleInstanceVerdict singleInstanceVerdict(const QString &errorText)
+{
+    // One decision, both halves of it: the sentence AND whether that is a
+    // success. A duplicate is not a failure (the user asked for a running
+    // Traduku and has one); everything else means the app never came up and
+    // has to leave a non-zero status, or a script that starts traduku keeps
+    // believing it worked.
+    SingleInstanceVerdict verdict;
+    if (errorText.contains(QStringLiteral("already owned"))) {
+        verdict.duplicate = true;
+        verdict.exitCode = 0;
+        verdict.message = QStringLiteral("Traduku is already running (asked it to "
+                                        "surface its window).\n");
+        return verdict;
+    }
+    verdict.exitCode = 1;
+    verdict.message = QStringLiteral("Traduku did not start: %1\n")
+        .arg(errorText.isEmpty() ? QStringLiteral("single-instance check failed")
+                                : errorText);
+    return verdict;
 }
 
 } // namespace lt
