@@ -1,4 +1,5 @@
 #include <QtTest>
+#include <functional>
 #include <QSignalSpy>
 #include <QDir>
 #include <QLabel>
@@ -22,10 +23,22 @@ class MemClipboard : public IClipboard
 {
 public:
     QString text() const override { return m_text; }
-    bool setText(const QString &t) override { m_text = t; ++writes; return true; }
+    bool setText(const QString &t) override
+    {
+        m_text = t;
+        ++writes;
+        if (probe) {
+            m_activeAtWrite = probe();
+        }
+        return true;
+    }
     QString backendName() const override { return QStringLiteral("mem"); }
+    QString diagnostic() const override { return m_diagnostic; }
     int writes = 0;
     QString m_text;
+    QString m_diagnostic;          // what the backend wants the user to know
+    std::function<bool()> probe;   // e.g. "is the result window active?"
+    bool m_activeAtWrite = false;
 };
 
 class FakeNotifier : public INotifier
@@ -140,6 +153,21 @@ private slots:
         QVERIFY(!m_app->translating());
     }
 
+    void copyResultWritesFromActiveWindow()
+    {
+        // Wayland rejects clipboard writes (set_selection) from an app
+        // without keyboard focus. The controller must activate the result
+        // window before writing the translation, on every platform.
+        m_clip.probe = [this] { return m_window->isActiveWindow(); };
+        m_clip.m_text = QStringLiteral("activate me");
+        Q_EMIT m_hotkey->activated();
+        QTRY_COMPARE_WITH_TIMEOUT(m_clip.writes, 1, 10000);
+        QCOMPARE(m_clip.text(), QString("ACTIVATE ME"));
+        QVERIFY2(m_clip.m_activeAtWrite,
+                 "clipboard write happened while the window was inactive: "
+                 "Wayland compositors (kwin) drop set_selection silently");
+    }
+
     void typingRequeuesOnlyEditedLine()
     {
         m_clip.m_text = QStringLiteral("hello\nworld");
@@ -224,6 +252,21 @@ private slots:
     {
         Q_EMIT m_hotkey->activated();
         QVERIFY(m_notifier->messages.last().body.contains(QStringLiteral("empty")));
+        QCOMPARE(m_sounds.size(), 0);
+    }
+
+    void emptyClipboardAdvisesTheMissingTool()
+    {
+        // Measured on GNOME 50 (GNOME_PLAN.md §0b): a background wayland
+        // client receives no data offer, so "clipboard is empty" is a lie
+        // when the real cause is a missing wl-clipboard. A backend that
+        // knows it is blind carries the actionable hint, and the
+        // notification must show THAT, not the misleading default.
+        m_clip.m_text.clear();
+        m_clip.m_diagnostic = QStringLiteral("install wl-clipboard");
+        Q_EMIT m_hotkey->activated();
+        QVERIFY2(m_notifier->messages.last().body.contains(QStringLiteral("wl-clipboard")),
+                 qPrintable(m_notifier->messages.last().body));
         QCOMPARE(m_sounds.size(), 0);
     }
 };

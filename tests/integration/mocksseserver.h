@@ -62,6 +62,27 @@ public:
     /// model behaviour -> alignment must fail -> chunk fallback).
     void setEchoSquash(bool on) { m_squash = on; }
 
+    /// One server object is shared by every slot of a test class, so slots
+    /// must not inherit each other's behaviour.
+    void reset()
+    {
+        m_echo = false;
+        m_squash = false;
+        m_truncateFirst = 0;
+        m_failNext = 0;
+        m_status = 200;
+        m_bodyParts.clear();
+        m_requests.clear();
+    }
+
+    /// Answer the next `n` requests with `status` and a JSON error body -
+    /// a strict gateway rejecting options it does not know.
+    void setFailNextRequests(int n, int status = 400)
+    {
+        m_failNext = n;
+        m_failStatus = status;
+    }
+
     int requestCount() const { return m_requests.size(); }
 
     QList<QByteArray> m_requests;   // full request bytewise, in arrival order
@@ -97,6 +118,11 @@ protected:
             m_requests.append(m_pending);
             const QByteArray req = m_pending;
             m_pending.clear();
+            if (m_failNext > 0) {
+                --m_failNext;
+                respondError(sock, m_failStatus);
+                return;
+            }
             if (m_echo) {
                 respondEcho(sock, req, m_requests.size() + 1);
             } else {
@@ -106,6 +132,19 @@ protected:
     }
 
 private:
+    void respondError(QTcpSocket *sock, int status)
+    {
+        const QByteArray body = "{\"error\":{\"message\":\"Unrecognized request argument\"}}";
+        sock->write(QStringLiteral("HTTP/1.1 %1 REJECTED\r\n"
+                                  "Content-Type: application/json\r\n"
+                                  "Content-Length: %2\r\n"
+                                  "Connection: close\r\n\r\n")
+                         .arg(status).arg(body.size()).toUtf8());
+        sock->write(body);
+        sock->flush();
+        sock->disconnectFromHost();
+    }
+
     void respond(QTcpSocket *sock)
     {
         QByteArray head = QStringLiteral("HTTP/1.1 %1 MOCK\r\n"
@@ -163,6 +202,8 @@ private:
 
     bool m_echo = false;
     int m_truncateFirst = 0;
+    int m_failNext = 0;
+    int m_failStatus = 400;
     bool m_squash = false;
     int m_status = 200;
     QList<QByteArray> m_bodyParts;

@@ -5,6 +5,7 @@
 
 #include "app/AppController.h"
 #include "app/SelfTest.h"
+#include "app/TrayChoice.h"
 #include "core/llmstreamclient.h"
 #include "core/settings.h"
 #include "core/shortcutmonitor.h"
@@ -15,6 +16,7 @@
 #include "platform/kde/KdeNotifier.h"
 #include "platform/kde/KdeTray.h"
 #include "platform/qt/QtClipboard.h"
+#include "platform/qt/QtTray.h"
 #include "platform/qt/XdgAutostart.h"
 #include "platform/wl/ClipboardFactory.h"
 #include "ui/SettingsDialog.h"
@@ -38,11 +40,31 @@
 
 using namespace lt;
 
+namespace {
+
+/// The tray the shell shows is configuration, not code (GNOME_PLAN.md D3 and
+/// Stage 6b): LT_TRAY sets the build default, TRADUKU_TRAY overrides it per
+/// run, so comparing KStatusNotifierItem against QSystemTrayIcon in a live
+/// Plasma session is one command and not a rebuild. Both speak ITray, so this
+/// is the only place that knows the two classes exist.
+ITray *createTray(const QString &kind, Settings *settings, IAutostart *autostart)
+{
+    if (kind == QLatin1String("qt")) {
+        return new QtTray(settings, autostart);
+    }
+    return new KdeTray(settings, autostart);
+}
+
+} // namespace
+
 int main(int argc, char **argv)
 {
     QApplication app(argc, argv);
     QApplication::setApplicationName(QStringLiteral("traduku"));
     QApplication::setApplicationDisplayName(QStringLiteral("Traduku"));
+    // Without this, --version printed a name and no number - half of "which
+    // build is in my panel?" (the GNOME shell has set it since Stage 1).
+    QApplication::setApplicationVersion(QStringLiteral(LT_VERSION));
     QApplication::setQuitOnLastWindowClosed(false);   // tray-only app
 
     QCommandLineParser parser;
@@ -133,7 +155,27 @@ int main(int argc, char **argv)
     ChunkedTranslator pipeline(&settings);
     AppController controller({&settings, clipboard.get(), &notifier, &sound,
                               &window, &pipeline});
-    KdeTray tray(&settings, &autostart);
+    // Deliberately never deleted: destroying a KStatusNotifierItem while the
+    // session bus is alive segfaults (measured on KF6 6.31: `delete menu;
+    // delete item` and the reverse order both crash, deleteLater does not). The
+    // tray used to be a stack object here, which meant that quitting the KDE
+    // app crashed on exit - tests/unit/tst_trayparity.cpp is what caught it.
+    const TrayChoice trayChoice = resolveTrayKind(
+        QLatin1String(LT_TRAY_DEFAULT), qEnvironmentVariable("TRADUKU_TRAY"));
+    if (!trayChoice.warning.isEmpty()) {
+        qWarning("traduku: %s", qUtf8Printable(trayChoice.warning));
+    }
+    qInfo("traduku: tray: %s [%s]",
+          qUtf8Printable(trayDisplayName(trayChoice.kind)),
+          qUtf8Printable(trayChoice.source));
+    ITray *tray = createTray(trayChoice.kind, &settings, &autostart);
+    // Say which build and which tray this is, in the panel itself: during the
+    // Stage 6b comparison a Start-Menu relaunch quietly restarted the
+    // *installed* binary and nothing on screen could tell them apart.
+    tray->setStatusLabel(QStringLiteral("Traduku %1 · tray %2 [%3]")
+                             .arg(QCoreApplication::applicationVersion(),
+                                  trayChoice.kind, trayChoice.source));
+    tray->show();
 
     // Hotkeys: passive X11/XWayland monitor first (needs no permission,
     // grabs nothing); Plasma global shortcut as fallback.
@@ -150,20 +192,22 @@ int main(int argc, char **argv)
         auto *shortcut = new KdeGlobalShortcut(&app);
         monitor = new ShortcutMonitor(shortcut, &settings, &app);
         monitor->start();
-        tray.setToolTipSub(QStringLiteral("Global shortcut: %1 (press twice)")
+        tray->setToolTipSub(QStringLiteral("Global shortcut: %1 (press twice)")
                                .arg(settings.globalShortcut()));
     }
 
     controller.setHotkey(monitor ? static_cast<IHotkeyBackend *>(monitor)
                                  : hotkey.get());
-    QObject::connect(&tray, &KdeTray::translateRequested,
+    QObject::connect(tray, &ITray::translateRequested,
                      &controller, &AppController::translateNow);
+    QObject::connect(tray, &ITray::quitRequested, &app,
+                     [&]() { app.quit(); });   // trays only ask, the shell leaves
     QObject::connect(&controller, &AppController::settingsRequested, &app,
                      [&]() {
                          SettingsDialog dlg(&settings);
                          dlg.exec();
                      });
-    QObject::connect(&tray, &KdeTray::settingsRequested, &app, [&]() {
+    QObject::connect(tray, &ITray::settingsRequested, &app, [&]() {
         SettingsDialog dlg(&settings);
         dlg.exec();
     });

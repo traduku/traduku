@@ -83,3 +83,75 @@ lt_add_test(tst_chunkedtranslator
 
 # M16: chunk aligner (whole-text result -> per-chunk mapping)
 lt_add_test(tst_aligner SOURCES unit/tst_aligner.cpp LIBS lt::core)
+
+# G1 (GNOME plan, Stage 1): shared CLI parsing - both shells use it, so it
+# is tested instead of duplicated per shell.
+lt_add_test(tst_cli SOURCES unit/tst_cli.cpp LIBS lt::app Qt6::Core)
+target_include_directories(tst_cli PRIVATE ${CMAKE_SOURCE_DIR}/src)
+
+# G1: --backend-info rendering (the operator's "why is nothing happening"
+# output; tests/e2e greps these lines).
+lt_add_test(tst_backendinfo SOURCES unit/tst_backendinfo.cpp LIBS lt::app)
+target_include_directories(tst_backendinfo PRIVATE ${CMAKE_SOURCE_DIR}/src)
+
+# G1: one-shot `traduku --translate` (the mode scripts and e2e use)
+lt_add_test(tst_oneshot SOURCES integration/tst_oneshot.cpp
+    integration/mocksseserver.h
+    LIBS lt::app lt::core Qt6::Network)
+target_include_directories(tst_oneshot PRIVATE integration ${CMAKE_SOURCE_DIR}/src)
+
+# GNOME shell tray: QSystemTrayIcon with the KDE tray's behaviour (D3)
+lt_add_test(tst_qttray SOURCES unit/tst_qttray.cpp
+    LIBS lt::platform_qt lt::core Qt6::Widgets Qt6::DBus)
+target_include_directories(tst_qttray PRIVATE ${CMAKE_SOURCE_DIR}/src)
+
+# Stage 6b: the KDE and Qt trays must stay interchangeable until KdeTray is
+# deleted - same interface, same menu, same intents. Links KF6, so it is
+# configured only when the KDE layer is.
+if(TARGET lt::platform_kde)
+    lt_add_test(tst_trayparity SOURCES unit/tst_trayparity.cpp
+        LIBS lt::platform_kde lt::platform_qt lt::core Qt6::Widgets Qt6::DBus)
+    target_include_directories(tst_trayparity PRIVATE ${CMAKE_SOURCE_DIR}/src)
+endif()
+
+# LT_TRAY (build default) vs TRADUKU_TRAY (per-run override for the Stage 6b
+# comparison): pure, so the choice is tested rather than trusted.
+lt_add_test(tst_traychoice SOURCES unit/tst_traychoice.cpp LIBS lt::app lt::core)
+target_include_directories(tst_traychoice PRIVATE ${CMAKE_SOURCE_DIR}/src)
+
+# The switch itself is a build-time guarantee: a typo must fail at configure.
+add_test(NAME cmake_lt_tray_option
+         COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/cmake/test_lt_tray_option.sh
+                 ${CMAKE_SOURCE_DIR} ${CMAKE_CURRENT_BINARY_DIR}/cmake-scratch)
+set_tests_properties(cmake_lt_tray_option PROPERTIES TIMEOUT 180)
+
+# selftest --live must use the config file it was handed (--config), not the
+# user's default path
+lt_add_test(tst_selftest SOURCES integration/tst_selftest.cpp
+    integration/mocksseserver.h ../src/app/SelfTest.h
+    LIBS lt::app lt::core lt::ui Qt6::Network Qt6::Widgets)
+target_include_directories(tst_selftest PRIVATE integration ${CMAKE_SOURCE_DIR}/src)
+
+# G1: session detection (QPA plugin name is not the session; offscreen CI
+# must still see wayland/x11 so backends are picked correctly)
+lt_add_test(tst_sessioninfo SOURCES unit/tst_sessioninfo.cpp LIBS lt::platform_qt)
+
+# G2: FDO notifications (GNOME ships no KNotification; org.freedesktop.
+# Notifications is what the shell actually shows). Tests own a private bus
+# (fakebus.h) because the desktop already owns the well-known name.
+lt_add_test(tst_fdonotifier SOURCES integration/tst_fdonotifier.cpp
+    integration/fakebus.h
+    LIBS lt::platform_fdo lt::interfaces Qt6::DBus)
+target_include_directories(tst_fdonotifier PRIVATE integration)
+
+# G2: single instance (D5) - session-bus name as the ownership token plus a
+# QLocalServer activation channel
+lt_add_test(tst_singleinstance SOURCES integration/tst_singleinstance.cpp
+    integration/fakebus.h
+    LIBS lt::app Qt6::DBus)
+target_include_directories(tst_singleinstance PRIVATE integration)
+
+# G3: /dev/input gesture backend (D1) - fake DeviceFinder + raw input_event
+# bytes, so no /dev access and no uaccess rule is needed to test it
+lt_add_test(tst_evdevhotkey SOURCES unit/tst_evdevhotkey.cpp
+    LIBS lt::platform_evdev lt::core lt::interfaces Qt6::Core)
