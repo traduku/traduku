@@ -78,7 +78,7 @@ case "$VM" in
     done
     # rc was once swallowed by '| tail -3': a lock-blocked pacman left the
     # VM uninstalled and the suite ran 8-red on a phantom product.
-    Q "echo vm | sudo -S pacman -U --noconfirm ~/${PKGNAME}-${VER}-1-x86_64.pkg.tar.zst >/tmp/pacman-install.log 2>&1 || true; tail -3 /tmp/pacman-install.log; pacman -Q ${PKGNAME}-${VER}"
+    Q "echo vm | sudo -S pacman -U --noconfirm ~/${PKGNAME}-${VER}-1-x86_64.pkg.tar.zst >/tmp/pacman-install.log 2>&1 || true; tail -3 /tmp/pacman-install.log; pacman -Q ${PKGNAME} >/dev/null && pacman -Qi ${PKGNAME} | grep -E \"^(Version|Name)\" || { echo "FAIL: ${PKGNAME} is not installed on $VM" >&2; exit 1; }"
     verify_flavour
     ;;
   *-kde|*-gnome)

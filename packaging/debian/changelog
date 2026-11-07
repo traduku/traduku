@@ -1,26 +1,48 @@
+traduku (0.3.0-1) unstable; urgency=medium
+
+  * GNOME shell: the app now runs on GNOME/Wayland without any KF6 - the
+    gesture reads /dev/input (no keyboard grab, works under Wayland), the
+    clipboard is wl-clipboard, notifications go over the freedesktop D-Bus
+    service, the tray is Qt's own StatusNotifierItem client.
+  * One tray for both desktops. KdeTray (KF6 KStatusNotifierItem) is removed:
+    the Qt tray reproduces its menu entry for entry in Plasma, and KF6's item
+    segfaulted when destroyed with a live session bus - which is what tray ->
+    Quit did in 0.2 (the KDE application crashed on exit).
+  * Packaging is now two flavours from one source: traduku (Plasma, KF6) and
+    traduku-gnome (GNOME, no KF6, wl-clipboard as a hard dependency, and the
+    udev uaccess rule the /dev/input gesture needs to get an ACL - no user is
+    added to the input group). The previous .deb built the Plasma shell on
+    every distribution, so the GNOME shell could not be installed at all.
+  * API failures are reported in words: a server that is not running, a wrong
+    key (401/403), a wrong URL or model (404), a dead gateway (5xx), an HTML
+    page answering where JSON was expected, and a 200 that carried no text
+    each say what to check and name the endpoint. They used to come out as
+    "HTTP status 0" or "the model returned an empty translation".
+  * Reasoning models no longer stall the translation: known "think less"
+    request options are sent by default (DisableReasoning, ReasoningOffOptions),
+    ExtraOptions merges arbitrary server-specific fields, and a gateway that
+    rejects unknown fields costs a retry, not the translation.
+  * Configuration can be pointed at another endpoint for one run: --config
+    <path> and $TRADUKU_CONFIG, without moving the file out of
+    ~/.config/traduku/config.ini.
+  * Clipboard failure is actionable: on Wayland without wl-clipboard the app
+    names the missing package instead of reporting an empty clipboard.
+  * Clipboard translation works from a background process on Wayland
+    (wl-paste), which Qt's QClipboard cannot do.
+
+ -- Traduku contributors <dev@localhost>  Sat, 07 Nov 2026 11:00:00 +0100
+
 traduku (0.2) unstable; urgency=medium
 
   * Renamed project: llm-translate -> Traduku (binary `traduku`, config
-    ~/.config/traduku/config.ini, autostart entry, DBus name
+    ~/.config/traduku/config.ini, autostart entry, D-Bus name
     dev.traduku.Traduku). No migration code: pre-release, no users to move.
-
- -- Traduku contributors <dev@localhost>  Mon, 02 Nov 2026 12:00:00 +0300
-
-traduku (0.2.0-1) unstable; urgency=medium
-
-  * Version synced with CMakeLists VERSION (single source of truth, 0.2.0).
+  * Version kept in one place: CMakeLists VERSION is the source of truth and
+    the changelog follows it.
   * Build-Depends: accept Ubuntu's Qt6 Core5Compat package name
     (qt6-5compat-dev) as an alternative to Debian's (libqt6core5compat6-dev).
 
- -- Traduku contributors <dev@localhost>  Sun, 02 Nov 2025 12:00:00 +0300
-
-traduku (0.2) unstable; urgency=medium
-
-  * Renamed project: llm-translate -> Traduku (binary `traduku`, config
-    ~/.config/traduku/config.ini with automatic migration from the old
-    location, autostart entry migrated, DBus name org.kde.traduku).
-
- -- Traduku contributors <dev@localhost>  Mon, 02 Nov 2026 12:00:00 +0300
+ -- Traduku contributors <dev@localhost>  Mon, 02 Nov 2026 12:00:00 +0100
 
 traduku (0.1) unstable; urgency=medium
 
@@ -28,4 +50,4 @@ traduku (0.1) unstable; urgency=medium
     interactive window, incremental retranslation, sounds, tray,
     first-run guided setup (autostart question + settings dialog).
 
- -- Traduku contributors <dev@localhost>  Mon, 01 Nov 2026 12:00:00 +0300
+ -- Traduku contributors <dev@localhost>  Sun, 01 Nov 2026 12:00:00 +0100

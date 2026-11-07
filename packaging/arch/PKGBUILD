@@ -13,7 +13,7 @@
 # `ldd /usr/bin/traduku` on a GNOME install must show no KF6.
 pkgbase=traduku
 pkgname=(traduku traduku-gnome)
-pkgver=0.2
+pkgver=0.3.0
 pkgrel=1
 pkgdesc='Clipboard translator powered by any OpenAI-compatible LLM (streaming)'
 arch=('x86_64')

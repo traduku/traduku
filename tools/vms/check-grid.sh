@@ -19,7 +19,22 @@ chk() { local d=$1; shift; if $S "$@" >/dev/null 2>&1; then echo "  ok: $d"; els
 echo "== $VM"
 for i in $(seq 1 30); do $S true 2>/dev/null && break; sleep 10; done
 chk "ssh reachable" true
-chk "cloud-init done" "cloud-init status | grep -q done"
+# cloud-init only exists on the cloud-image distros; the Arch base is built by
+# mkarchbase.sh with no cloud-init at all, so asserting it there was a check
+# that could only ever be red - and a permanently red line is how a gate stops
+# being read. On Arch the equivalent of "the guest finished booting" is that
+# systemd is done and nothing failed.
+case "$VM" in
+  arch-*)
+    # no --wait: it turns the check into a blocking job-wait, and a guest that
+    # is still settling returned nothing at all (a red with no information).
+    chk "systemd settled" "systemctl is-system-running | grep -EqE '^(run|degrad)'"
+    chk "no failed units" "! systemctl --failed --no-legend --no-pager | grep -q ."
+    ;;
+  *)
+    chk "cloud-init done" "cloud-init status | grep -q done"
+    ;;
+esac
 chk "graphical session active on seat0" "loginctl list-sessions --no-legend | grep seat0 | grep -q 'tty[12]'"
 chk "DE shell running" "pgrep -x gnome-shell || pgrep -x kwin_wayland || pgrep -x kwin_x11"
 chk "autologined user=vm" "who | grep -q 'vm '"

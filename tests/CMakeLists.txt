@@ -124,6 +124,12 @@ target_include_directories(tst_traychoice PRIVATE ${CMAKE_SOURCE_DIR}/src)
 add_test(NAME cmake_lt_tray_option
          COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/cmake/test_lt_tray_option.sh
                  ${CMAKE_SOURCE_DIR} ${CMAKE_CURRENT_BINARY_DIR}/cmake-scratch)
+
+add_test(NAME versions_agree
+         COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/cmake/test_versions_agree.sh
+                 ${CMAKE_SOURCE_DIR})
+set_tests_properties(versions_agree PROPERTIES
+    ENVIRONMENT "PATH=$ENV{PATH}")
 set_tests_properties(cmake_lt_tray_option PROPERTIES TIMEOUT 180)
 
 # selftest --live must use the config file it was handed (--config), not the

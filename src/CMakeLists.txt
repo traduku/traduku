@@ -8,11 +8,6 @@ add_subdirectory(platform/wl)
 add_subdirectory(platform/fdo)
 add_subdirectory(platform/evdev)
 
-if(LT_BUILD_X11)
-    pkg_check_modules(X11 REQUIRED IMPORTED_TARGET x11 xtst xi)
-    add_subdirectory(platform/x11)
-endif()
-
 # ---- which DE shell builds the `traduku` executable (GNOME_PLAN.md D5) ---
 # KF6 is probed first (QUIET, never fatal here), then LT_SHELL decides.
 set(LT_KDE_AVAILABLE FALSE)
@@ -47,6 +42,11 @@ else() # auto: keep the historical behaviour - KDE when KF6 is present
     else()
         set(LT_SHELL_EFFECTIVE "gnome")
     endif()
+endif()
+
+if(LT_BUILD_X11)
+    pkg_check_modules(X11 REQUIRED IMPORTED_TARGET x11 xtst xi)
+    add_subdirectory(platform/x11)
 endif()
 
 if(LT_SHELL_EFFECTIVE STREQUAL "kde")
