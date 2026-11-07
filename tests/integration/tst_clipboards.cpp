@@ -128,6 +128,62 @@ private slots:
                  (QStringList{"-n", "-t", QStringLiteral("text/plain")}));
     }
 
+    void anOfferListThatIsNonsenseStillReadsTheData()
+    {
+        // Measured on ubuntu-kde, where Klipper owns the clipboard:
+        //   wl-paste -l -> "jMIHoY"
+        //   wl-paste    -> "READ PATH PROBE 4242"
+        // The offer list is another program's claim about itself; the data is
+        // the fact. The reader stopped at "no text type was offered" and
+        // reported an empty clipboard over a clipboard the user had just
+        // copied from, so every gesture on that desktop did nothing but notify
+        // "Clipboard is empty." - three red e2e tests and a user who would
+        // conclude the hotkey is broken.
+        FakeRunner r;
+        // Two calls, not three: the offer list names nothing usable, so the
+        // plan is the untyped read only.
+        r.responses << QByteArray("jMIHoY\n") << QByteArray("READ PATH PROBE 4242");
+        WlClipboard cb(r.runner(), finderWith({"wl-paste", "wl-copy"}));
+        QCOMPARE(cb.text(), QString("READ PATH PROBE 4242"));
+        QCOMPARE(r.calls.at(0).second, QStringList({QStringLiteral("-n"), QStringLiteral("-l")}));
+        // The untyped read is the LAST resort, not the first: a real source
+        // offers MIME types and their charset is what decodeWithCharset needs.
+        QCOMPARE(r.calls.last().second, QStringList({QStringLiteral("-n")}));
+    }
+
+    void anOfferedTypeIsStillAskedForFirst()
+    {
+        FakeRunner r;
+        r.responses << QByteArray("text/plain;charset=utf-8\n") << QByteArray("hello");
+        WlClipboard cb(r.runner(), finderWith({"wl-paste", "wl-copy"}));
+        QCOMPARE(cb.text(), QString("hello"));
+        QCOMPARE(r.calls.at(1).second,
+                 QStringList({QStringLiteral("-n"), QStringLiteral("-t"),
+                              QStringLiteral("text/plain;charset=utf-8")}));
+        QCOMPARE(r.calls.size(), 2);            // the data came back; no retry
+    }
+
+    void nothingOnTheClipboardStaysEmpty()
+    {
+        // Negative control for the fallback above: "we tried harder" must not
+        // turn into "we invented something".
+        FakeRunner r;
+        r.responses << QByteArray("jMIHoY\n") << QByteArray();
+        WlClipboard cb(r.runner(), finderWith({"wl-paste", "wl-copy"}));
+        QVERIFY(cb.text().isEmpty());
+        QCOMPARE(r.calls.size(), 2);   // it really did ask the second way
+    }
+
+    void readTypesPutThePlainReadLast()
+    {
+        // The order is the whole rule, so it is asserted as a table.
+        QCOMPARE(WlClipboard::readTypes({QStringLiteral("jMIHoY")}),
+                 (QStringList{QString()}));
+        QCOMPARE(WlClipboard::readTypes({QStringLiteral("text/plain;charset=utf-8")}),
+                 (QStringList{QStringLiteral("text/plain;charset=utf-8"), QString()}));
+        QCOMPARE(WlClipboard::readTypes({}), (QStringList{QString()}));
+    }
+
     void wlWriteSendsTextOnStdin()
     {
         FakeRunner r;
