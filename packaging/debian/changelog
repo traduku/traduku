@@ -1,3 +1,11 @@
+traduku (0.2) unstable; urgency=medium
+
+  * Renamed project: llm-translate -> Traduku (binary `traduku`, config
+    ~/.config/traduku/config.ini, autostart entry, DBus name
+    dev.traduku.Traduku). No migration code: pre-release, no users to move.
+
+ -- Traduku contributors <dev@localhost>  Mon, 02 Nov 2026 12:00:00 +0300
+
 traduku (0.2.0-1) unstable; urgency=medium
 
   * Version synced with CMakeLists VERSION (single source of truth, 0.2.0).
