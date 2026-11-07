@@ -3,6 +3,7 @@
 #include <QSignalSpy>
 #include <QDir>
 #include <QLabel>
+#include <QRegularExpression>
 #include <QTextEdit>
 
 #include "app/AppController.h"
@@ -88,6 +89,26 @@ class TestAppController : public QObject
     FakeHotkey *m_hotkey;
     AppController *m_app;
     int m_n = 0;
+    QtMessageHandler m_prevHandler = nullptr;
+
+    // qInfo capture: the app's own journal lines are an observable product
+    // surface (start_app runs the binary as a user unit, so they land in
+    // `journalctl --user` and the e2e greps them there).
+    static QStringList s_log;
+    static void capture(QtMsgType, const QMessageLogContext &, const QString &m)
+    {
+        s_log.append(m);
+    }
+
+    QString logLine(const QString &needle) const
+    {
+        for (const QString &l : s_log) {
+            if (l.contains(needle)) {
+                return l;
+            }
+        }
+        return QString();
+    }
 
     void assemble()
     {
@@ -135,10 +156,42 @@ private slots:
     void init()
     {
         m_sounds.clear();
+        s_log.clear();
+        m_prevHandler = qInstallMessageHandler(&TestAppController::capture);
         m_clip = MemClipboard{};
         assemble();
     }
-    void cleanup() { delete m_app; delete m_window; }
+    void cleanup()
+    {
+        qInstallMessageHandler(m_prevHandler);
+        delete m_app;
+        delete m_window;
+    }
+
+    void gestureLogsTheWindowItMapped()
+    {
+        // The e2e (tests/e2e/test_06) asks "did the window actually come
+        // up?". On Plasma it could ask KWin's scripting API; on GNOME there
+        // is no such API and a Wayland client may not enumerate another
+        // client's windows at all. So the app has to say it out loud, with
+        // the size it mapped: pixels (QMP screendump) + this line are the
+        // DE-independent pair the grid asserts on.
+        m_clip.m_text = QStringLiteral("show yourself");
+        Q_EMIT m_hotkey->activated();
+        QTRY_VERIFY_WITH_TIMEOUT(logLine(QStringLiteral("window shown")).size() > 0,
+                                 10000);
+        const QString line = logLine(QStringLiteral("window shown"));
+        const QRegularExpression re(
+            QStringLiteral("window shown \"([^\"]*)\" (\\d+)x(\\d+)"));
+        const QRegularExpressionMatch m = re.match(line);
+        QVERIFY2(m.hasMatch(), qPrintable(QStringLiteral("no title/WxH in: ") + line));
+        // The claim must be about the window the app actually has, not a
+        // literal it prints regardless of what it shows.
+        QCOMPARE(m.captured(1), m_window->windowTitle());
+        QCOMPARE(m.captured(2).toInt(), m_window->width());
+        QCOMPARE(m.captured(3).toInt(), m_window->height());
+        QVERIFY(m_window->isVisible());
+    }
 
     void gestureRunsDocument()
     {
@@ -270,6 +323,8 @@ private slots:
         QCOMPARE(m_sounds.size(), 0);
     }
 };
+
+QStringList TestAppController::s_log;
 
 QTEST_MAIN(TestAppController)
 #include "tst_appcontroller.moc"

@@ -2,6 +2,7 @@
 
 #include "core/languages.h"
 
+#include <QDebug>
 #include <QComboBox>
 #include <QGridLayout>
 #include <QHBoxLayout>
@@ -179,6 +180,16 @@ void TranslatorWindow::showForeground()
     showNormal();
     raise();
     activateWindow();
+    // The app's own witness that a window came up, with its title and the
+    // size it mapped. On Plasma the grid could ask KWin's scripting API for
+    // its window list; on GNOME there is no such API and a Wayland client may
+    // not enumerate another client's windows at all, so this journal line
+    // (the app runs as a user unit -> journalctl --user) plus a QMP
+    // framebuffer diff is the DE-independent pair tests/e2e/test_06_window.py
+    // asserts on. The title is part of the line for the same reason it is in
+    // the KWin/xdotool answers: the witness must say *which* window it saw.
+    qInfo("traduku: window shown \"%s\" %dx%d", qUtf8Printable(windowTitle()),
+          width(), height());
 }
 
 } // namespace lt
