@@ -609,3 +609,22 @@ GNOME-порталы, на Plasma инжектить нечем; `distrobox` —
 режиму нужен экран, а Qt не может его взять → понятная фраза и rc 2, а не abort.
 Консольные режимы не отказываются (это именно то, что запускают, когда desktop
 сломан), а `QT_QPA_PLATFORM` пользователя считается ответом на вопрос.
+
+Про сам гейт. Первая его версия состояла из двух вызовов `verify_installed` без
+определения: пакет правок сорвался на дубликате, а второй заход содержал только
+вызовы, и `command not found` утонул в выводе docker-сборки. Поэтому гейт
+проверяется отрицательным контролем, иначе это украшение:
+
+```
+$ ARGV=.cache/vm-deb/traduku_0.3.0-1_amd64.deb <гейт> debian-gnome   # чужой вкус
+FAIL: debian-gnome does not run the artifact this run produced (…traduku_0.3.0-1_amd64.deb):
+  traduku: the package ships 95603ae132a5…, the guest runs 378967356764…
+  traduku-record-keys: the package ships 7e39b06e4c3e…, the guest runs b6820a92edc6…
+  the install did not take effect - fix that before trusting any gate below
+rc=1
+```
+
+Второй укус: `ar p pkg.deb data.tar.xz | tar -x` падает (`Archive is compressed.
+Use -J option`) — tar не определяет сжатие на stdin, а в `data.tar` его носит сам
+член архива: на debian 13 это `.xz`. Степени свободы у отпечатка кэша тоже не
+должно быть: `.fingerprint` теперь `.fingerprint.<pkgname>`.

@@ -57,6 +57,65 @@ wait_for_ssh() {
 }
 wait_for_ssh
 
+# Prove the binary in the guest IS the artifact this run shipped, byte for byte.
+#
+# `pacman -Q` and `dpkg -l` only ever proved that *a* package of that name is
+# installed. A refused signature, a blocked dpkg lock, a package cache that hit
+# when it should have missed - all of them leave the PREVIOUS binary in place,
+# every gate below stays green, and the suite tests code nobody built. Measured
+# on debian-gnome: the installed traduku-gnome predated `--autostart` entirely,
+# so the suite asked a binary built before the option existed whether it had the
+# option, and got "unknown option" while the gates reported a clean install.
+#
+# The artifact is unpacked on the host - the very file a user downloads - and
+# every /usr/bin entry is compared against the guest's copy.
+verify_installed() {
+  local art=$1 tmp bindir f want have bad=""
+  [ -f "$art" ] || { echo "FAIL: nothing to verify against: $art" >&2; exit 1; }
+  tmp=$(mktemp -d)
+  case "$art" in
+    *.deb)
+      local data
+      data=$(ar t "$art" | grep '^data\.tar' | head -1)
+      [ -n "$data" ] || { echo "FAIL: $art has no data.tar member" >&2; rm -rf "$tmp"; exit 1; }
+      # The member carries its own compression (data.tar.xz on debian 13,
+      # data.tar.gz elsewhere) and tar cannot sniff it from a pipe: "Archive is
+      # compressed. Use -J option" was the first attempt, and a gate that dies
+      # is worse than no gate - it stops the run without naming the product.
+      ar p "$art" "$data" | case "$data" in
+        *.xz)  tar -xJ -C "$tmp" ;;
+        *.gz)  tar -xz -C "$tmp" ;;
+        *.zst) tar --zstd -xf - -C "$tmp" ;;
+        *)     tar -xf - -C "$tmp" ;;
+      esac
+      ;;
+    *) tar -xf "$art" -C "$tmp" ;;
+  esac
+  bindir=$(find "$tmp" -type d -path '*usr/bin' | head -1)
+  if [ -z "$bindir" ] || [ -z "$(ls -A "$bindir" 2>/dev/null)" ]; then
+    echo "FAIL: $art ships nothing under /usr/bin to verify" >&2; rm -rf "$tmp"; exit 1
+  fi
+  for f in $(ls "$bindir"); do
+    want=$(sha256sum "$bindir/$f" | cut -d' ' -f1)
+    have=$(Q "sha256sum /usr/bin/$f 2>/dev/null | cut -d' ' -f1" | tr -dc 'a-f0-9')
+    if [ -z "$have" ]; then
+      bad="$bad
+  $f: the package ships ${want:0:12}…, the guest has no such file"
+    elif [ "$have" != "$want" ]; then
+      bad="$bad
+  $f: the package ships ${want:0:12}…, the guest runs ${have:0:12}…"
+    fi
+  done
+  rm -rf "$tmp"
+  if [ -n "$bad" ]; then
+    echo "FAIL: $VM does not run the artifact this run produced ($art):" >&2
+    printf '%b\n' "$bad" >&2
+    echo "  the install did not take effect - fix that before trusting any gate below" >&2
+    exit 1
+  fi
+  echo "== verified: /usr/bin in $VM is byte-identical to $(basename "$art")"
+}
+
 # Assert that the binary in the guest is the flavour the profile promises.
 # `ldd` is the witness: the GNOME shell is configured with no KF6 in the
 # link line at all, so a KF6-dependent binary on a gnome guest means the wrong
