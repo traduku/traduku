@@ -32,6 +32,42 @@ private slots:
         QVERIFY(p.contains(QStringLiteral("<<<TEXT\nSome text\nTEXT")));
     }
 
+    void reasoningOptionsReachTheRequestBody()
+    {
+        // No QVERIFY inside: the macro's own `return;` breaks the deduced
+        // return type.
+        auto run = [this](bool disable, const QString &extras, bool *ok) {
+            m_server.reset();
+            m_server.setResponse(200, {test::MockSseServer::sseEvent("ok"),
+                                      QByteArray("data: [DONE]\n\n")});
+            Settings s(m_dir.path() + QStringLiteral("/r-%1-%2.ini")
+                                     .arg(disable).arg(extras.size()));
+            s.setApiUrl(m_server.baseUrl());
+            s.setModel(QStringLiteral("test-model"));
+            s.setDisableReasoning(disable);
+            s.setExtraOptions(extras);
+            s.save();
+
+            TranslationEngine e(&s);
+            QSignalSpy done(&e, &TranslationEngine::finished);
+            e.translate(QStringLiteral("Some text"));
+            *ok = done.wait(10000);
+            return m_server.m_requests.last();
+        };
+
+        bool ok1 = false, ok2 = false;
+        const QByteArray on = run(true, QStringLiteral("{\"top_p\":0.9}"), &ok1);
+        QVERIFY(ok1);
+        QVERIFY2(on.contains("chat_template_kwargs"), on);
+        QVERIFY(on.contains("reasoning_effort"));
+        QVERIFY2(on.contains("top_p"), on);
+
+        const QByteArray off = run(false, QString(), &ok2);
+        QVERIFY(ok2);
+        QVERIFY2(!off.contains("reasoning_effort"),
+                 "turning the switch off must not send the preset");
+    }
+
     void pipelineStreamsDeltas()
     {
         m_server.setResponse(200, {

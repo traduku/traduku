@@ -8,7 +8,9 @@ Build-Depends: debhelper-compat (= 13),
                extra-cmake-modules,
                qt6-base-dev,
                qt6-multimedia-dev,
-               libqt6core5compat6-dev,
+               qt6-5compat-dev | libqt6core5compat6-dev,
+               libkf6coreaddons-dev,
+               libkf6i18n-dev,
                libkf6statusnotifieritem-dev,
                libkf6notifications-dev,
                libkf6globalaccel-dev,
@@ -21,10 +23,10 @@ Rules-Requires-Root: no
 
 Package: traduku
 Architecture: any
-Depends: ${shlibs:Depends}, ${misc:Depends}, qt6-multimedia, gstreamer1.0-plugins-good
-Recommends: wl-clipboard
-Description-
- Clipboard translator powered by any OpenAI-compatible LLM.
-  Press Ctrl+C twice to translate the clipboard into the configured target
-  language. Streams responses, translates interactively, runs on KDE Plasma
-  and any other desktop (X11 and Wayland via XWayland).
+Depends: ${shlibs:Depends}, ${misc:Depends}, libqt6multimedia6,
+ qt6-wayland, gstreamer1.0-plugins-good, wl-clipboard
+Recommends: gnome-shell-extension-appindicator | gnome-shell-ubuntu-extensions
+Description: Clipboard translator powered by any OpenAI-compatible LLM
+ Press Ctrl+C twice to translate the clipboard into the configured target
+ language. Streams responses, translates interactively, runs on KDE Plasma
+ and any other desktop (X11 and Wayland via XWayland).

@@ -1,5 +1,7 @@
 #pragma once
 
+#include "interfaces/itray.h"
+
 #include <QHash>
 #include <QObject>
 #include <QString>
@@ -18,21 +20,26 @@ class Settings;
  * intents - all behaviour is the AppController's. This is the only class
  * in the tree that touches KF6::StatusNotifierItem; the GNOME layer will
  * provide the same signals via AppIndicator.
+ *
+ * Implements ITray so it is interchangeable with QtTray (LT_TRAY /
+ * TRADUKU_TRAY). It stays the KDE default, and may only be deleted after
+ * tests/unit/tst_trayparity.cpp and the operator agree the Qt tray behaves
+ * the same in a live Plasma session (GNOME_PLAN.md Stage 6b).
  */
-class KdeTray : public QObject
+class KdeTray : public ITray
 {
     Q_OBJECT
 public:
     KdeTray(Settings *settings, IAutostart *autostart, QObject *parent = nullptr);
     ~KdeTray() override;
 
-    void setBusy(bool busy);
-    void setToolTipSub(const QString &sub);
-
-Q_SIGNALS:
-    void translateRequested();
-    void targetLanguagePicked(const QString &code);
-    void settingsRequested();
+    QMenu *menu() const override;
+    void setBusy(bool busy) override;
+    void setToolTipSub(const QString &sub) override;
+    void show() override;
+    bool isAvailable() const override;
+    QString backendName() const override;
+    void setStatusLabel(const QString &text) override;
 
 private:
     void buildMenu();
@@ -45,6 +52,7 @@ private:
     IAutostart *m_autostart;
     QHash<QString, QAction *> m_languageActions;
     QAction *m_autostartAction = nullptr;
+    QAction *m_statusAction = nullptr;
 };
 
 } // namespace lt

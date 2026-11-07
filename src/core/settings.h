@@ -46,6 +46,19 @@ public:
     void setMaxWholeTextChars(int chars);
     int maxParallel() const;             // concurrent chunk requests
     void setMaxParallel(int n);
+
+    /// Server-specific request options. Most current models are reasoning
+    /// models: they stream a hidden "reasoning" channel we throw away, so
+    /// asking the server to skip it is pure latency saved - measured on the
+    /// live endpoint as 37 reasoning events / 0.71 s -> 0.21 s, and the answer
+    /// stopped starting with the chat template's blank lines.
+    bool disableReasoning() const;                    // default true
+    void setDisableReasoning(bool on);
+    QString reasoningOffOptions() const;              // JSON object, the preset
+    void setReasoningOffOptions(const QString &json);
+    QString extraOptions() const;                     // JSON object, merged last
+    void setExtraOptions(const QString &json);
+    static QString defaultReasoningOffOptions();
     bool autoTranslate() const;          // translate on source edits
     void setAutoTranslate(bool on);
     double autoTranslateDelay() const;   // s of idle typing before firing

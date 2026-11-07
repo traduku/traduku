@@ -1,0 +1,96 @@
+<!DOCTYPE node PUBLIC "-//freedesktop//DTD D-BUS Object Introspection 1.0//EN"
+ "http://www.freedesktop.org/standards/dbus/1.0/introspect.dtd">
+<!--
+    com.canonical.dbusmenu, the D-Bus Menu spec (0.4).
+
+    Transcribed from the spec as it is used in practice; the copy this desktop
+    actually speaks is /usr/share/gnome-shell/extensions/
+    ubuntu-appindicators@ubuntu.com/interfaces-xml/DBusMenu.xml, and KDE
+    generates KDBusMenuAdaptor from the same text. Kept here so the adaptor is
+    GENERATED (qdbusxml2cpp) instead of hand-written: hand-written signatures
+    were wrong in five places and the failure mode is a context menu that
+    silently stays empty.
+
+    Difference worth knowing: the extension's copy declares AboutToShow with an
+    extra `out b needUpdate`. The spec does not. The spec form works against
+    both this host and KDE (measured), so the spec form is what we implement.
+-->
+<node>
+  <interface name="com.canonical.dbusmenu">
+    <property name="Version" type="u" access="read"/>
+    <property name="TextDirection" type="s" access="read"/>
+    <property name="Status" type="s" access="read"/>
+    <property name="IconThemePath" type="as" access="read"/>
+
+    <method name="GetLayout">
+      <arg type="i" name="parentId" direction="in"/>
+      <arg type="i" name="recursionDepth" direction="in"/>
+      <arg type="as" name="propertyNames" direction="in"/>
+      <arg type="u" name="revision" direction="out"/>
+      <arg type="(ia{sv}av)" name="layout" direction="out"/>
+      <annotation name="org.qtproject.QtDBus.QtTypeName.Out1" value="lt::LayoutItem"/>
+    </method>
+
+    <method name="GetGroupProperties">
+      <arg type="ai" name="ids" direction="in"/>
+      <arg type="as" name="propertyNames" direction="in"/>
+      <arg type="a(ia{sv})" name="properties" direction="out"/>
+      <!-- qdbusxml2cpp maps neither ai nor a(ia{sv}) on its own: both need
+           explicit QtTypeName annotations, or it refuses the file. -->
+      <annotation name="org.qtproject.QtDBus.QtTypeName.In0" value="QList&lt;int&gt;"/>
+      <annotation name="org.qtproject.QtDBus.QtTypeName.Out0" value="lt::PropertyPairList"/>
+    </method>
+
+    <method name="GetProperty">
+      <arg type="i" name="id" direction="in"/>
+      <arg type="s" name="name" direction="in"/>
+      <arg type="v" name="value" direction="out"/>
+    </method>
+
+    <method name="SetProperty">
+      <arg type="i" name="id" direction="in"/>
+      <arg type="s" name="name" direction="in"/>
+      <arg type="v" name="value" direction="in"/>
+    </method>
+
+    <method name="Event">
+      <arg type="i" name="id" direction="in"/>
+      <arg type="s" name="eventId" direction="in"/>
+      <arg type="v" name="data" direction="in"/>
+      <arg type="u" name="timestamp" direction="in"/>
+    </method>
+
+    <!-- EventGroup(a(isvu), out ai) is part of the spec and will be
+         implemented in SniTray (Stage 5) with its own metatype; this host was
+         measured (dbus-monitor) never to call it, so the spike leaves it out
+         rather than inventing a type name for it here. -->
+
+    <method name="AboutToShow">
+      <arg type="i" name="id" direction="in"/>
+    </method>
+
+    <method name="AboutToShowGroup">
+      <arg type="ai" name="ids" direction="in"/>
+      <arg type="ai" name="updatesNeeded" direction="out"/>
+      <arg type="ai" name="idErrors" direction="out"/>
+    
+      <annotation name="org.qtproject.QtDBus.QtTypeName.In0" value="QList&lt;int&gt;"/>
+      <annotation name="org.qtproject.QtDBus.QtTypeName.Out0" value="QList&lt;int&gt;"/>
+      <annotation name="org.qtproject.QtDBus.QtTypeName.Out1" value="QList&lt;int&gt;"/>
+    </method>
+
+    <!-- ItemsPropertiesUpdated(a(ia{sv}), a(ias)) is emitted only when a menu
+         changes in place; SniTray (Stage 5) adds it together with the metatype
+         for a(ias). The spike builds its menu once, so it is left out. -->
+
+    <signal name="LayoutUpdated">
+      <arg type="u" name="revision" direction="out"/>
+      <arg type="i" name="parent" direction="out"/>
+    </signal>
+
+    <signal name="ItemActivationRequested">
+      <arg type="i" name="id" direction="out"/>
+      <arg type="u" name="timestamp" direction="out"/>
+    </signal>
+  </interface>
+</node>

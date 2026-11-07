@@ -102,6 +102,44 @@ fragmented mock SSE server, offscreen UI tests, plus
 4. Tray: translate now, destination language, autostart, settings, quit.
    Window: pick destination language (persisted), copy, settings.
 
+## Configuration
+
+Settings live in **`~/.config/traduku/config.ini`** (XDG; the same tree holds
+`~/.config/autostart/`), written by the settings dialog and watched for
+external edits. A single `~/.traduku.ini` was rejected: v0.2.0 users already
+have the XDG file, and the directory keeps growing siblings anyway.
+
+Three levels of override, highest first:
+
+```bash
+traduku --translate --text "hi" --config /etc/traduku/server.ini   # explicit
+TRADUKU_CONFIG=~/work/staging.ini traduku                            # per-shell
+traduku                                                            # XDG default
+```
+
+Keys beyond address / key / model that are worth knowing:
+
+| key | default | what it does |
+|---|---|---|
+| `DisableReasoning` | `true` | asks the model to skip its hidden reasoning channel |
+| `ReasoningOffOptions` | vLLM+OpenAI preset | the JSON merged when the switch is on |
+| `ExtraOptions` | *(empty)* | any JSON object merged into the request body |
+
+Reasoning models (`delta.reasoning` in the stream) answer the same prompt
+3× slower because they first emit a private chain of thought we discard.
+The default `ReasoningOffOptions` sends both spellings that servers accept:
+
+```ini
+ReasoningOffOptions={"chat_template_kwargs":{"enable_thinking":false},"reasoning_effort":"none"}
+```
+
+Measured against the live vLLM endpoint: 0.71 s → 0.21 s and 37 discarded
+reasoning events → 0. Set `DisableReasoning=false` for a server that rejects
+those fields (Traduku also retries once without them on HTTP 400/422, so a
+strict gateway costs one extra round-trip, not the translation). `--backend-info`
+prints which mode you are in; a malformed `ExtraOptions` fails loudly rather
+than silently translating with reasoning on.
+
 ## Manual end-to-end check (no real LLM needed)
 
 ```bash
@@ -111,6 +149,14 @@ traduku --translate --text "Hello"
 ```
 
 ## Troubleshooting (inherited from the prototype)
+
+- **`Host xxx not found` although `resolvectl query xxx` works**: glibc never
+  reaches DNS for `.local` names when nsswitch reads
+  `mdns4_minimal [NOTFOUND=return] dns` - Avahi answers NOTFOUND and the
+  lookup stops. Add the host to `/etc/hosts` or use its IP.
+- **Translation feels slow**: check `reasoning:` in `traduku --backend-info`;
+  a reasoning model streaming a hidden channel is the usual cause (see
+  Configuration).
 
 - **Wayland, "Clipboard is empty"**: install `wl-clipboard`.
 - **Double Ctrl+C dead on Wayland**: `journalctl --user | grep traduku`

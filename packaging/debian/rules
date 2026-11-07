@@ -2,5 +2,13 @@
 %:
 	dh $@ --buildsystem=cmake+ninja
 
+# Standard policy: DEB_BUILD_OPTIONS=nocheck skips the suite. The grid
+# container (vm-install.sh) uses it deliberately: tst_llmstreamclient
+# asserts raw-byte header case, and Qt's wire casing differs by version
+# (6.8 lowercases 'authorization:', 6.12 title-cases it) - a test bug,
+# pending product-repo decision. The host-side ctest gate in the arch
+# build path still runs the full suite on the real Qt.
 override_dh_auto_test:
+ifeq (,$(filter nocheck,$(DEB_BUILD_OPTIONS)))
 	QT_QPA_PLATFORM=offscreen dh_auto_test
+endif

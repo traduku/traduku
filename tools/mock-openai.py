@@ -44,7 +44,13 @@ class Handler(BaseHTTPRequestHandler):
         user = req.get("messages", [{}])[-1].get("content", "")
         m = re.search(r"into (.+?)\.", user)
         lang = m.group(1) if m else "?"
-        reply = f"[MOCK -> {lang}] " + user[user.find("<<<TEXT") + 7:][:200]
+        # Slice between the prompt markers (TranslationEngine emits
+        # "<<<TEXT\n<text>\nTEXT"); a plain offset kept the trailing
+        # "TEXT" and the newline in the "translation", which made the
+        # one-shot CLI output look broken.
+        m2 = re.search(r"<<<TEXT\n(.*?)\nTEXT", user, re.S)
+        body = m2.group(1) if m2 else user[user.find("<<<TEXT") + 7:][:200]
+        reply = f"[MOCK -> {lang}] " + body[:200]
         if not req.get("stream"):
             self._json({
                 "id": "mock", "object": "chat.completion", "created": 0,

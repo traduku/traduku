@@ -1,0 +1,13 @@
+[Desktop Entry]
+Type=Application
+Name=Traduku
+GenericName=Clipboard translator
+Comment=Translate the clipboard with an LLM (double Ctrl+C, streaming)
+Exec=traduku
+Icon=accessories-dictionary
+Terminal=false
+Categories=Utility;Translation;Qt;GNOME;
+StartupNotify=false
+# D-Bus name the single-instance guard owns (dev.traduku.Traduku, not
+# org.kde.* - see GNOME_PLAN.md D5). Kept as a hint for session managers.
+X-DBus-ServiceName=dev.traduku.Traduku

@@ -178,6 +178,32 @@ private slots:
         auto c3 = createClipboard(QStringLiteral("xcb"), both, qcb, r.runner());
         QCOMPARE(c3->backendName(), QString("qt"));
     }
+
+    void waylandWithoutToolsAdvisesInstallingWlClipboard()
+    {
+        // Measured on GNOME 50 (GNOME_PLAN.md §0b): a background wayland
+        // client gets no data offer at all, so on mutter the Qt fallback is
+        // blind - and a silent "" makes a missing wl-clipboard look like an
+        // empty clipboard. The chosen backend must SAY what to install.
+        auto *qcb = QGuiApplication::clipboard();
+
+        auto blind = createClipboard(QStringLiteral("wayland"), finderWith({}), qcb);
+        QCOMPARE(blind->backendName(), QString("qt"));
+        QVERIFY2(!blind->diagnostic().isEmpty(),
+                 "a backend that cannot see the clipboard stayed silent");
+        QVERIFY2(blind->diagnostic().contains(QStringLiteral("wl-clipboard")),
+                 qPrintable(blind->diagnostic()));
+
+        // the real tools present: nothing to complain about
+        auto good = createClipboard(QStringLiteral("wayland"),
+                                    finderWith({"wl-paste", "wl-copy"}), qcb);
+        QVERIFY(good->diagnostic().isEmpty());
+
+        // X11 sessions: Qt reads the selection from the background fine,
+        // and there the tools are not even used
+        auto x11 = createClipboard(QStringLiteral("xcb"), finderWith({}), qcb);
+        QVERIFY2(x11->diagnostic().isEmpty(), qPrintable(x11->diagnostic()));
+    }
 };
 
 QTEST_MAIN(TestClipboards)

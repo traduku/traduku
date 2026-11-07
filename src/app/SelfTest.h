@@ -1,5 +1,7 @@
 #pragma once
 
+#include <QString>
+
 class QTextStream;
 
 namespace lt {
@@ -15,6 +17,7 @@ namespace lt {
  *
  * Returns the number of failed checks (0 = all good).
  */
-int runSelfTest(QTextStream &out, bool doLive);
+int runSelfTest(QTextStream &out, bool doLive,
+               const QString &configPath = QString());
 
 } // namespace lt

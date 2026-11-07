@@ -42,6 +42,10 @@ AppController::AppController(const Backends &b, QObject *parent)
         const QString t = m_b.pipeline->targetText();
         QString clipboardNote;
         if (m_b.settings->copyResult()) {
+            // Wayland drops set_selection from unfocused apps: bring the
+            // result window to the foreground before writing the clipboard.
+            m_b.window->raise();
+            m_b.window->activateWindow();
             m_b.clipboard->setText(t);
             clipboardNote = QStringLiteral(" (clipboard updated)");
         }
@@ -120,8 +124,13 @@ void AppController::translateNow()
 {
     QString text = decodeIfEscaped(m_b.clipboard->text().trimmed());
     if (text.isEmpty()) {
-        m_b.notifier->notify(QStringLiteral("Traduku"),
-                             QStringLiteral("Clipboard is empty."));
+        // A backend that cannot see the DE clipboard says so (missing
+        // wl-clipboard on Wayland); reporting "clipboard is empty" instead
+        // would blame the user's copy for a missing package.
+        const QString hint = m_b.clipboard->diagnostic();
+        m_b.notifier->notify(
+            QStringLiteral("Traduku"),
+            hint.isEmpty() ? QStringLiteral("Clipboard is empty.") : hint);
         return;
     }
     m_b.pipeline->setSource(text);

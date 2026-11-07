@@ -34,6 +34,30 @@ private slots:
         m_backend.setIntervalMs(500);
     }
 
+    void xwaylandMustUseRecordNotXi2Raw()
+    {
+        // Mutter injects Wayland keystrokes straight into the VDevice
+        // (master keyboard); XI2 RawEvents fire for *slave* devices only,
+        // so the raw listener is blind on XWayland under GNOME. X RECORD
+        // sees every core event, including master injection. KWin (XTEST
+        // forwarding) keeps raw events flowing and is unaffected.
+        QCOMPARE(X11HotkeyBackend::chooseMode(true, true),
+                 X11HotkeyBackend::Mode::Record);
+        QCOMPARE(X11HotkeyBackend::chooseMode(true, false),
+                 X11HotkeyBackend::Mode::Xi2Raw);
+        QCOMPARE(X11HotkeyBackend::chooseMode(false, false),
+                 X11HotkeyBackend::Mode::Record);
+    }
+
+    void xwaylandDetectedByExtensionNotByMissingGlx()
+    {
+        // Ubuntu 25.10's Xwayland advertises GLX (and RECORD), so the old
+        // "no GLX => Xwayland" probe silently chose the blind raw listener.
+        QVERIFY(X11HotkeyBackend::detectXwayland(true, false));
+        QVERIFY(X11HotkeyBackend::detectXwayland(false, true));
+        QVERIFY(!X11HotkeyBackend::detectXwayland(false, false));
+    }
+
     void startWithoutDisplayIsGraceful()
     {
         if (qEnvironmentVariableIsEmpty("DISPLAY")) {
@@ -41,7 +65,14 @@ private slots:
             QVERIFY(!m_backend.start());   // repeatable
         } else {
             QVERIFY(m_backend.start());
+            // The RECORD loop must be wakeable: a blocking
+            // XRecordEnableContext would never return on an idle desktop.
+            QElapsedTimer t;
+            t.start();
             m_backend.stop();
+            QVERIFY2(t.elapsed() < 2000,
+                     qPrintable(QStringLiteral("stop() took %1 ms")
+                                    .arg(t.elapsed())));
         }
     }
 
@@ -83,6 +114,39 @@ private slots:
             m_backend.feedKeyEvent(KeyRelease, XK_c, 54);
         }
         QCOMPARE(m_fires, 0);
+    }
+
+    void parseRecordLineAcceptsKeyEvents()
+    {
+        int type = 0;
+        quint32 sym = 0, code = 0;
+        QVERIFY(X11HotkeyBackend::parseRecordLine(
+            QByteArray("K 65507 37"), &type, &sym, &code));
+        QCOMPARE(type, KeyPress);
+        QCOMPARE(sym, quint32(XK_Control_L));
+        QCOMPARE(code, quint32(37));
+
+        QVERIFY(X11HotkeyBackend::parseRecordLine(
+            QByteArray("R 99 54"), &type, &sym, &code));
+        QCOMPARE(type, KeyRelease);
+        QCOMPARE(sym, quint32(99));
+        QCOMPARE(code, quint32(54));
+    }
+
+    void parseRecordLineRejectsGarbage()
+    {
+        int type = 0;
+        quint32 sym = 0, code = 0;
+        QVERIFY(!X11HotkeyBackend::parseRecordLine(
+            QByteArray("X 65507 37"), &type, &sym, &code));
+        QVERIFY(!X11HotkeyBackend::parseRecordLine(
+            QByteArray("K abc 37"), &type, &sym, &code));
+        QVERIFY(!X11HotkeyBackend::parseRecordLine(
+            QByteArray("K 65507"), &type, &sym, &code));
+        QVERIFY(!X11HotkeyBackend::parseRecordLine(
+            QByteArray(""), &type, &sym, &code));
+        QVERIFY(!X11HotkeyBackend::parseRecordLine(
+            QByteArray("K 65507 37 extra"), &type, &sym, &code));
     }
 };
 

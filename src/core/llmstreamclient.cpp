@@ -2,8 +2,10 @@
 
 #include "sseparser.h"
 
+#include <QDebug>
 #include <QJsonArray>
 #include <QJsonDocument>
+#include <QJsonParseError>
 #include <QJsonObject>
 #include <QNetworkAccessManager>
 #include <QNetworkReply>
@@ -18,7 +20,39 @@ LlmStreamClient::LlmStreamClient(QObject *parent)
 {
 }
 
+namespace {
+
+/// Merge a JSON object of extra options into `payload`. Returns false with a
+/// user-readable reason when the text is not a JSON object.
+bool mergeOptions(QJsonObject &payload, const QString &json, const QString &what,
+                  QString *error)
+{
+    if (json.trimmed().isEmpty()) {
+        return true;
+    }
+    QJsonParseError pe;
+    const QJsonDocument doc = QJsonDocument::fromJson(json.toUtf8(), &pe);
+    if (pe.error != QJsonParseError::NoError || !doc.isObject()) {
+        *error = QStringLiteral(
+            "Extra options for the API request are not a valid JSON object "
+            "(%1): %2").arg(what, pe.errorString());
+        return false;
+    }
+    const QJsonObject obj = doc.object();
+    for (auto it = obj.begin(); it != obj.end(); ++it) {
+        payload.insert(it.key(), it.value());     // caller's own options win
+    }
+    return true;
+}
+
+} // namespace
+
 void LlmStreamClient::send(const ChatRequest &req)
+{
+    sendInternal(req, true);
+}
+
+void LlmStreamClient::sendInternal(const ChatRequest &req, bool allowExtras)
 {
     if (m_reply) {
         return;
@@ -35,7 +69,7 @@ void LlmStreamClient::send(const ChatRequest &req)
         base.chop(1);
     }
 
-    const QJsonObject payload{
+    QJsonObject payload{
         {QStringLiteral("model"), req.model.trimmed()},
         {QStringLiteral("messages"),
          QJsonArray{QJsonObject{{QStringLiteral("role"), QStringLiteral("user")},
@@ -43,6 +77,28 @@ void LlmStreamClient::send(const ChatRequest &req)
         {QStringLiteral("temperature"), req.temperature},
         {QStringLiteral("stream"), true},
     };
+
+    ChatRequest effective = req;
+    if (!effective.disableReasoning) {
+        effective.reasoningOffJson.clear();
+    }
+    if (!allowExtras) {
+        // The server refused our optional extras; retry as a plain request.
+        effective.disableReasoning = false;
+        effective.reasoningOffJson.clear();
+        effective.extraBodyJson.clear();
+    }
+    QString optionsError;
+    if (!mergeOptions(payload, effective.reasoningOffJson,
+                      QStringLiteral("--disable-reasoning preset"), &optionsError)
+        || !mergeOptions(payload, effective.extraBodyJson,
+                         QStringLiteral("extra request options"), &optionsError)) {
+        Q_EMIT failed(optionsError);
+        return;
+    }
+    m_pending = req;
+    m_usedExtras = allowExtras
+        && (effective.disableReasoning || !effective.extraBodyJson.isEmpty());
 
     QNetworkRequest nr(QUrl(base + QStringLiteral("/chat/completions")));
     nr.setHeader(QNetworkRequest::ContentTypeHeader, QStringLiteral("application/json"));
@@ -113,6 +169,35 @@ void LlmStreamClient::onFinished()
             Q_EMIT failed(serverError);
             return;
         }
+    }
+
+    // Qt does not turn an HTTP 4xx/5xx into QNetworkReply::error(): a wrong
+    // API key (401) or an nginx 502 would otherwise reach the caller as a
+    // successful-but-empty translation. A JSON error body is still better
+    // evidence, which is why this sits AFTER the parser-error branches.
+    const int status = reply->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt();
+    if (status >= 400) {
+        if (m_usedExtras && (status == 400 || status == 422)) {
+            // Gateways that refuse fields they do not know must not cost the
+            // user the translation: retry once as a plain request and keep a
+            // note (extraOptionsRejectedCount) for --backend-info.
+            ++m_extraRejected;
+            qWarning("traduku: the API rejected the extra request options "
+                     "(HTTP %d); retrying without them.", status);
+            const ChatRequest r = m_pending;
+            reply->deleteLater();
+            m_reply = nullptr;
+            sendInternal(r, false);
+            return;
+        }
+        const QString phrase = reply->attribute(
+            QNetworkRequest::HttpReasonPhraseAttribute).toString();
+        QString msg = QStringLiteral("HTTP %1").arg(status);
+        if (!phrase.isEmpty()) {
+            msg += QStringLiteral(" %1").arg(phrase);
+        }
+        Q_EMIT failed(msg + QStringLiteral(" from the API endpoint"));
+        return;
     }
 
     if (reply->error() != QNetworkReply::NoError) {

@@ -38,7 +38,7 @@ struct Runner
 };
 } // namespace
 
-int runSelfTest(QTextStream &out, bool doLive)
+int runSelfTest(QTextStream &out, bool doLive, const QString &configPath)
 {
     Runner r{out, 0};
 
@@ -204,7 +204,9 @@ int runSelfTest(QTextStream &out, bool doLive)
 
     // 9. Optional live end-to-end against the user's configured endpoint
     if (doLive) {
-        Settings s;
+        // The same file the rest of the run uses: --config must not make the
+        // live check silently test a different endpoint.
+        Settings s(configPath.isEmpty() ? Settings::defaultFilePath() : configPath);
         TranslationEngine engine(&s);
         bool ok = false, done = false;
         QObject::connect(&engine, &TranslationEngine::finished,

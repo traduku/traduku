@@ -65,8 +65,60 @@ QString Settings::defaultTargetLanguageForLocale(const QString &localeName)
 
 QString Settings::defaultFilePath()
 {
+    // Two levels are enough for a handful of keys: an explicit --config,
+    // then $TRADUKU_CONFIG, then the XDG default. The file is not moved to
+    // ~/.traduku.ini - v0.2.0 users already have ~/.config/traduku/config.ini,
+    // the settings dialog and the config watcher live there, and the same
+    // directory also holds the autostart entry's siblings.
+    const QString fromEnv = qEnvironmentVariable("TRADUKU_CONFIG");
+    if (!fromEnv.isEmpty()) {
+        return fromEnv;
+    }
     return QStandardPaths::writableLocation(QStandardPaths::GenericConfigLocation)
         + QStringLiteral("/traduku/config.ini");
+}
+
+QString Settings::defaultReasoningOffOptions()
+{
+    // Both spellings, because servers disagree about the name: vLLM's Qwen
+    // chat template reads chat_template_kwargs.enable_thinking, OpenAI-style
+    // gateways take reasoning_effort. Verified against the live endpoint.
+    // {"thinking":{"type":"disabled"}} is deliberately NOT used - on that same
+    // server it silently produced an empty answer.
+    return QStringLiteral(
+        "{\"chat_template_kwargs\":{\"enable_thinking\":false},"
+        "\"reasoning_effort\":\"none\"}");
+}
+
+bool Settings::disableReasoning() const
+{
+    return value("DisableReasoning", true).toBool();
+}
+
+void Settings::setDisableReasoning(bool on)
+{
+    setValue("DisableReasoning", on);
+}
+
+QString Settings::reasoningOffOptions() const
+{
+    return value("ReasoningOffOptions",
+                 defaultReasoningOffOptions()).toString();
+}
+
+void Settings::setReasoningOffOptions(const QString &v)
+{
+    setValue("ReasoningOffOptions", v);
+}
+
+QString Settings::extraOptions() const
+{
+    return value("ExtraOptions", QString()).toString();
+}
+
+void Settings::setExtraOptions(const QString &v)
+{
+    setValue("ExtraOptions", v);
 }
 
 QString Settings::filePath() const
