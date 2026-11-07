@@ -1,14 +1,41 @@
 #!/usr/bin/make -f
+#
+# Two shells from one source (see control): the build tree is configured twice,
+# once per LT_SHELL, and installed into its own staging directory. That is why
+# the cmake buildsystem is not handed to debhelper - dh supports one build
+# directory, and `-DLT_SHELL` is not a flag you can apply twice to the same one.
+
+export DEB_BUILD_MAINT_OPTIONS = hardening=+all
+CMAKE_FLAGS = -G Ninja -DCMAKE_BUILD_TYPE=Release \
+              -DCMAKE_INSTALL_PREFIX=/usr \
+              -DCMAKE_INSTALL_LIBDIR=lib
+KDE_TREE  = obj-$(DEB_HOST_MULTIARCH)-kde
+GNOME_TREE = obj-$(DEB_HOST_MULTIARCH)-gnome
+
 %:
-	dh $@ --buildsystem=cmake+ninja
+	dh $@
+
+override_dh_auto_configure:
+	cmake -S . -B $(KDE_TREE) $(CMAKE_FLAGS) -DLT_SHELL=kde
+	cmake -S . -B $(GNOME_TREE) $(CMAKE_FLAGS) -DLT_SHELL=gnome
+
+override_dh_auto_build:
+	cmake --build $(KDE_TREE)
+	cmake --build $(GNOME_TREE)
 
 # Standard policy: DEB_BUILD_OPTIONS=nocheck skips the suite. The grid
-# container (vm-install.sh) uses it deliberately: tst_llmstreamclient
-# asserts raw-byte header case, and Qt's wire casing differs by version
-# (6.8 lowercases 'authorization:', 6.12 title-cases it) - a test bug,
-# pending product-repo decision. The host-side ctest gate in the arch
-# build path still runs the full suite on the real Qt.
+# container (tools/vms/vm-install.sh) uses it deliberately and runs the suite
+# itself as an explicit, visible gate - a silent red inside dpkg-buildpackage
+# is how a broken build once reached five VMs.
 override_dh_auto_test:
 ifeq (,$(filter nocheck,$(DEB_BUILD_OPTIONS)))
-	QT_QPA_PLATFORM=offscreen dh_auto_test
+	cd $(KDE_TREE) && QT_QPA_PLATFORM=offscreen ctest --output-on-failure
+	cd $(GNOME_TREE) && QT_QPA_PLATFORM=offscreen ctest --output-on-failure
 endif
+
+# DESTDIR, not --destdir: the prefix is already baked in at configure time,
+# and passing both is how a package once ended up installing into
+# /usr/usr/share.
+override_dh_auto_install:
+	DESTDIR=$(CURDIR)/debian/traduku cmake --install $(KDE_TREE)
+	DESTDIR=$(CURDIR)/debian/traduku-gnome cmake --install $(GNOME_TREE)

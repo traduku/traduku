@@ -1,35 +1,79 @@
 # Maintainer: Traduku contributors <dev@localhost>
-pkgname=traduku
+#
+# Split package: one PKGBUILD, two installable flavours.
+#
+#   traduku         - the KDE/Plasma shell (KF6 notifications + global accel)
+#   traduku-gnome   - the GNOME shell (no KF6 at all, wl-clipboard, /dev/input
+#                     gesture with the uaccess rule that makes it work)
+#
+# They install the same /usr/bin/traduku and the same .desktop, so they
+# conflict; a machine runs the flavour of its desktop. Building both here -
+# rather than shipping one binary that dlopen's its way around the desktop -
+# is what keeps the GNOME layer free of KF6 (GNOME_PLAN.md D3) verifiable:
+# `ldd /usr/bin/traduku` on a GNOME install must show no KF6.
+pkgbase=traduku
+pkgname=(traduku traduku-gnome)
 pkgver=0.2
 pkgrel=1
-pkgdesc='Clipboard translator powered by any OpenAI-compatible LLM (streaming; KDE Plasma, any DE)'
+pkgdesc='Clipboard translator powered by any OpenAI-compatible LLM (streaming)'
 arch=('x86_64')
 url='https://github.com/localhost/traduku'
 license=('GPL3')
 # KF6 component packages: un-prefixed names resolve on Arch (kf6-* Provides)
-# and on CachyOS (installed as bare names).
-depends=('qt6-base' 'qt6-multimedia' 'qt6-5compat'
-         'knotifications' 'kglobalaccel'
-         'kdbusaddons' 'libx11' 'libxi' 'libxtst')
-makedepends=('cmake' 'ninja')
-optdepends=('wl-clipboard: clipboard access on Wayland (required on GNOME, Plasma usually has org.kde.KClipboard)'
-            'gnome-shell-extension-appindicator: tray icon on GNOME')
+# and on CachyOS (installed as bare names). The GNOME shell needs none of them
+# at runtime; makedepends is the union because one build tree builds both.
+makedepends=('cmake' 'ninja' 'qt6-base' 'qt6-multimedia' 'qt6-5compat'
+             'knotifications' 'kglobalaccel' 'kdbusaddons'
+             'libx11' 'libxi' 'libxtst')
 source=("traduku-${pkgver}.tar.gz")
 sha256sums=('SKIP')
 
+_qt_runtime=('qt6-base' 'qt6-multimedia' 'qt6-5compat'
+             'libx11' 'libxi' 'libxtst')
+
 build() {
-  cd "$srcdir/$pkgname-$pkgver"
-  cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=Release \
-        -DCMAKE_INSTALL_PREFIX=/usr
-  cmake --build build
+  cd "$srcdir/$pkgbase-$pkgver"
+  # Two build trees: LT_SHELL selects exactly one shell per tree, and the
+  # CMakeLists refuses to configure two into one.
+  cmake -B build-kde   -G Ninja -DCMAKE_BUILD_TYPE=Release \
+        -DCMAKE_INSTALL_PREFIX=/usr -DLT_SHELL=kde
+  cmake -B build-gnome -G Ninja -DCMAKE_BUILD_TYPE=Release \
+        -DCMAKE_INSTALL_PREFIX=/usr -DLT_SHELL=gnome
+  cmake --build build-kde
+  cmake --build build-gnome
 }
 
 check() {
-  cd "$srcdir/$pkgname-$pkgver"
-  QT_QPA_PLATFORM=offscreen ctest --test-dir build --output-on-failure
+  cd "$srcdir/$pkgbase-$pkgver"
+  # Both trees, both suites: the GNOME shell has tests of its own (evdev,
+  # FdoNotifier, single instance) that the KDE build never compiles.
+  QT_QPA_PLATFORM=offscreen ctest --test-dir build-kde --output-on-failure
+  QT_QPA_PLATFORM=offscreen ctest --test-dir build-gnome --output-on-failure
 }
 
-package() {
-  cd "$srcdir/$pkgname-$pkgver"
-  DESTDIR="$pkgdir" cmake --install build
+package_traduku() {
+  pkgdesc='Clipboard translator powered by any OpenAI-compatible LLM (streaming, KDE Plasma)'
+  depends=("${_qt_runtime[@]}" 'knotifications' 'kglobalaccel' 'kdbusaddons')
+  # Plasma owns its clipboard service, so wl-clipboard is a recommendation
+  # here; on the GNOME flavour it is a hard dependency.
+  optdepends=('wl-clipboard: clipboard access on non-KDE Wayland sessions'
+              'gnome-shell-extension-appindicator: tray icon on GNOME')
+  provides=('traduku-gnome')
+  conflicts=('traduku-gnome')
+  cd "$srcdir/$pkgbase-$pkgver"
+  DESTDIR="$pkgdir" cmake --install build-kde
+}
+
+package_traduku-gnome() {
+  pkgdesc='Clipboard translator powered by any OpenAI-compatible LLM (streaming, GNOME)'
+  # wl-clipboard is required, not optional: this shell reads the Wayland
+  # clipboard through wl-paste, and Qt's QClipboard cannot be used from a
+  # background process on Wayland (measured). The app still starts without it
+  # and says which tool to install, but it cannot do its job.
+  depends=("${_qt_runtime[@]}" 'wl-clipboard')
+  optdepends=('gnome-shell-extension-appindicator: tray icon in the top bar')
+  provides=('traduku')
+  conflicts=('traduku')
+  cd "$srcdir/$pkgbase-$pkgver"
+  DESTDIR="$pkgdir" cmake --install build-gnome
 }
