@@ -25,6 +25,25 @@ install(TARGETS traduku RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
 install(FILES ${CMAKE_SOURCE_DIR}/packaging/gnome/traduku.desktop
         DESTINATION ${CMAKE_INSTALL_DATADIR}/applications)
 
+# ... and the same entry in the session's autostart. This is the GNOME
+# flavour's ONLY autostart: the first-run dialog that asks the Plasma user
+# "start Traduku at login?" does not exist in this shell yet (Stage 6), and a
+# program whose whole interface is a key gesture does nothing at all until
+# something starts it - "install, reboot, press Ctrl+C twice, nothing" is the
+# silence this project refuses (ARCHITECTURE.md, ROADMAP.md §1). /etc/xdg is
+# the distro-owned half of XDG autostart, so the user's own
+# ~/.config/autostart still wins and GNOME's Startup Applications list shows
+# the entry (NoDisplay is deliberately not set: an entry the user cannot
+# switch off is not an entry they installed).
+#
+# Absolute /etc, not ${CMAKE_INSTALL_SYSCONFDIR}: that one is relative to the
+# prefix, and this project installs into /usr - which would put the entry in
+# /usr/etc/xdg/autostart, where no session ever reads it (the same shape of
+# packaging bug as the udev rule in the multiarch dir below). DESTDIR is still
+# honoured, so dpkg and makepkg both stage it correctly.
+install(FILES ${CMAKE_SOURCE_DIR}/packaging/gnome/traduku.desktop
+        DESTINATION /etc/xdg/autostart)
+
 # The gesture reads /dev/input/event*, and nothing else in the stack does this
 # for keyboards: systemd's own 70-uaccess.rules tags joysticks, and
 # 73-seat-late.rules only applies the ACL for devices tagged by then. A
