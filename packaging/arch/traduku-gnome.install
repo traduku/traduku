@@ -1,0 +1,11 @@
+## post_install/post_upgrade: apply the shipped uaccess rule without a reboot.
+## See packaging/debian/traduku-gnome.postinst for why the file alone is not
+## enough - udev only evaluates rules when the device appears.
+post_install() {
+    udevadm control --reload-rules 2>/dev/null || true
+    udevadm trigger --action=add --subsystem-match=input 2>/dev/null || true
+}
+
+post_upgrade() {
+    post_install
+}

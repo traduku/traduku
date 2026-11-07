@@ -27,6 +27,9 @@ makedepends=('cmake' 'ninja' 'qt6-base' 'qt6-multimedia' 'qt6-5compat'
              'libx11' 'libxi' 'libxtst')
 source=("traduku-${pkgver}.tar.gz")
 sha256sums=('SKIP')
+# Applies the shipped uaccess rule to devices that are already present, so a
+# fresh install does not require a reboot - see packaging/arch/traduku-gnome.install.
+install=traduku-gnome.install
 
 _qt_runtime=('qt6-base' 'qt6-multimedia' 'qt6-5compat'
              'libx11' 'libxi' 'libxtst')
