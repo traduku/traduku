@@ -44,6 +44,15 @@ lt_add_test(tst_clipboards SOURCES integration/tst_clipboards.cpp
 # it through either one would make the shared rule look platform-specific.
 lt_add_test(tst_texttargets SOURCES unit/tst_texttargets.cpp LIBS lt::core)
 
+# M6c: how an X11 clipboard reader finds a server when it was started by a
+# wayland session (DISPLAY/XAUTHORITY through XWayland's /proc entry). Pure
+# string work, so it is unit-tested headless; tst_x11clipboard drives a real
+# server.
+add_executable(fake-xwayland support/fake-xwayland.cpp)   # /proc camouflage
+lt_add_test(tst_x11session SOURCES unit/tst_x11session.cpp LIBS lt::platform_x11)
+set_tests_properties(tst_x11session PROPERTIES
+    ENVIRONMENT "QT_QPA_PLATFORM=offscreen;FAKE_XWAYLAND=$<TARGET_FILE:fake-xwayland>")
+
 # M7: core sound player (events, theme resolution, backend chain)
 lt_add_test(tst_soundplayer SOURCES unit/tst_soundplayer.cpp LIBS lt::core)
 
