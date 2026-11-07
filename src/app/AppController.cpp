@@ -120,6 +120,18 @@ bool AppController::translating() const
     return !m_b.pipeline->isComplete();
 }
 
+void AppController::surfaceWindow()
+{
+    if (!m_b.window) {
+        return;
+    }
+    // The window's own path, not a local show/raise: showForeground() is the
+    // one that re-fits to the current screen and logs the size it mapped, and
+    // a second "show me" path that skips the witness would make the e2e's
+    // window line lie about exactly the case it exists to catch.
+    m_b.window->showForeground();
+}
+
 void AppController::translateNow()
 {
     QString text = decodeIfEscaped(m_b.clipboard->text().trimmed());

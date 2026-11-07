@@ -81,7 +81,7 @@ class Grid:
         stdout — redirect it, ssh would block on the open channel."""
         return self.ses(f"printf %s '{text}' | timeout 10 wl-copy >/dev/null 2>&1")
 
-    def start_app(self):
+    def start_app(self, extra_env=""):
         """(Re)launch the packaged app as a transient user unit.
 
         systemd-run, NOT `setsid nohup >file`: journal_after() (gesture
@@ -100,9 +100,21 @@ class Grid:
         # the KGA backends branch on XDG_SESSION_TYPE/XDG_CURRENT_DESKTOP,
         # --setenv of the display trio alone silently picked the wrong
         # (x11) path on arch and global shortcuts stopped arriving.
+        # extra_env is for the cases where the environment IS the test
+        # (QT_SCALE_FACTOR=2 for HiDPI); it goes through --setenv, not through
+        # the shell, so it survives the exec and lands on the app itself.
+        env_args = " ".join(f"--setenv={e}" for e in extra_env) if extra_env else ""
         self.ses(
-            "systemd-run --user --collect --unit=traduku-e2e.service "
+            f"systemd-run --user --collect {env_args} --unit=traduku-e2e.service "
             "sh -c '. /tmp/session.env; exec /usr/bin/traduku'")
+
+    def screen_size(self):
+        """The compositor's scanout size, from the same QMP screendump the
+        framebuffer diffs use. Deliberately not the X screen: a Wayland client
+        is told what Xwayland looks like, which is not what a window has to
+        fit into."""
+        head = self.shot("screen-size").read_bytes()[:64].split()
+        return int(head[1]), int(head[2])
 
     def ses(self, script, timeout=120):
         """Run a snippet inside the captured graphical session."""

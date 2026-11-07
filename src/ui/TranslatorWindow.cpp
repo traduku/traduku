@@ -3,8 +3,11 @@
 #include "core/languages.h"
 
 #include <QDebug>
+#include <QGuiApplication>
+#include <QScreen>
 #include <QComboBox>
 #include <QGridLayout>
+#include <QSizePolicy>
 #include <QHBoxLayout>
 #include <QKeySequence>
 #include <QLabel>
@@ -14,17 +17,77 @@
 
 namespace lt {
 
+namespace {
+const int kPreferredWidth = 980;
+const int kPreferredHeight = 560;
+/// A window this small stops being two panes with a purpose; past this point
+/// it is better to overflow the screen (and let the user scroll/zoom the
+/// desktop) than to show a postage stamp.
+const QSize kFloor(320, 200);
+} // namespace
+
+QSize TranslatorWindow::availableLogicalSize() const
+{
+    // screen() is null before the window is ever shown, and on X11 the window
+    // is placed by the server: windowHandle() may report no screen either.
+    // QGuiApplication::primaryScreen() is the honest fallback - the compositor
+    // will re-fit the window if it ends up on another monitor.
+    QScreen *scr = screen();
+    if (!scr) {
+        scr = QGuiApplication::primaryScreen();
+    }
+    if (!scr) {
+        return {};
+    }
+    return scr->availableGeometry().size();
+}
+
+QSize TranslatorWindow::fitToScreen(QSize wanted, QSize available)
+{
+    if (wanted.isEmpty() || available.isEmpty()
+        || (wanted.width() <= available.width() && wanted.height() <= available.height())) {
+        return wanted;
+    }
+    // 92%, not 100%: the title bar, the top bar and the window shadows belong
+    // to the compositor, and a window exactly the size of the work area is a
+    // window whose edges cannot be reached.
+    int w = available.width() * 92 / 100;
+    int h = int(double(w) * double(wanted.height()) / double(wanted.width()));
+    if (h > available.height() * 92 / 100) {
+        h = available.height() * 92 / 100;
+        w = int(double(h) * double(wanted.width()) / double(wanted.height()));
+    }
+    // The floor beats the work area on purpose: on a 300x200 sliver (a tiled
+    // window, a phone) an overflowing-but-legible two-pane window is worth
+    // more than a fully visible stamp, and the desktop can scroll or zoom.
+    return QSize(qMax(w, kFloor.width()), qMax(h, kFloor.height()));
+}
+
 TranslatorWindow::TranslatorWindow(QWidget *parent)
     : QWidget(parent)
 {
     setWindowTitle(QStringLiteral("Traduku"));
-    resize(980, 560);
+    // The size is a question about the screen, asked per show (see
+    // fitToScreen): a window built once at startup would carry whatever the
+    // primary screen was then, which is wrong the moment the monitor, the
+    // scale or the login session changes.
+    resize(fitToScreen(QSize(kPreferredWidth, kPreferredHeight),
+                       availableLogicalSize()));
 
     auto *grid = new QGridLayout(this);
+    // Word wrap on every label, and no label holding a row open: a label's
+    // minimum width is its longest unbroken word, so the pane captions and the
+    // status sentence were what kept this window 787 px wide (measured). A
+    // top-level cannot be resized below its layout's minimum, so asking for a
+    // smaller window at 200% scaling had no effect and the buttons sat beyond
+    // the panel edge - see tests/unit/tst_translatorwindow.cpp.
     auto *srcLabel = new QLabel(QStringLiteral("Original (editable - paste, "
                                                "type; Ctrl+Enter translates)"));
+    srcLabel->setWordWrap(true);
     grid->addWidget(srcLabel, 0, 0);
-    grid->addWidget(new QLabel(QStringLiteral("Translation")), 0, 1);
+    auto *tgtLabel = new QLabel(QStringLiteral("Translation"));
+    tgtLabel->setWordWrap(true);
+    grid->addWidget(tgtLabel, 0, 1);
 
     m_source = new QTextEdit(this);
     m_source->setObjectName(QStringLiteral("m_source"));
@@ -63,6 +126,8 @@ TranslatorWindow::TranslatorWindow(QWidget *parent)
         }
         Q_EMIT targetLanguagePicked(m_language->currentData().toString());
     });
+    m_language->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
+    m_language->setMinimumContentsLength(8);   // the list is long; the box is not
     bar->addWidget(m_language);
 
     auto *settingsBtn = new QPushButton(QStringLiteral("Settings…"), this);
@@ -81,6 +146,7 @@ TranslatorWindow::TranslatorWindow(QWidget *parent)
 
     m_status = new QLabel(this);
     m_status->setObjectName(QStringLiteral("m_status"));
+    m_status->setWordWrap(true);
     m_status->setText(QStringLiteral("Copy text, press Ctrl+C twice - or "
                                      "type here and press Ctrl+Enter."));
     bar->addWidget(m_status, /*stretch*/ 1);
@@ -177,6 +243,14 @@ void TranslatorWindow::statusFailed(const QString &reason)
 
 void TranslatorWindow::showForeground()
 {
+    // Re-ask here, not only in the ctor: the window is built once at startup,
+    // while the screen, its scale and the work area can all change before the
+    // first translation (monitor hotplug, a login on another seat).
+    const QSize fit = fitToScreen(QSize(kPreferredWidth, kPreferredHeight),
+                                  availableLogicalSize());
+    if (size() != fit) {
+        resize(fit);
+    }
     showNormal();
     raise();
     activateWindow();
@@ -188,8 +262,14 @@ void TranslatorWindow::showForeground()
     // framebuffer diff is the DE-independent pair tests/e2e/test_06_window.py
     // asserts on. The title is part of the line for the same reason it is in
     // the KWin/xdotool answers: the witness must say *which* window it saw.
-    qInfo("traduku: window shown \"%s\" %dx%d", qUtf8Printable(windowTitle()),
-          width(), height());
+    // Both sizes, because they answer different questions: the logical one is
+    // what the layout was asked to fill, the device one is what lands on the
+    // panel - and it is the device one that must not exceed the screen at
+    // 200% scaling. tests/e2e/test_09 greps the px pair.
+    const qreal dpr = devicePixelRatioF();
+    qInfo("traduku: window shown \"%s\" %dx%d (%dx%d px)",
+          qUtf8Printable(windowTitle()), width(), height(),
+          int(width() * dpr), int(height() * dpr));
 }
 
 } // namespace lt

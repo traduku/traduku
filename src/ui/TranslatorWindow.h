@@ -32,6 +32,19 @@ class TranslatorWindow : public QWidget
 public:
     explicit TranslatorWindow(QWidget *parent = nullptr);
 
+    /*!
+     * The size the window should take on a screen of `available` logical
+     * pixels, keeping the aspect ratio (cropping one axis turns the two panes
+     * into a strip the layout cannot recover).
+     *
+     * 200% scaling is the default on a HiDPI laptop, not a setting someone
+     * digs for: a hard resize(980, 560) is 1960x1120 device pixels there, and
+     * on the 1280x800 test display that is a window whose lower half - the
+     * buttons, the quit affordance - is beyond the screen, which a Wayland
+     * client cannot undo. A window that fits is returned untouched.
+     */
+    static QSize fitToScreen(QSize wanted, QSize available);
+
     void setTargetLanguage(const QString &code);
     QString targetLanguage() const;
 
@@ -56,6 +69,10 @@ Q_SIGNALS:
     void settingsRequested();
 
 private:
+    /// Logical size of the screen this window is (or will be) on. Asked at
+    /// construction and re-asked on show: taking it once would freeze whatever
+    /// the primary screen happened to be at startup.
+    QSize availableLogicalSize() const;
     void renderTarget();
     void updateCopyEnabled();
 
