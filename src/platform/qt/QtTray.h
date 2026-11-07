@@ -27,7 +27,7 @@ class Settings;
  * client it produced stays there as the documented fallback.
  *
  * Behaviour is a deliberate copy of KdeTray, which stays in the tree until the
- * Qt tray is verified in a live KDE session (GNOME_PLAN.md Stage 6b):
+ * Qt tray is verified in a live KDE session (ROADMAP.md §2):
  *   left click (and middle click) -> translateRequested()
  *   right click                   -> the app menu
  * Menu: Translate Clipboard Now | Translate To ▸ | Settings… |

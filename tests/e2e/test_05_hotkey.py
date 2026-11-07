@@ -11,7 +11,7 @@ The single-press passivity check is done on Ctrl+Alt+C: one press must do
 nothing (a plain global shortcut would fire immediately).
 
 (Passive Ctrl+C+C on X11/XWayland-focus is the same detector; exercised
-in the debian-kde X11 job — see PIPELINE.md matrix.)
+in the debian-kde X11 job — see ROADMAP.md §6 matrix.)
 """
 import time
 

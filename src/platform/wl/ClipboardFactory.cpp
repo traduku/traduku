@@ -9,7 +9,7 @@ namespace lt {
 
 namespace {
 
-// Measured on GNOME 50 (GNOME_PLAN.md §0b): a background wayland client
+// Measured on GNOME 50 (ROADMAP.md §2): a background wayland client
 // receives no data offer, so Qt's clipboard reads nothing there - only
 // wl-paste/wl-copy (or an XWayland connection) see the DE clipboard. A
 // silently empty result blames the user's clipboard; say what is missing.

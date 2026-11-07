@@ -1,4 +1,4 @@
-# /dev/input gesture observation (GNOME_PLAN.md D1). No KF6, no libevdev:
+# /dev/input gesture observation (ROADMAP.md §2). No KF6, no libevdev:
 # two ioctls and a read loop - all gesture logic stays in core's
 # DoublePressDetector, shared with the X11 backend.
 add_library(lt_platform_evdev STATIC DeviceFinder.cpp EvdevHotkeyBackend.cpp)

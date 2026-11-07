@@ -257,7 +257,7 @@ private slots:
 
     void emptyClipboardAdvisesTheMissingTool()
     {
-        // Measured on GNOME 50 (GNOME_PLAN.md §0b): a background wayland
+        // Measured on GNOME 50 (ROADMAP.md §2): a background wayland
         // client receives no data offer, so "clipboard is empty" is a lie
         // when the real cause is a missing wl-clipboard. A backend that
         // knows it is blind carries the actionable hint, and the

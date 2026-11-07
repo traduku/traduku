@@ -1,6 +1,6 @@
-# Stage 0 diagnostics (GNOME_PLAN.md §9). These are MANUAL tools, not
+# Stage 0 diagnostics (ROADMAP.md §3). These are MANUAL tools, not
 # product code and not ctest suites: they answer "which backend can actually
-# work on this compositor" and their output is recorded in GNOME_PLAN.md.
+# work on this compositor" and their output is recorded in ROADMAP.md.
 # Nothing here is installed; nothing here is linked into traduku.
 
 add_executable(clip-spike clip-spike.cpp)

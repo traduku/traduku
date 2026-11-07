@@ -181,7 +181,7 @@ private slots:
 
     void waylandWithoutToolsAdvisesInstallingWlClipboard()
     {
-        // Measured on GNOME 50 (GNOME_PLAN.md §0b): a background wayland
+        // Measured on GNOME 50 (ROADMAP.md §2): a background wayland
         // client gets no data offer at all, so on mutter the Qt fallback is
         // blind - and a silent "" makes a missing wl-clipboard look like an
         // empty clipboard. The chosen backend must SAY what to install.

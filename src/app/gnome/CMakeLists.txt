@@ -1,5 +1,5 @@
 # The GNOME application: thin composition root, and deliberately NO KF6
-# (GNOME_PLAN.md D3 - GNOME ships none of it; tray/notifications/shortcut
+# (ROADMAP.md §2 - GNOME ships none of it; tray/notifications/shortcut
 # are plain D-Bus, the gesture is /dev/input, the clipboard is wl-clipboard).
 
 if(TARGET traduku)

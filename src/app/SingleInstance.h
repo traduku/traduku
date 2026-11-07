@@ -9,7 +9,7 @@ class QLocalServer;
 namespace lt {
 
 /*!
- * One Traduku per session (GNOME_PLAN.md D5), implemented with plain Qt so
+ * One Traduku per session (ROADMAP.md §2), implemented with plain Qt so
  * both shells share it - the KDE shell may keep using KDBusService, but the
  * GNOME one must not depend on KF6 for this.
  *

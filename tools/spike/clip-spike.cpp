@@ -1,4 +1,4 @@
-// clip-spike — Stage 0 diagnostic (NOT product code; see GNOME_PLAN.md D2).
+// clip-spike — Stage 0 diagnostic (NOT product code; see ROADMAP.md D2).
 //
 // Question it answers: on THIS compositor, which available way actually
 // READS the user's clipboard from a background (never-focused) client, and

@@ -1,5 +1,5 @@
 /*
-    tools/spike/tray-spike.cpp — Stage 5 pre-work (GNOME_PLAN.md D3).
+    tools/spike/tray-spike.cpp — Stage 5 pre-work (ROADMAP.md §2).
 
     Question it answers: which tray protocol can actually paint an icon and a
     menu on THIS desktop?

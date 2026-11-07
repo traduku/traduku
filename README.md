@@ -56,20 +56,27 @@ src/core/        pure Qt, no DE: settings (INI), languages, SSE streaming
                  double-press detector, shortcut monitor, sound player
 src/interfaces/  IClipboard · IHotkeyBackend · INotifier · IAutostart ·
                  IGlobalShortcut          (the DE-portability seam)
-src/platform/qt/ QtClipboard (X11) · XdgAutostart (XDG autostart spec)
+src/platform/qt/ QtClipboard (X11) · XdgAutostart (XDG autostart spec) ·
+                 QtTray (QSystemTrayIcon, Qt's generic unix SNI client) ·
+                 FdoNotifier (org.freedesktop.Notifications) · SingleInstance
 src/platform/wl/ WlClipboard (wl-paste/wl-copy) + clipboard factory
 src/platform/x11/ X11HotkeyBackend (XI2 raw / RECORD, passive monitor)
-src/platform/kde/ KdeTray (KStatusNotifierItem) · KdeNotifier
-                 (KNotification) · KdeGlobalShortcut (KGlobalAccel)
+src/platform/evdev/ EvdevHotkeyBackend (/dev/input, the literal Ctrl+C+C
+                 on Wayland — reads events, never grabs them)
+src/platform/kde/ KdeNotifier (KNotification) · KdeGlobalShortcut
+                 (KGlobalAccel)
 src/ui/          TranslatorWindow · SettingsDialog   (Qt Widgets only)
-src/app/         AppController (composition root, DE-agnostic) · SelfTest
-src/app/kde/     traduku main (wiring, CLI, single instance)
+src/app/         AppController (composition root, DE-agnostic) · SelfTest ·
+                 cli (one parser and one one-shot path for both shells)
+src/app/kde/     traduku main (KDE wiring)
+src/app/gnome/   traduku main (GNOME wiring, no KF6 anywhere)
 ```
 
 `AppController` connects the lifecycle — gesture → clipboard read → engine
-streams → window updates → clipboard write / sounds / notifications. A
-`GNOME` shell would build the same struct with AppIndicator +
-libnotify + GNOME Shortcuts + libei; nothing in `src/core` changes.
+streams → window updates → clipboard write / sounds / notifications. Both
+shells build that same struct out of the same parts; nothing in `src/core`
+or `src/ui` knows which desktop it is on. `traduku --backend-info` prints
+which backend was chosen for each seam and why, on the machine you are on.
 
 ## Build & test
 

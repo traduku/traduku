@@ -233,21 +233,17 @@ production code; refactors without a failing test are not accepted.
 
 ## Packaging
 
-`CMakeLists.txt` VERSION is the single source of truth
-(currently 0.2.0): `packaging/arch/PKGBUILD` `pkgver` and
-`packaging/debian/changelog` must match it — CI check suggested.
+`CMakeLists.txt` VERSION is the single source of truth:
+`packaging/arch/PKGBUILD` `pkgver` and `packaging/debian/changelog` must
+match it, and `tests/cmake/test_versions_agree.sh` fails the test suite when
+they drift (both had already drifted once, silently, from each other).
 `mkrelease.sh` builds the source tarball + package; the tarball includes
 `packaging/debian/` (upstream source ships it — distro-agnostic).
 
-## TODO
+## Roadmap
 
-- **GNOME shell.** The core/UI/Qt-platform layers are DE-neutral by
-  construction; what is missing is a GNOME composition root: AppIndicator
-  tray (libadwaita/GTK status icon via the SNI AppIndicator bridge),
-  libnotify notifier implementing `INotifier`, GNOME global shortcuts
-  (Settings portal / dconf `media-keys` custom binding) implementing
-  `IGlobalShortcut`, portal clipboard on Wayland. Clipboard (wlr portals)
-  and autostart (XDG) already work there. Needs a live GNOME test
-  environment (nested gnome-shell on host, or a Quickemu Fedora GNOME
-  live image) for the interactive validation that automated suites
-  cannot cover.
+The plan, the open questions and the measured reasons behind the platform
+choices live in [ROADMAP.md](ROADMAP.md) — one file, deliberately not spread
+over plan/pipeline/stage documents. Architecture lives here and does not
+track progress: when a decision here stops matching the code, the code is
+wrong.

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Stage 0 field test (GNOME_PLAN.md §9). Run it INSIDE the graphical session:
+# Stage 0 field test (ROADMAP.md §3). Run it INSIDE the graphical session:
 #
 #   ./tools/spike/stage0.sh
 #

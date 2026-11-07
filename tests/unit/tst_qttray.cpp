@@ -1,5 +1,5 @@
 /*
-    QtTray: QSystemTrayIcon presence for both shells (GNOME_PLAN.md D3).
+    QtTray: QSystemTrayIcon presence for both shells (ROADMAP.md §2).
 
     Measured, not assumed: Qt's tray on Wayland is Qt's own generic DBus SNI
     client (libQt6Gui: QDBusTrayIcon + StatusNotifierItemAdaptor), present from

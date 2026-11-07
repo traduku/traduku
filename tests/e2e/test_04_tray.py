@@ -5,7 +5,7 @@ StatusNotifierItem and the watcher lists it. Plasma reports items by
 sender; identity = the Title property (KdeTray sets "Traduku"). D-Bus is
 the exact machine-checkable signal; the panel screenshot is the visual
 record (on GNOME without the SNI extension there is no watcher — a known
-DE difference from PIPELINE.md; on KDE the icon is mandatory).
+DE difference from ROADMAP.md §6; on KDE the icon is mandatory).
 
 Red check (verified during development, see run log): killing the app
 removes the item and the test fails; an app that never registered fails
