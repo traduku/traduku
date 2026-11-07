@@ -1,8 +1,9 @@
 #include "WlClipboard.h"
 
+#include "core/texttargets.h"
+
 #include <QProcess>
 #include <QStandardPaths>
-#include <QTextCodec>
 
 namespace lt {
 
@@ -60,53 +61,16 @@ int WlClipboard::runTool(const QString &program, const QStringList &args,
 
 QString WlClipboard::pickBestType(const QStringList &offered)
 {
-    static const QStringList exact{QStringLiteral("text/plain;charset=utf-8"),
-                                   QStringLiteral("text/plain;charset=UTF-8"),
-                                   QStringLiteral("text/plain"),
-                                   QStringLiteral("UTF8_STRING")};
-    for (const QString &want : exact) {
-        if (offered.contains(want)) {
-            return want;
-        }
-    }
-    // Any charset-tagged text/plain (decode per charset), TEXT last.
-    QString fallback;
-    for (const QString &t : offered) {
-        const QString lower = t.toLower();
-        if (lower.startsWith(QLatin1String("text/plain;charset="))) {
-            return t;
-        }
-        if (fallback.isEmpty() && t == QLatin1String("TEXT")) {
-            fallback = t;
-        }
-    }
-    return fallback;
+    // The rule moved to core/texttargets: the X11 reader needs the same
+    // order and must not depend on this module to get it. Kept as a name
+    // because wl-paste speaks MIME and this is where MIME lives.
+    return TextTargets::pickBestMime(offered);
 }
 
 QString WlClipboard::decodeWithCharset(const QByteArray &data,
                                        const QString &mimeType)
 {
-    QString charset = QStringLiteral("UTF-8");
-    const int semi = mimeType.indexOf(QLatin1Char(';'));
-    if (semi >= 0) {
-        const QString param = mimeType.mid(semi + 1).trimmed();
-        if (param.startsWith(QLatin1String("charset="), Qt::CaseInsensitive)) {
-            charset = param.mid(8).trimmed().toUpper();
-            if (charset == QLatin1String("UTF8")) {
-                charset = QStringLiteral("UTF-8");
-            }
-        }
-    }
-    if (charset == QLatin1String("UTF-8")) {
-        return QString::fromUtf8(data);
-    }
-    if (charset == QLatin1String("US-ASCII")) {
-        return QString::fromLatin1(data);
-    }
-    if (const QTextCodec *codec = QTextCodec::codecForName(charset.toLatin1())) {
-        return codec->toUnicode(data);
-    }
-    return QString::fromUtf8(data);   // last resort, replacement chars
+    return TextTargets::decodeWithCharset(data, mimeType);
 }
 
 QString WlClipboard::text() const

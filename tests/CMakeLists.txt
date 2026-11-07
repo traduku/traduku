@@ -39,6 +39,11 @@ target_include_directories(tst_translationengine PRIVATE integration)
 lt_add_test(tst_clipboards SOURCES integration/tst_clipboards.cpp
     LIBS lt::platform_wl lt::platform_qt lt::interfaces Qt6::Widgets)
 
+# M6b: the target/charset negotiation both clipboard readers share. It is its
+# own suite because its two callers are in different platform layers: testing
+# it through either one would make the shared rule look platform-specific.
+lt_add_test(tst_texttargets SOURCES unit/tst_texttargets.cpp LIBS lt::core)
+
 # M7: core sound player (events, theme resolution, backend chain)
 lt_add_test(tst_soundplayer SOURCES unit/tst_soundplayer.cpp LIBS lt::core)
 

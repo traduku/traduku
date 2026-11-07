@@ -10,6 +10,7 @@ add_library(lt_core STATIC
     doublepressdetector.cpp
     sseparser.cpp
     unicodeescapes.cpp
+    texttargets.cpp
     llmstreamclient.cpp
     translationengine.cpp
     soundplayer.cpp
