@@ -65,6 +65,10 @@ guest: ## package for the VM's distro -> install -> gate (ARGS=--rebuild)
 e2e: ## run the GUI grid tests against the VM; installs nothing on purpose
 	TRADUKU_VM=$(VM) $(PY) -u -m pytest tests/e2e -v -rA --color=no $(ARGS)
 
+.PHONY: x11test
+x11test: ## clipboard tests against a real X server (Xvfb in the builder container)
+	./tools/vms/x11-ctest.sh $(ARGS)
+
 .PHONY: cycle
 cycle: ## the one command: package -> guest -> full e2e, timings included
 	$(MAKE) --no-print-directory guest VM=$(VM)

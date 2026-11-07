@@ -50,6 +50,11 @@ lt_add_test(tst_texttargets SOURCES unit/tst_texttargets.cpp LIBS lt::core)
 # server.
 add_executable(fake-xwayland support/fake-xwayland.cpp)   # /proc camouflage
 lt_add_test(tst_x11session SOURCES unit/tst_x11session.cpp LIBS lt::platform_x11)
+# M6d: the X selection protocol against a real server. Skips (loudly) on a
+# headless host; TRADUKU_REQUIRE_X11=1 in the container gate turns that skip
+# into a failure, so the code is never shipped untested.
+lt_add_test(tst_x11clipboard SOURCES integration/tst_x11clipboard.cpp
+    LIBS lt::platform_x11 Threads::Threads)
 set_tests_properties(tst_x11session PROPERTIES
     ENVIRONMENT "QT_QPA_PLATFORM=offscreen;FAKE_XWAYLAND=$<TARGET_FILE:fake-xwayland>")
 

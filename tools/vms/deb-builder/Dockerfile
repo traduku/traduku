@@ -21,5 +21,12 @@ RUN apt-get update -qq \
       libkf6coreaddons-dev libkf6i18n-dev libkf6statusnotifieritem-dev \
       libkf6notifications-dev libkf6globalaccel-dev libkf6dbusaddons-dev \
       libx11-dev libxi-dev libxtst-dev \
+      # An X server for the clipboard integration tests. They are not
+      # optional there: tests/integration/tst_x11clipboard skips when no
+      # server is reachable, and a gate that skips everything passes for the
+      # wrong reason - so the gate provides a server and sets
+      # TRADUKU_REQUIRE_X11=1 to make "no server" a failure. See
+      # tools/vms/x11-ctest.sh.
+      xvfb x11-utils \
     && rm -rf /var/lib/apt/lists/*
 

@@ -169,14 +169,69 @@ private slots:
         auto none = finderWith({});
         auto *qcb = QGuiApplication::clipboard();
 
-        auto c1 = createClipboard(QStringLiteral("wayland"), both, qcb, r.runner());
+        // xAvailable is passed explicitly throughout: the host running this
+        // test may or may not have an X server, and the machine must not be
+        // able to decide what the test believes.
+        const auto noX = [] { return false; };
+        const auto haveX = [] { return true; };
+
+        auto c1 = createClipboard(QStringLiteral("wayland"), both, qcb, r.runner(), noX);
         QCOMPARE(c1->backendName(), QString("wl-clipboard"));
 
-        auto c2 = createClipboard(QStringLiteral("wayland"), none, qcb, r.runner());
+        auto c2 = createClipboard(QStringLiteral("wayland"), none, qcb, r.runner(), noX);
         QCOMPARE(c2->backendName(), QString("qt"));
 
-        auto c3 = createClipboard(QStringLiteral("xcb"), both, qcb, r.runner());
+        auto c3 = createClipboard(QStringLiteral("xcb"), both, qcb, r.runner(), noX);
         QCOMPARE(c3->backendName(), QString("qt"));
+
+        // The case that made the X11 reader necessary: wayland, no
+        // wl-clipboard (Arch, where it is AUR-only), XWayland reachable.
+        // Qt here reads a plain TEXT offer as latin-1 and returns mojibake,
+        // so choosing it is not a neutral fallback.
+        auto c4 = createClipboard(QStringLiteral("wayland"), none, qcb, r.runner(), haveX);
+        QCOMPARE(c4->backendName(), QString("x11"));
+
+        // X11 session with a live server: the X11 reader negotiates, Qt's xcb
+        // backend does not.
+        auto c5 = createClipboard(QStringLiteral("xcb"), none, qcb, r.runner(), haveX);
+        QCOMPARE(c5->backendName(), QString("x11"));
+
+        // wl-clipboard wins on wayland even with X available: the compositor
+        // owns the clipboard, XWayland only mirrors it.
+        auto c6 = createClipboard(QStringLiteral("wayland"), both, qcb, r.runner(), haveX);
+        QCOMPARE(c6->backendName(), QString("wl-clipboard"));
+    }
+
+    void forcedBackendIsHonouredOnlyWhenItCanWork()
+    {
+        // TRADUKU_CLIPBOARD is the knob a user reaches for when a paste goes
+        // wrong. Honouring it into a backend whose prerequisite is missing
+        // would give an empty clipboard and no reason - the exact failure the
+        // knob exists to investigate.
+        auto *qcb = QGuiApplication::clipboard();
+        const auto noX = [] { return false; };
+        const auto haveX = [] { return true; };
+
+        QCOMPARE(chooseClipboard(true, true, true, QStringLiteral("qt")),
+                 ClipboardBackend::Qt);
+        QCOMPARE(chooseClipboard(true, true, true, QStringLiteral("WL")),
+                 ClipboardBackend::WlClipboardTool);
+        QCOMPARE(chooseClipboard(true, false, true, QStringLiteral("wl")),
+                 ClipboardBackend::X11);          // forced, but nothing to force
+        QCOMPARE(chooseClipboard(true, true, false, QStringLiteral("x11")),
+                 ClipboardBackend::WlClipboardTool);
+        QCOMPARE(chooseClipboard(false, false, false, QString()),
+                 ClipboardBackend::Qt);
+        // wl-clipboard on an X11 session is no reason to shell out: Qt reads
+        // a real X selection, and without a server there is nothing to prefer.
+        QCOMPARE(chooseClipboard(false, true, false, QString()), ClipboardBackend::Qt);
+
+        // And through the factory: forcing qt must beat a reachable server.
+        qputenv("TRADUKU_CLIPBOARD", "qt");
+        auto forced = createClipboard(QStringLiteral("xcb"), finderWith({"wl-paste", "wl-copy"}),
+                                     qcb, {}, haveX);
+        QCOMPARE(forced->backendName(), QString("qt"));
+        qunsetenv("TRADUKU_CLIPBOARD");
     }
 
     void waylandWithoutToolsAdvisesInstallingWlClipboard()
@@ -187,7 +242,8 @@ private slots:
         // empty clipboard. The chosen backend must SAY what to install.
         auto *qcb = QGuiApplication::clipboard();
 
-        auto blind = createClipboard(QStringLiteral("wayland"), finderWith({}), qcb);
+        auto blind = createClipboard(QStringLiteral("wayland"), finderWith({}), qcb, {},
+                                    [] { return false; });
         QCOMPARE(blind->backendName(), QString("qt"));
         QVERIFY2(!blind->diagnostic().isEmpty(),
                  "a backend that cannot see the clipboard stayed silent");
@@ -196,12 +252,14 @@ private slots:
 
         // the real tools present: nothing to complain about
         auto good = createClipboard(QStringLiteral("wayland"),
-                                    finderWith({"wl-paste", "wl-copy"}), qcb);
+                                    finderWith({"wl-paste", "wl-copy"}), qcb, {},
+                                    [] { return false; });
         QVERIFY(good->diagnostic().isEmpty());
 
         // X11 sessions: Qt reads the selection from the background fine,
         // and there the tools are not even used
-        auto x11 = createClipboard(QStringLiteral("xcb"), finderWith({}), qcb);
+        auto x11 = createClipboard(QStringLiteral("xcb"), finderWith({}), qcb, {},
+                                  [] { return false; });
         QVERIFY2(x11->diagnostic().isEmpty(), qPrintable(x11->diagnostic()));
     }
 };
