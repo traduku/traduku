@@ -91,6 +91,19 @@ bool KdeTray::isAvailable() const
     return true;
 }
 
+void KdeTray::setStatusLabel(const QString &text)
+{
+    // Same row, same position, same disabled state as in QtTray - the parity
+    // test compares them.
+    if (!m_statusAction) {
+        m_statusAction = m_menu->addAction(text);
+        m_statusAction->setEnabled(false);
+        m_menu->insertSeparator(m_statusAction);
+        return;
+    }
+    m_statusAction->setText(text);
+}
+
 void KdeTray::setBusy(bool busy)
 {
     m_tray->setOverlayIconByName(busy ? QStringLiteral("emblem-added")

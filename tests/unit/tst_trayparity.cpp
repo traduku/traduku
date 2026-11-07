@@ -170,6 +170,35 @@ private slots:
         }
     }
 
+    void theStatusRowIsIdenticalAndUnactionable()
+    {
+        if (!dbusAvailable()) {
+            QSKIP("KStatusNotifierItem needs a session bus");
+        }
+        Settings s(path());
+        FakeAutostart a1, a2;
+        KdeTray kde(&s, &a1);
+        QtTray qt(&s, &a2);
+
+        // "Which build, which tray" has to be readable from the panel. The
+        // operator could not tell the two apart after a Start-Menu relaunch
+        // that quietly brought back the installed binary.
+        const QString label = QStringLiteral("Traduku 0.3.0 · tray qt [TRADUKU_TRAY]");
+        kde.setStatusLabel(label);
+        qt.setStatusLabel(label);
+        for (ITray *t : {static_cast<ITray *>(&kde), static_cast<ITray *>(&qt)}) {
+            QAction *row = nullptr;
+            for (QAction *a : t->menu()->actions()) {
+                if (a->text() == label) {
+                    row = a;
+                }
+            }
+            QVERIFY2(row, qPrintable(QStringLiteral("missing status row in %1")
+                                         .arg(t->metaObject()->className())));
+            QCOMPARE(row->isEnabled(), false);
+        }
+    }
+
     void bothSpeakBusyAndToolTip()
     {
         Settings s(path());

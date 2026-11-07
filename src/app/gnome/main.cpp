@@ -347,6 +347,8 @@ int main(int argc, char **argv)
     if (gesture.chosen) {
         tray.setToolTipSub(QStringLiteral("Press Ctrl+C twice to translate the clipboard"));
     }
+    tray.setStatusLabel(QStringLiteral("Traduku %1 · tray qt")
+                            .arg(QCoreApplication::applicationVersion()));
     tray.show();
 
     // No tray icon yet (Stage 5), so stderr is the only way to answer the

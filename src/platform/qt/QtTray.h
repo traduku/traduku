@@ -52,6 +52,9 @@ public:
     /// The QSystemTrayIcon itself - for tests and for the tooltip assertions.
     QSystemTrayIcon *icon() const { return m_tray; }
 
+    /// Which build/tray this is, as a disabled row on top of the menu.
+    void setStatusLabel(const QString &text) override;
+
     /// False when the platform has no tray at all. The app must keep working
     /// without one - on GNOME without an SNI extension nothing appears here,
     /// and that is a supported configuration, not an error.
@@ -87,6 +90,7 @@ private:
     IAutostart *m_autostart;
     QHash<QString, QAction *> m_languageActions;
     QAction *m_autostartAction = nullptr;
+    QAction *m_statusAction = nullptr;
     bool m_busy = false;
     QString m_toolTipSub;
 };
