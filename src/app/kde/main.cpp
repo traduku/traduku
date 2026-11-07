@@ -167,7 +167,7 @@ BackendReport collectBackends(Settings *settings)
     // Plasma has no packaged entry (the first-run dialog asks instead), so this
     // line normally names a file in ~/.config - or says there is none, which is
     // the answer a user needs when the app did not come back after a reboot.
-    r.autostart = XdgAutostart(QStringLiteral("traduku"),
+    r.autostart = XdgAutostart(desktopBaseName(),
                                QCoreApplication::applicationFilePath())
                       .diagnostic();
     r.reasoning = (settings && settings->disableReasoning())
@@ -258,7 +258,7 @@ int main(int argc, char **argv)
     // second copy automatically).
     KDBusService service(KDBusService::Unique);
 
-    XdgAutostart autostart(QStringLiteral("traduku"),
+    XdgAutostart autostart(desktopBaseName(),
                            QCoreApplication::applicationFilePath());
     KdeNotifier notifier;
     SoundPlayer sound(&settings);

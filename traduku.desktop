@@ -5,8 +5,12 @@ GenericName=Clipboard translator
 Comment=Translate the clipboard with an LLM (double Ctrl+C, streaming)
 Exec=traduku
 Icon=accessories-dictionary
+# Same pairing as the GNOME entry: KWin groups windows and finds the launcher
+# icon by WM_CLASS, which Qt sets to the applicationName (measured on
+# arch-kde: WM_CLASS(STRING) = "traduku", "traduku").
 Terminal=false
 Categories=Utility;Translation;Qt;KDE;
 X-KDE-autostart-after=panel
 X-DBus-ServiceName=org.kde.traduku
 StartupNotify=false
+StartupWMClass=traduku

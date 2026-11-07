@@ -130,6 +130,14 @@ void prepareCliEnvironment(const QStringList &argv)
 }
 
 
+QString desktopBaseName()
+{
+    // Deliberately not derived from QCoreApplication::applicationName(): that
+    // one is set by configureApplication and a test could have changed it,
+    // while this names a file on disk.
+    return QStringLiteral("traduku");
+}
+
 int runAutostartCommand(const QString &action)
 {
     QTextStream out(stdout), err(stderr);

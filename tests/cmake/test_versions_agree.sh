@@ -52,4 +52,22 @@ fi
 grep -q '^Exec=traduku' "$src/packaging/gnome/traduku.desktop" \
     || fail "packaging/gnome/traduku.desktop does not Exec the installed binary"
 
+# One identity, four spellings (autostart file name, .desktop file name,
+# WM_CLASS Qt derives, StartupWMClass). The code says it once, in
+# lt::desktopBaseName(); the packaging file has to agree with it, or
+# gnome-shell shows the window as a second nameless icon next to the launcher.
+base=$(sed -n 's/.*desktopBaseName()\s*$//;s/.*return QStringLiteral("\([^"]*\)");.*/\1/p' \
+        "$src/src/app/AppFlavour.cpp" | head -1)
+[ -n "$base" ] || fail "could not read lt::desktopBaseName() from AppFlavour.cpp"
+for desktop in "$src/packaging/gnome/$base.desktop" "$src/$base.desktop"; do
+    # Both shells ship a .desktop (the KDE one at the repo root), and both are
+    # matched by the same WM_CLASS Qt produces - a fix on one shell only is
+    # the divergence this file exists to catch.
+    test -f "$desktop" || continue
+    grep -q "^StartupWMClass=$base$" "$desktop" \
+        || fail "$desktop lacks StartupWMClass=$base (window and launcher would not pair)"
+done
+test -f "$src/packaging/gnome/$base.desktop" \
+    || fail "packaging/gnome/$base.desktop: the file name is part of the identity"
+
 echo ok

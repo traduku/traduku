@@ -5,6 +5,11 @@ GenericName=Clipboard translator
 Comment=Translate the clipboard with an LLM (double Ctrl+C, streaming)
 Exec=traduku
 Icon=accessories-dictionary
+# Qt sets WM_CLASS to the applicationName (measured on ubuntu-gnome:
+# WM_CLASS(STRING) = "traduku", "traduku"). Without this line gnome-shell
+# cannot pair the window with this launcher entry, so the dash shows a second,
+# nameless icon next to the real one - the first thing a GNOME user notices.
+StartupWMClass=traduku
 Terminal=false
 Categories=Utility;Translation;Qt;GNOME;
 StartupNotify=false
