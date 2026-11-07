@@ -20,6 +20,7 @@
 #include "app/SingleInstance.h"
 #include "app/cli.h"
 #include "core/chunkedtranslator.h"
+#include <QDebug>
 #include "core/settings.h"
 #include "core/soundplayer.h"
 #include "platform/wl/ClipboardFactory.h"
@@ -321,6 +322,25 @@ int main(int argc, char **argv)
                      [&settings]() {
                          SettingsDialog dlg(&settings);
                          dlg.exec();
+                     });
+
+    // No tray icon yet (Stage 5), so stderr is the only way to answer the
+    // one question that matters when "nothing happens": did the gesture fire
+    // at all, and did the translation come back?
+    QObject::connect(gesture.chosen, &IHotkeyBackend::activated, app.get(),
+                     []() {
+                         qInfo("traduku: gesture detected, translating the clipboard");
+                     });
+    QObject::connect(&pipeline, &ChunkedTranslator::startedDocument, app.get(),
+                     [](const QString &source, const QString &target) {
+                         qInfo("traduku: translating %d chars -> %s",
+                               source.size(), qUtf8Printable(target));
+                     });
+    QObject::connect(&pipeline, &ChunkedTranslator::allDone, app.get(),
+                     []() { qInfo("traduku: translation ready"); });
+    QObject::connect(&pipeline, &ChunkedTranslator::failed, app.get(),
+                     [](const QString &reason) {
+                         qInfo("traduku: translation failed: %s", qUtf8Printable(reason));
                      });
 
     // No tray icon yet (Stage 5), so the window needs a way out.

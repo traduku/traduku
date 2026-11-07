@@ -1,0 +1,85 @@
+<!DOCTYPE node PUBLIC "-//freedesktop//DTD D-BUS Object Introspection 1.0//EN"
+ "http://www.freedesktop.org/standards/dbus/1.0/introspect.dtd">
+<!--
+    org.kde.StatusNotifierItem (SNI), the protocol every tray host on Linux
+    actually consumes.
+
+    Transcribed from KDE's canonical copy:
+      https://invent.kde.org/frameworks/knotifications/-/blob/master/src/org.kde.StatusNotifierItem.xml
+    which is also what this desktop's extension ships
+    (/usr/share/gnome-shell/extensions/ubuntu-appindicators@ubuntu.com/
+     interfaces-xml/StatusNotifierItem.xml).
+
+    Generated into an adaptor with qdbusxml2cpp - the point is that Scroll's
+    (i, s) order, ProvideXdgActivationToken and the a(iiay) pixmap vector come
+    from the spec text, not from a guess.
+
+    ToolTip (s(iiay)s) is left out here because the spike does not set one;
+    SniTray (Stage 5) adds it along with its metatype.
+-->
+<node>
+  <interface name="org.kde.StatusNotifierItem">
+
+    <property name="Category" type="s" access="read"/>
+    <property name="Id" type="s" access="read"/>
+    <property name="Title" type="s" access="read"/>
+    <property name="Status" type="s" access="read"/>
+    <property name="WindowId" type="i" access="read"/>
+
+    <!-- theme search path for the icon names below -->
+    <property name="IconThemePath" type="s" access="read"/>
+    <property name="Menu" type="o" access="read"/>
+    <property name="ItemIsMenu" type="b" access="read"/>
+
+    <!-- names are preferred over pixmaps, but Traduku ships no theme icon -->
+    <property name="IconName" type="s" access="read"/>
+    <property name="IconPixmap" type="a(iiay)" access="read">
+      <annotation name="org.qtproject.QtDBus.QtTypeName" value="lt::SniPixmapVector"/>
+    </property>
+
+    <property name="OverlayIconName" type="s" access="read"/>
+    <property name="AttentionIconName" type="s" access="read"/>
+    <property name="AttentionMovieName" type="s" access="read"/>
+
+    <method name="ContextMenu">
+      <arg name="x" type="i" direction="in"/>
+      <arg name="y" type="i" direction="in"/>
+    </method>
+
+    <method name="Activate">
+      <arg name="x" type="i" direction="in"/>
+      <arg name="y" type="i" direction="in"/>
+    </method>
+
+    <method name="ProvideXdgActivationToken">
+      <arg name="token" type="s" direction="in"/>
+    </method>
+
+    <method name="SecondaryActivate">
+      <arg name="x" type="i" direction="in"/>
+      <arg name="y" type="i" direction="in"/>
+    </method>
+
+    <!-- not in the spec, but sent by ayatana-based hosts -->
+    <method name="XAyatanaSecondaryActivate">
+      <arg name="timestamp" type="u" direction="in"/>
+    </method>
+
+    <method name="Scroll">
+      <arg name="delta" type="i" direction="in"/>
+      <arg name="orientation" type="s" direction="in"/>
+    </method>
+
+    <signal name="NewTitle"/>
+    <signal name="NewIcon"/>
+    <signal name="NewAttentionIcon"/>
+    <signal name="NewOverlayIcon"/>
+    <signal name="NewStatus">
+      <arg name="status" type="s" direction="out"/>
+    </signal>
+    <signal name="NewIconThemePath">
+      <arg type="s" name="icon_theme_path" direction="out"/>
+    </signal>
+    <signal name="NewMenu"/>
+  </interface>
+</node>
