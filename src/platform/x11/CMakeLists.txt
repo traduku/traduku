@@ -12,4 +12,9 @@ target_include_directories(traduku-record-keys PRIVATE ${CMAKE_CURRENT_SOURCE_DI
 target_link_libraries(traduku-record-keys PRIVATE PkgConfig::X11)
 set_target_properties(traduku-record-keys PROPERTIES
     RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
-install(TARGETS traduku-record-keys RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
+# The GNOME shell listens on /dev/input (evdev) and never talks to X, so it
+# must not ship a binary that advertises an X key listener it cannot use -
+# packaged installs are read as a description of what the program does.
+if(NOT LT_SHELL_EFFECTIVE STREQUAL "gnome")
+    install(TARGETS traduku-record-keys RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
+endif()

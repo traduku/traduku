@@ -30,8 +30,8 @@ Package: traduku
 Architecture: any
 Depends: ${shlibs:Depends}, ${misc:Depends}, libqt6multimedia6,
  qt6-wayland, gstreamer1.0-plugins-good
-Recommends: wl-clipboard
-Recommends: gnome-shell-extension-appindicator | gnome-shell-ubuntu-extensions
+Recommends: wl-clipboard, gnome-shell-extension-appindicator |
+ gnome-shell-ubuntu-extensions
 Provides: traduku-gnome (= ${binary:Version})
 Conflicts: traduku-gnome
 Description: Clipboard translator powered by any OpenAI-compatible LLM (Plasma)

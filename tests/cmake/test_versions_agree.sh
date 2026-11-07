@@ -1,0 +1,55 @@
+#!/bin/sh
+# The version lives in three files that nothing forces to agree, and they had
+# already drifted when this test was written: CMakeLists said 0.2.0, the
+# PKGBUILD said 0.2, and the changelog opened with 0.2 while an older entry
+# below it said 0.2.0-1 (dpkg complained: "the current version (0.2) is
+# earlier than the previous one").
+#
+# Why it matters to a user and not just to tidy: pacman and apt both refuse to
+# "upgrade" to a version they already have. A release that forgets to bump
+# ships a package that installs but never arrives on an installed machine - and
+# a --version that disagrees with the package DB makes every bug report
+# ambiguous, which is the exact confusion this project has already paid for.
+#
+# Usage: test_versions_agree.sh <source dir>
+set -u
+src="$1"
+fail() { echo "FAIL: $*" >&2; exit 1; }
+
+cmake_ver=$(sed -n 's/^project(traduku VERSION \([0-9.]*\).*/\1/p' "$src/CMakeLists.txt")
+pkg_ver=$(sed -n 's/^pkgver=\(.*\)$/\1/p' "$src/packaging/arch/PKGBUILD")
+# Debian revision dropped: the changelog opens with "traduku (0.3.0-1)".
+chlog_ver=$(sed -n 's/^traduku (\([0-9][0-9A-Za-z.~+-]*\).*/\1/p' "$src/packaging/debian/changelog" | head -1)
+chlog_ver=${chlog_ver%%-*}
+
+[ -n "$cmake_ver" ]  || fail "no VERSION in CMakeLists.txt project()"
+[ -n "$pkg_ver" ]    || fail "no pkgver in packaging/arch/PKGBUILD"
+[ -n "$chlog_ver" ]  || fail "no version in packaging/debian/changelog"
+
+[ "$cmake_ver" = "$pkg_ver" ] \
+    || fail "version drift: CMakeLists says $cmake_ver, the PKGBUILD says $pkg_ver - pacman will install a package whose --version contradicts its own database"
+[ "$cmake_ver" = "$chlog_ver" ] \
+    || fail "version drift: CMakeLists says $cmake_ver, the changelog opens with $chlog_ver"
+
+# The changelog must be newest-first; dpkg refuses to build a package whose
+# entries descend, and it does so with a warning people ignore.
+if command -v dpkg --help >/dev/null 2>&1 && dpkg --compare-versions 0 2>/dev/null; then
+    prev=""
+    # a `for`, not a `while read` on a pipe: the loop body must run in this
+    # shell, or `fail` inside it only exits a subshell and the bad order is
+    # reported as success.
+    for v in $(sed -n 's/^traduku (\([0-9][0-9A-Za-z.~+-]*\).*/\1/p' "$src/packaging/debian/changelog"); do
+        if [ -n "$prev" ] && ! dpkg --compare-versions "$prev" ge "$v"; then
+            fail "changelog out of order: $prev is listed above the newer $v"
+        fi
+        prev="$v"
+    done
+fi
+
+# The binary name the package installs must be what the tests and the desktop
+# file invoke; a rename that misses one of them ships an app that starts from
+# no menu entry.
+grep -q '^Exec=traduku' "$src/packaging/gnome/traduku.desktop" \
+    || fail "packaging/gnome/traduku.desktop does not Exec the installed binary"
+
+echo ok

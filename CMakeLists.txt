@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.21)
 
-project(traduku VERSION 0.2.0 DESCRIPTION
+project(traduku VERSION 0.3.0 DESCRIPTION
     "Clipboard translator powered by any OpenAI-compatible LLM (streaming)"
     LANGUAGES CXX)
 

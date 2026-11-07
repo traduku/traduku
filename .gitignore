@@ -7,3 +7,4 @@ release-out/
 tests/e2e/__pycache__/
 __pycache__/
 .pytest_cache/
+.venv
