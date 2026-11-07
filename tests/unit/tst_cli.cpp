@@ -2,6 +2,7 @@
 #include <QCoreApplication>
 
 #include "app/cli.h"
+#include <QGuiApplication>
 
 using namespace lt;
 
@@ -143,6 +144,25 @@ private slots:
         QCOMPARE(QCoreApplication::applicationName(), QStringLiteral("traduku"));
         QCOMPARE(prettyShellName(QStringLiteral("gnome")), QStringLiteral("GNOME"));
         QCOMPARE(prettyShellName(QStringLiteral("kde")), QStringLiteral("KDE Plasma"));
+    }
+
+    void panelNameIsTheSameOnBothShells()
+    {
+        // The KDE shell set the display name, the GNOME shell did not: two
+        // shells configuring the same product differently, which is what
+        // configureApplication exists to stop. Measured (and the reason the
+        // e2e asserts the tray identity on the ToolTip instead): with the
+        // display name set, Plasma's panel shows Title/Id "Traduku" while the
+        // Ubuntu guest's Qt 6.8 still reports the lowercase applicationName.
+        // What is not a Qt detail is this - both shells now say "Traduku",
+        // and the machine-readable name stays lowercase.
+        configureApplication(*m_app, QStringLiteral("gnome"), QStringLiteral("9.9.9"));
+        QCOMPARE(QGuiApplication::applicationDisplayName(), QStringLiteral("Traduku"));
+        configureApplication(*m_app, QStringLiteral("kde"), QStringLiteral("9.9.9"));
+        QCOMPARE(QGuiApplication::applicationDisplayName(), QStringLiteral("Traduku"));
+        // ... and the machine-readable id stays the lowercase one (config
+        // file, D-Bus name and package name all use it).
+        QCOMPARE(QCoreApplication::applicationName(), QStringLiteral("traduku"));
     }
 };
 

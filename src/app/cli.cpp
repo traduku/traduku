@@ -78,6 +78,17 @@ void configureApplication(QCoreApplication &app, const QString &shell,
     // `traduku --version` print a name and no number.
     QCoreApplication::setApplicationName(QStringLiteral("traduku"));
     QCoreApplication::setApplicationVersion(version);
+    // The human name of the application: window titles, dialog captions and
+    // (on the Qt the Plasma guest runs) the SNI Title/Id. The KDE shell set
+    // it, the GNOME shell nowhere - so the two shells configured the same
+    // product differently, which is what this function exists to prevent.
+    // Measured, and recorded so nobody re-decides it from folklore: on the
+    // Ubuntu guest's Qt 6.8 the SNI Title/Id stay the lowercase applicationName
+    // even with the display name set, so the tray identity the e2e pins is the
+    // ToolTip that QtTray writes ("Traduku - ..."), see
+    // tests/e2e/test_04_tray.py::_identities. Machine-readable ids (config
+    // path, D-Bus name, package name) stay the lowercase one on every Qt.
+    QGuiApplication::setApplicationDisplayName(QStringLiteral("Traduku"));
 }
 
 CliOptions parseCommandLine(QCoreApplication &app, const QStringList &args,
