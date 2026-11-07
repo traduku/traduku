@@ -1,4 +1,5 @@
-build/
+build*/
+build-*
 *.user
 .cache/
 compile_commands.json
