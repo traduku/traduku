@@ -10,8 +10,6 @@
 #include <QDBusInterface>
 #include <QIcon>
 #include <QMenu>
-#include <cstdio>
-static void probe(const char*s){fprintf(stderr,"PROBE QtTray %s\n",s);fflush(stderr);}
 #include <QMetaEnum>
 #include <QPainter>
 #include <QPixmap>
@@ -83,12 +81,9 @@ QtTray::~QtTray()
     // The icon holds a pointer to the menu: destroy it first, or the
     // QSystemTrayIcon destructor dereferences freed memory (the same ordering
     // bug KdeTray had, found by tests/unit/tst_trayparity.cpp).
-    probe("dtor enter");
     delete m_tray;
     m_tray = nullptr;
-    probe("tray deleted");
     delete m_menu;
-    probe("menu deleted");
     m_menu = nullptr;
 }
 

@@ -148,7 +148,6 @@ int main(int argc, char **argv)
 {
     QApplication app(argc, argv);
     configureApplication(app, QStringLiteral("kde"), QStringLiteral(LT_VERSION));
-    QApplication::setApplicationDisplayName(QStringLiteral("Traduku"));
     QApplication::setQuitOnLastWindowClosed(false);   // tray-only app
 
     // One parser for both shells (app/cli.cpp). It used to live in this file
