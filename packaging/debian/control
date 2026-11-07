@@ -20,12 +20,45 @@ Build-Depends: debhelper-compat (= 13),
 Standards-Version: 4.6.2
 Rules-Requires-Root: no
 
+# One source, two flavours, because the two shells deliberately do not share a
+# dependency set: the GNOME one links no KF6 at all (GNOME_PLAN.md D3 - GNOME
+# ships none), the Plasma one uses KF6 for notifications and global shortcuts.
+# Both install the same `traduku` binary name and the same .desktop, so they
+# conflict: a machine runs the flavour of its desktop.
+
 Package: traduku
 Architecture: any
 Depends: ${shlibs:Depends}, ${misc:Depends}, libqt6multimedia6,
+ qt6-wayland, gstreamer1.0-plugins-good
+Recommends: wl-clipboard
+Recommends: gnome-shell-extension-appindicator | gnome-shell-ubuntu-extensions
+Provides: traduku-gnome (= ${binary:Version})
+Conflicts: traduku-gnome
+Description: Clipboard translator powered by any OpenAI-compatible LLM (Plasma)
+ Press Ctrl+C twice to translate the clipboard into the configured target
+ language. Streams responses, translates interactively. This is the KDE Plasma
+ flavour: notifications and global shortcuts go through KF6, the tray is
+ Qt's StatusNotifierItem client.
+ .
+ Any other desktop works too (X11 and Wayland via XWayland), but on GNOME
+ prefer traduku-gnome, which pulls in no KF6 and ships the udev rule the
+ /dev/input gesture needs.
+
+Package: traduku-gnome
+Architecture: any
+# wl-clipboard is a hard dependency here, not a recommendation: this shell
+# reads the Wayland clipboard through wl-paste, and Qt's own QClipboard cannot
+# be used from a background process on Wayland (measured). Without the tool the
+# app still runs and says so out loud, but it cannot do its job.
+Depends: ${shlibs:Depends}, ${misc:Depends}, libqt6multimedia6,
  qt6-wayland, gstreamer1.0-plugins-good, wl-clipboard
 Recommends: gnome-shell-extension-appindicator | gnome-shell-ubuntu-extensions
-Description: Clipboard translator powered by any OpenAI-compatible LLM
+Provides: traduku (= ${binary:Version})
+Conflicts: traduku
+Description: Clipboard translator powered by any OpenAI-compatible LLM (GNOME)
  Press Ctrl+C twice to translate the clipboard into the configured target
- language. Streams responses, translates interactively, runs on KDE Plasma
- and any other desktop (X11 and Wayland via XWayland).
+ language. Streams responses, translates interactively. This is the GNOME
+ flavour: no KF6 anywhere, notifications over the freedesktop portal/D-Bus,
+ the gesture reads /dev/input (the package ships the uaccess rule that grants
+ the ACL, so no user is added to the input group), and the clipboard is
+ wl-clipboard.

@@ -16,7 +16,7 @@ PART_OFF=1048576   # sector 2048
 
 PKGS_BASE="base linux linux-firmware grub e2fsprogs sudo openssh git curl wget xterm xdotool xclip xorg-xprop xorg-xsetroot wl-clipboard ttf-dejavu inetutils qt6-wayland xorg-xwininfo xorg-xdpyinfo"
 PKGS_DE="plasma-desktop plasma-workspace sddm konsole"
-PKGS_BUILD="base-devel cmake ninja qt6-base qt6-multimedia qt6-5compat qt6-tools extra-cmake-modules kstatusnotifieritem knotifications kglobalaccel kdbusaddons libx11 libxi libxtst"
+PKGS_BUILD="base-devel cmake ninja qt6-base qt6-multimedia qt6-5compat qt6-tools extra-cmake-modules knotifications kglobalaccel kdbusaddons libx11 libxi libxtst"
 
 log() { echo "[mkarchbase] $*"; }
 [ -f "$IMG" ] && { log "image exists: $IMG (rm to rebuild)"; exit 0; }
