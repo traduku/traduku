@@ -32,10 +32,15 @@ public:
     }
 
     /// Response for the next connection: status line + raw body fragments.
-    void setResponse(int status, const QList<QByteArray> &bodyParts)
+    /// `contentType` is a lie detector: a proxy login page answers 200 with
+    /// text/html, and the client must not read that as "the model returned
+    /// nothing".
+    void setResponse(int status, const QList<QByteArray> &bodyParts,
+                     const QByteArray &contentType = QByteArray("text/event-stream"))
     {
         m_status = status;
         m_bodyParts = bodyParts;
+        m_contentType = contentType;
     }
 
     /// SSE helpers -------------------------------------------------------
@@ -66,11 +71,18 @@ public:
     /// must not inherit each other's behaviour.
     void reset()
     {
+        // A slot that closed the server to test "nothing is listening" must not
+        // leave every later slot connecting to port 0 and reporting the
+        // connection-refused path instead of the one it means to test.
+        if (!isListening()) {
+            listen(QHostAddress::LocalHost, 0);
+        }
         m_echo = false;
         m_squash = false;
         m_truncateFirst = 0;
         m_failNext = 0;
         m_status = 200;
+        m_contentType = QByteArray("text/event-stream");
         m_bodyParts.clear();
         m_requests.clear();
     }
@@ -148,9 +160,10 @@ private:
     void respond(QTcpSocket *sock)
     {
         QByteArray head = QStringLiteral("HTTP/1.1 %1 MOCK\r\n"
-                                         "Content-Type: text/event-stream\r\n"
+                                         "Content-Type: %2\r\n"
                                          "Connection: close\r\n\r\n")
                               .arg(m_status)
+                              .arg(QString::fromLatin1(m_contentType))
                               .toUtf8();
         sock->write(head);
         for (const QByteArray &part : m_bodyParts) {
@@ -206,6 +219,7 @@ private:
     int m_failStatus = 400;
     bool m_squash = false;
     int m_status = 200;
+    QByteArray m_contentType{"text/event-stream"};
     QList<QByteArray> m_bodyParts;
     QHash<QTcpSocket *, QByteArray> m_buffers;
 };

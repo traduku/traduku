@@ -75,7 +75,8 @@ private slots:
 
     void requestCarriesProtocolFields()
     {
-        m_server.setResponse(200, {QByteArray("data: [DONE]\n\n")});
+        m_server.setResponse(200, {sse(QStringLiteral("ok")),
+                                     QByteArray("data: [DONE]\n\n")});
         LlmStreamClient c;
         auto req = request();
         req.apiKey = QStringLiteral("sekrit");
@@ -96,7 +97,8 @@ private slots:
 
     void noApiKeyMeansNoAuthHeader()
     {
-        m_server.setResponse(200, {QByteArray("data: [DONE]\n\n")});
+        m_server.setResponse(200, {sse(QStringLiteral("ok")),
+                                     QByteArray("data: [DONE]\n\n")});
         LlmStreamClient c;
         QSignalSpy done(&c, &LlmStreamClient::completed);
         c.send(request());
@@ -106,7 +108,8 @@ private slots:
 
     void trailingSlashInBaseUrl()
     {
-        m_server.setResponse(200, {QByteArray("data: [DONE]\n\n")});
+        m_server.setResponse(200, {sse(QStringLiteral("ok")),
+                                     QByteArray("data: [DONE]\n\n")});
         LlmStreamClient c;
         QSignalSpy done(&c, &LlmStreamClient::completed);
         auto r = request();
@@ -220,6 +223,9 @@ private slots:
         QSignalSpy done(&c, &LlmStreamClient::completed);
         QSignalSpy fail(&c, &LlmStreamClient::failed);
         ChatRequest r = request();
+        // Echo mode answers with what sits between the markers; without them
+        // the reply is legitimately empty, which is now (correctly) a failure.
+        r.prompt = QStringLiteral("<<<TEXT hello there TEXT");
         r.disableReasoning = true;
         r.reasoningOffJson = QStringLiteral("{\"reasoning_effort\":\"none\"}");
         c.send(r);
@@ -273,6 +279,120 @@ private slots:
         QCOMPARE(fail.count(), 2);
         QVERIFY(c.busy() == false);
     }
+    // ---- "the configuration is wrong", said clearly --------------------
+    //
+    // A user does not read "HTTP status 0". Each of these is what the operator
+    // actually hits: a wrong key, a wrong URL, a server that is not up.
+
+    static QUrl apiBase()
+    {
+        return QUrl(QStringLiteral("http://192.168.1.7:8000/v1"));
+    }
+
+    void wrongApiKeySaysCheckTheKey()
+    {
+        m_server.setResponse(401, {QByteArray("{\"error\":{\"message\":\"invalid api key\"}}")});
+        LlmStreamClient c;
+        QSignalSpy fail(&c, &LlmStreamClient::failed);
+        c.send(request());
+        QVERIFY(fail.wait(5000));
+        const QString msg = fail.last().last().toString();
+        QVERIFY2(msg.contains(QStringLiteral("401")), qPrintable(msg));
+        QVERIFY2(msg.contains(QStringLiteral("key"), Qt::CaseInsensitive),
+                 qPrintable(msg));
+    }
+
+    void wrongUrlSaysWhichEndpointWasAsked()
+    {
+        // 404 is the usual result of a missing /v1 or a renamed model. The
+        // message must contain the address, or the user guesses for an hour.
+        m_server.setResponse(404, {QByteArray("{\"detail\":\"Not Found\"}")});
+        LlmStreamClient c;
+        QSignalSpy fail(&c, &LlmStreamClient::failed);
+        c.send(request());
+        QVERIFY(fail.wait(5000));
+        const QString msg = fail.last().last().toString();
+        QVERIFY2(msg.contains(QStringLiteral("404")), qPrintable(msg));
+        QVERIFY2(msg.contains(QStringLiteral("127.0.0.1")), qPrintable(msg));
+    }
+
+    void nothingListeningSaysSoAndNamesTheAddress()
+    {
+        const quint16 port = m_server.serverPort();
+        m_server.close();
+        LlmStreamClient c;
+        QSignalSpy fail(&c, &LlmStreamClient::failed);
+        auto r = request();
+        r.baseUrl = QStringLiteral("http://127.0.0.1:%1/v1").arg(port);
+        c.send(r);
+        QVERIFY(fail.wait(5000));
+        const QString msg = fail.last().last().toString();
+        QVERIFY2(msg.contains(QStringLiteral("127.0.0.1")), qPrintable(msg));
+        // "HTTP status 0" alone told the user nothing (the old behaviour).
+        QVERIFY2(!msg.trimmed().startsWith(QStringLiteral("HTTP status 0")),
+                 qPrintable(msg));
+    }
+
+    void htmlWhereJsonWasExpectedIsNotAnEmptyTranslation()
+    {
+        // The failure mode a proxy login page produces: 200 OK, HTML, no
+        // completion. Read as success it becomes "the model returned nothing",
+        // which points at the model instead of at the URL.
+        m_server.setResponse(200, {QByteArray(
+            "<html><body>Please log in</body></html>\n")},
+            QByteArray("text/html"));
+        LlmStreamClient c;
+        QSignalSpy fail(&c, &LlmStreamClient::failed);
+        QSignalSpy done(&c, &LlmStreamClient::completed);
+        c.send(request());
+        QVERIFY(fail.wait(5000));
+        QCOMPARE(done.count(), 0);
+        const QString msg = fail.last().last().toString();
+        QVERIFY2(msg.contains(QStringLiteral("HTML"), Qt::CaseInsensitive)
+                     || msg.contains(QStringLiteral("not"), Qt::CaseInsensitive),
+                 qPrintable(msg));
+    }
+
+    void anEmptyCompletionBlamesTheAnswerNotTheClipboard()
+    {
+        m_server.setResponse(200, {test::MockSseServer::sseEvent(QString()),
+                                   QByteArray("data: [DONE]\n\n")});
+        LlmStreamClient c;
+        QSignalSpy fail(&c, &LlmStreamClient::failed);
+        c.send(request());
+        QVERIFY(fail.wait(5000));
+        const QString msg = fail.last().last().toString();
+        QVERIFY2(msg.contains(QStringLiteral("no text"), Qt::CaseInsensitive)
+                     || msg.contains(QStringLiteral("empty"), Qt::CaseInsensitive),
+                 qPrintable(msg));
+        QVERIFY2(msg.contains(QStringLiteral("model"), Qt::CaseInsensitive),
+                 qPrintable(msg));
+    }
+
+    // The same sentences, from the pure formatters: no socket, no timing, and
+    // the wording is what is actually under test here.
+    void messageFormattersAreSpecific()
+    {
+        const QUrl url(QStringLiteral("http://aibox:8000/v1"));
+        QVERIFY(LlmStreamClient::httpFailureMessage(403, QStringLiteral("Forbidden"), url)
+                    .contains(QStringLiteral("key"), Qt::CaseInsensitive));
+        QVERIFY(LlmStreamClient::httpFailureMessage(404, QStringLiteral("Not Found"), url)
+                    .contains(QStringLiteral("model"), Qt::CaseInsensitive));
+        QVERIFY(LlmStreamClient::httpFailureMessage(429, QStringLiteral("Too Many Requests"), url)
+                    .contains(QStringLiteral("rate"), Qt::CaseInsensitive));
+        QVERIFY(LlmStreamClient::httpFailureMessage(502, QStringLiteral("Bad Gateway"), url)
+                    .contains(QStringLiteral("aibox")));
+        QVERIFY(LlmStreamClient::httpFailureMessage(502, QString(), url)
+                    .contains(QStringLiteral("502")));
+        // Unknown status still names the endpoint: never an empty string.
+        QVERIFY(!LlmStreamClient::httpFailureMessage(418, QString(), url).isEmpty());
+
+        QVERIFY(LlmStreamClient::emptyCompletionMessage(url, QStringLiteral("text/html"))
+                    .contains(QStringLiteral("HTML")));
+        QVERIFY(LlmStreamClient::emptyCompletionMessage(url, QStringLiteral("text/event-stream"))
+                    .contains(QStringLiteral("model"), Qt::CaseInsensitive));
+    }
+
     void truncationSignalOnFinishReasonLength()
     {
         test::MockSseServer server;

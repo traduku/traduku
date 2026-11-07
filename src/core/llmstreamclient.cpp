@@ -97,6 +97,7 @@ void LlmStreamClient::sendInternal(const ChatRequest &req, bool allowExtras)
         return;
     }
     m_pending = req;
+    m_sawContent = false;
     m_usedExtras = allowExtras
         && (effective.disableReasoning || !effective.extraBodyJson.isEmpty());
 
@@ -132,6 +133,9 @@ void LlmStreamClient::onReadyRead()
     m_parser->append(m_reply->readAll());
     const QVector<QString> deltas = m_parser->takeDeltas();
     for (const QString &d : deltas) {
+        if (!d.isEmpty()) {
+            m_sawContent = true;
+        }
         Q_EMIT delta(d);
     }
     const QString serverError = m_parser->takeError();
@@ -162,6 +166,9 @@ void LlmStreamClient::onFinished()
     if (m_parser) {
         m_parser->append(QByteArray("\n"));
         for (const QString &d : m_parser->takeDeltas()) {
+            if (!d.isEmpty()) {
+                m_sawContent = true;
+            }
             Q_EMIT delta(d);
         }
         const QString serverError = m_parser->takeError();
@@ -175,6 +182,7 @@ void LlmStreamClient::onFinished()
     // API key (401) or an nginx 502 would otherwise reach the caller as a
     // successful-but-empty translation. A JSON error body is still better
     // evidence, which is why this sits AFTER the parser-error branches.
+    const QUrl called = reply->url();
     const int status = reply->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt();
     if (status >= 400) {
         if (m_usedExtras && (status == 400 || status == 422)) {
@@ -192,27 +200,121 @@ void LlmStreamClient::onFinished()
         }
         const QString phrase = reply->attribute(
             QNetworkRequest::HttpReasonPhraseAttribute).toString();
-        QString msg = QStringLiteral("HTTP %1").arg(status);
-        if (!phrase.isEmpty()) {
-            msg += QStringLiteral(" %1").arg(phrase);
-        }
-        Q_EMIT failed(msg + QStringLiteral(" from the API endpoint"));
+        Q_EMIT failed(httpFailureMessage(status, phrase, called));
         return;
     }
 
     if (reply->error() != QNetworkReply::NoError) {
-        QString reason = QStringLiteral("%1 (HTTP status %2)")
-                             .arg(reply->errorString(),
-                                  QString::number(reply->attribute(
-                                      QNetworkRequest::HttpStatusCodeAttribute)
-                                      .toInt()));
-        Q_EMIT failed(reason);
+        Q_EMIT failed(transportFailureMessage(reply->error(),
+                                              reply->errorString(), called));
+        return;
+    }
+
+    // 200 OK that carried nothing. Two different problems look identical here
+    // and must not be reported identically: a model that answers with an empty
+    // completion, and an endpoint that is not an API at all (a proxy login
+    // page, a captive portal) which answers 200 with a page of HTML.
+    if (!m_sawContent) {
+        const QString contentType =
+            reply->header(QNetworkRequest::ContentTypeHeader).toString();
+        Q_EMIT failed(emptyCompletionMessage(called, contentType));
         return;
     }
     if (m_parser->finishReason() == QLatin1String("length")) {
         Q_EMIT truncated();   // generation hit max_tokens: result is partial
     }
     Q_EMIT completed();
+}
+
+QString LlmStreamClient::httpFailureMessage(int status, const QString &reasonPhrase,
+                                            const QUrl &url)
+{
+    const QString where = url.toString().isEmpty()
+        ? QStringLiteral("the API endpoint") : url.toString();
+    QString msg = QStringLiteral("HTTP %1").arg(status);
+    if (!reasonPhrase.isEmpty()) {
+        msg += QLatin1Char(' ') + reasonPhrase;
+    }
+    msg += QStringLiteral(" from %1").arg(where);
+    // The status alone is not actionable. Each family gets the one thing the
+    // user can actually do next.
+    QString hint;
+    switch (status) {
+    case 401:
+    case 403:
+        hint = QStringLiteral(" - the API refused the key: check 'API key' in Settings");
+        break;
+    case 404:
+        hint = QStringLiteral(" - wrong path or model name: check 'API URL' "
+                              "(it must be the /v1 base) and 'Model'");
+        break;
+    case 429:
+        hint = QStringLiteral(" - the API is rate limiting us; try again shortly");
+        break;
+    default:
+        if (status >= 500) {
+            hint = QStringLiteral(" - the API server itself failed: is it up?");
+        }
+        break;
+    }
+    return msg + hint;
+}
+
+QString LlmStreamClient::transportFailureMessage(QNetworkReply::NetworkError error,
+                                                 const QString &errorString,
+                                                 const QUrl &url)
+{
+    const QString where = url.toString().isEmpty()
+        ? QStringLiteral("the API endpoint") : url.toString();
+    switch (error) {
+    case QNetworkReply::ConnectionRefusedError:
+        // The single most common misconfiguration: nothing listening there.
+        return QStringLiteral("Nothing is listening at %1 (%2) - check 'API URL' "
+                              "and the port").arg(where, errorString);
+    case QNetworkReply::HostNotFoundError:
+        return QStringLiteral("Host '%1' not found (%2) - check 'API URL'. A "
+                              ".local name is resolved by mDNS, which glibc "
+                              "often refuses; use the IP address")
+                   .arg(url.host(), errorString);
+    case QNetworkReply::TimeoutError:
+    case QNetworkReply::OperationCanceledError:
+        return QStringLiteral("%1 did not answer in time (%2) - is the server "
+                              "busy, or is the URL another machine?")
+                   .arg(where, errorString);
+    case QNetworkReply::SslHandshakeFailedError:
+        return QStringLiteral("TLS handshake with %1 failed (%2) - an http:// "
+                              "URL is usually right for a local server")
+                   .arg(where, errorString);
+    case QNetworkReply::ProtocolInvalidOperationError:
+    case QNetworkReply::UnknownContentError:
+        return QStringLiteral("%1 is not an HTTP API I can talk to (%2)")
+                   .arg(where, errorString);
+    default:
+        break;
+    }
+    return errorString.isEmpty() ? QStringLiteral("%1 failed").arg(where)
+                                 : QStringLiteral("%1: %2").arg(where, errorString);
+}
+
+QString LlmStreamClient::emptyCompletionMessage(const QUrl &url,
+                                                const QString &contentType)
+{
+    const QString where = url.toString().isEmpty()
+        ? QStringLiteral("the API endpoint") : url.toString();
+    if (contentType.contains(QStringLiteral("html"), Qt::CaseInsensitive)) {
+        return QStringLiteral("%1 answered with an HTML page (Content-Type: %2), "
+                              "not a completion - that URL is not an "
+                              "OpenAI-compatible /v1 endpoint")
+                   .arg(where, contentType);
+    }
+    if (contentType.isEmpty()) {
+        return QStringLiteral("%1 answered with no Content-Type and no text - "
+                              "this does not look like an OpenAI-compatible "
+                              "/v1 endpoint").arg(where);
+    }
+    return QStringLiteral("%1 accepted the request but sent no text - check "
+                          "'Model': a model the server does not know can answer "
+                          "with an empty completion").arg(where);
 }
 
 } // namespace lt
