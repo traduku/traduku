@@ -1,5 +1,4 @@
 # Platform-agnostic composition root (linked into every DE shell).
-# Platform-agnostic composition root (linked into every DE shell).
 # cli.cpp/BackendInfo.cpp are shared by the kde and gnome shells - parsing
 # and diagnostics must not be duplicated per shell (see tests/unit/tst_cli.cpp).
 add_library(lt_app STATIC AppController.cpp SelfTest.cpp cli.cpp BackendInfo.cpp
