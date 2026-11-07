@@ -119,7 +119,18 @@ def test_first_run_does_not_grab_the_desktop_when_it_is_configured(session):
     """
     vm = session
     _gnome_only(vm)
+    # Kill, then WAIT for the field to be empty. `pkill` reports whether it
+    # signalled something, not whether the process is gone, and this test starts
+    # its own instance and reads its own stdout. With a live instance still
+    # holding the D-Bus name the new process printed "Traduku is already
+    # running" and the test waited 20 s for a ready line that could never come
+    # (measured on debian-gnome, where the session also autostarts the packaged
+    # entry, so an instance can appear between the kill and the launch).
     vm.run("pkill -x traduku; true")
+    rc, who = vm.wait_no_instance(timeout=10)
+    assert rc == 0 and not who, (
+        "an instance the test did not start is still running, so the first-run "
+        f"path cannot be observed from its stdout: {who}")
     vm.run("mkdir -p ~/.config/traduku; printf '%s\\n' '[General]' "
            "'ApiUrl=http://127.0.0.1:9/null' 'Model=m' 'SourceLang=auto' "
            "'TargetLang=ru' 'FirstRunDone=false' > ~/.config/traduku/config.ini")
@@ -261,23 +272,51 @@ def test_the_window_still_fits_the_screen_at_200_percent(session):
     # Second launch asks the running instance to surface its window - the
     # same path a user reaches by clicking the (here: missing) icon twice.
     vm.ses("timeout 15 traduku >/dev/null 2>&1; true")
-    rc, line = vm.journal_after(cur, grep="window shown")
+    # Wait for the window to be ON SCREEN, by either witness. The log line is
+    # the app's own words; the mapped window in the X tree is the compositor's.
+    # Waiting for the log line alone was red on debian-gnome for a reason that
+    # has nothing to do with fitting: this image also runs the packaged
+    # /etc/xdg/autostart entry, so an instance can already have a mapped window,
+    # and surfacing an already-visible window does not run Qt's showEvent a
+    # second time - nothing new is logged while the window sits on the panel at
+    # exactly the size this test cares about. A witness that can go silent while
+    # the thing under test is satisfied is the wrong witness.
+    rc, _ = vm.wait_until(
+        f"journalctl --user --no-pager --after-cursor='{cur}' 2>/dev/null"
+        " | grep -qi 'window shown'"
+        """ || xwininfo -root -tree 2>/dev/null | grep -q '("traduku" "traduku")'""",
+        timeout=15, tick=0.3)
+    _, line = vm.journal_after(cur, grep="window shown")
+    _, tree = vm.ses("xwininfo -root -tree 2>/dev/null"
+                     """ | grep -a '("traduku" "traduku")' | head -2""")
     try:
         vm.run("pkill -x traduku; true")
     except Exception:
         pass
     m = re.search(r'window shown "[^"]*" (\d+)x(\d+) \((\d+)x(\d+) px\)', line)
-    assert m, (
-        "no 'window shown <title> WxH (WxH px)' line after surfacing the "
-        f"window at 200%:\n{line}")
-    lw, lh, dw, dh = (int(g) for g in m.groups())
+    if m:
+        lw, lh, dw, dh = (int(g) for g in m.groups())
+        assert (lw, lh) != (980, 560), (
+            "the window kept its hard-coded 980x560 at 200% - fitToScreen was "
+            "not consulted on show")
+    else:
+        assert rc == 0, (
+            "neither the app's 'window shown' line nor a mapped traduku window "
+            f"appeared after surfacing at 200%:\n{line}\n{tree}")
+        t = re.search(r'\("traduku" "traduku"\)\s+(\d+)x(\d+)', tree)
+        assert t, f"no mapped traduku window in the X tree:\n{tree}"
+        # The X server measures the client window in device pixels on this
+        # session (measured: 588x336 logical at scale 2 maps as 1176x672), so
+        # the logical pair is the device pair over the scale we asked for.
+        dw, dh = int(t.group(1)), int(t.group(2))
+        lw, lh = dw // 2, dh // 2
+        assert (dw, dh) != (980, 560), (
+            "the window kept its hard-coded 980x560 at 200% - fitToScreen was "
+            "not consulted on show")
     assert dw <= sw and dh <= sh, (
         f"window is {dw}x{dh} device px ({lw}x{lh} logical at scale 2) on a "
         f"{sw}x{sh} screen: the bottom of it is unreachable, and the user "
         "cannot move a Wayland window back onto the panel")
-    assert (lw, lh) != (980, 560), (
-        "the window kept its hard-coded 980x560 at 200% - fitToScreen was "
-        "not consulted on show")
 
 
 def test_the_launcher_entry_and_the_window_are_the_same_app(session):
@@ -368,8 +407,19 @@ def test_a_russian_session_defaults_to_russian(env):
         if "ubuntu" in vm.vm or "debian" in vm.vm:
             vm.sudo("apt-get install -y locales")
             vm.sudo("locale-gen ru_RU.UTF-8")
+            # Debian generates only what /etc/locale.gen lists, and on trixie
+            # the argument form above is a no-op for a locale the file has
+            # commented out (measured on debian-kde: locales installed fine,
+            # locale-gen printed nothing, `locale -a` still had no ru_RU). So do
+            # what the file asks; run by hand this produced ru_RU.utf8. The
+            # regex tolerates "# name" (Debian) and "#name" (Arch).
+            if vm.run("locale -a | grep -ci '^ru_RU.utf8$'")[1].strip() == "0":
+                vm.sudo(r"sed -i -E 's/^#[[:space:]]*(ru_RU\.UTF-8[[:space:]]+UTF-8)/\1/'"
+                        " /etc/locale.gen")
+                vm.sudo("locale-gen")
         else:
-            vm.sudo(r"sed -i 's/^#ru_RU.UTF-8 UTF-8/ru_RU.UTF-8 UTF-8/' /etc/locale.gen")
+            vm.sudo(r"sed -i -E 's/^#[[:space:]]*(ru_RU\.UTF-8[[:space:]]+UTF-8)/\1/'"
+                    " /etc/locale.gen")
             vm.sudo("locale-gen")
         rc, have = vm.run("locale -a | grep -ci '^ru_RU.utf8$'")
     assert have.strip() != "0", (

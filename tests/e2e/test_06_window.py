@@ -76,13 +76,28 @@ def test_window_appears_after_gesture(env):
     # Grid.window_evidence and the docstring above).
     how, wl = vm.window_evidence("Traduku", cursor=cur)
     assert "Traduku" in wl, f"{how} window evidence lacks the app window:\n{wl}"
+    # Mapped, not merely existing. xdotool also lists unmapped windows, and our
+    # own process keeps a 3x3 "Qt Selection Owner for traduku" alive for the
+    # whole session, so a name match alone can be green with nothing on screen.
+    if how == "xdotool":
+        assert "IsViewable" in wl, (
+            f"a window named Traduku exists but none is mapped - that is a "
+            f"window the user cannot see:\n{wl}")
     # frame size (resize(980,560) + server-side decoration titlebar).
     # KWin versions measure the frame differently (6.8: '980x588',
     # 6.3: '982x589' - decoration/border extents), so compare the width
     # numerically with a small tolerance instead of pinning one compositor's
     # string: the intent is 'the real window, roughly its designed size',
     # not a panel/1x1 placeholder (which is how a missing window shows up).
-    m = re.search(r"(\d+)x(\d+)", wl[wl.index("Traduku"):])
+    # The size of the window we MEAN, not of the first number in the dump. Two
+    # things share the name "Traduku" with ours: our own 1x1 "Qt NET_WM User
+    # Time Window - Traduku" / 3x3 selection owner, and - under a reparenting
+    # compositor - mutter's frame, which is 1102x719 around a 980x560 client
+    # (both measured on debian-gnome). So match the app's own WM_CLASS and a
+    # mapped state. The kwin and journal witnesses carry their numbers in their
+    # own format, which is why the first-number pair stays as the fallback.
+    m = re.search(r"name=Traduku class=traduku geom=(\d+)x(\d+) map=IsViewable", wl) \
+        or re.search(r"(\d+)x(\d+)", wl[wl.index("Traduku"):])
     assert m, f"window present with unexpected size:\n{wl}"
     assert 970 <= int(m.group(1)) <= 992 and 550 <= int(m.group(2)) <= 610, \
         f"window size out of expected band: {m.group(0)}\n{wl}"

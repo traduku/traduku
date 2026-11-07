@@ -168,9 +168,56 @@ class Grid:
     def sudo(self, cmd):
         return self.run(f"echo vm | sudo -S {cmd}")
 
+    def clip_tool(self, op):
+        """The clipboard tool this *session* can talk to: 'wl-*' or 'xclip'.
+
+        Chosen from the running session, not from the package list. Measured on
+        debian-kde: that image boots a native X11 Plasma (kwin_x11 + Xorg on
+        vt2, no kwin_wayland and no Xwayland), and the image has wl-clipboard
+        installed anyway - so `command -v wl-paste` is true and useless, the
+        compositor it would ask for is not there, and every clipboard test died
+        on an empty string that looked like a product bug. The session tells us
+        which one it is: WAYLAND_DISPLAY for a Wayland compositor, DISPLAY for
+        an X one.
+
+        Returns 'wayland', 'x11' or 'none'; 'none' means the harness has no
+        reader, which callers must report as such instead of asserting.
+        """
+        cached = getattr(self, "_clip_backend", None)
+        if cached:
+            return cached
+        rc, out = self.ses(
+            'if [ -n "$WAYLAND_DISPLAY" ] && command -v wl-paste >/dev/null 2>&1; then echo wayland; '
+            'elif [ -n "$DISPLAY" ] && command -v xclip >/dev/null 2>&1; then echo x11; '
+            'else echo none; fi')
+        lines = [l.strip() for l in out.strip().splitlines() if l.strip()]
+        self._clip_backend = lines[-1] if lines else "none"
+        return self._clip_backend
+
     def clipset(self, text):
-        """Seed the DE (Wayland) clipboard. wl-copy is a daemon holding
-        stdout — redirect it, ssh would block on the open channel."""
+        """Seed the DE clipboard with what the session actually speaks.
+
+        The two sessions differ in who *keeps* the clipboard, and the first
+        version of this ignored it. On Wayland the compositor stores the
+        selection, so `timeout 10 wl-copy` is fine - the data outlives the
+        tool. On X11 the client that owns CLIPBOARD *is* the clipboard: a
+        `timeout 10 xclip -i` clipboard evaporates ten seconds later, which is
+        mid-test for a gesture that must be detected, translated, streamed and
+        written back - and the test then blames the app for an empty clipboard
+        that the harness itself deleted.
+
+        So on X11: hand the bytes through a file, let xclip detach, and put it
+        in its own session so it outlives the ssh connection that started it
+        (an ssh-owned holder dies with the connection, taking the selection
+        with it). Old holders go first: two owners means the reader gets
+        whichever one answers last.
+        """
+        if self.clip_tool("copy") == "x11":
+            self.ses(f"printf %s '{text}' > /tmp/traduku-clipseed.txt")
+            self.ses("pkill -x xclip >/dev/null 2>&1; true")
+            return self.ses(
+                "setsid xclip -selection clipboard -i /tmp/traduku-clipseed.txt "
+                ">/dev/null 2>&1 </dev/null &")
         return self.ses(f"printf %s '{text}' | timeout 10 wl-copy >/dev/null 2>&1")
 
     def start_app(self, extra_env="", ready_timeout=15):
@@ -224,6 +271,27 @@ class Grid:
                 "Either a backend it needs is missing (the tail below names it) or "
                 "the app is wedged before finishing startup.\n" + tail)
         return out
+
+    def wait_no_instance(self, timeout=10.0, tick=0.2):
+        """Wait until no LIVE traduku is left: (rc, who). `who` names the live
+        processes that remain, and a <defunct> is not one of them.
+
+        Zombie-aware for the same reason app_alive() is: an exited child of a
+        systemd unit lingers until it is reaped, `pgrep` lists it, and a check
+        that counts it reports "an instance you did not start is running" about
+        a process that is only a row in the process table (measured on
+        ubuntu-gnome: `1415 [traduku] <defunct>`).
+        """
+        alive = ('alive() { for p in $(pgrep -x traduku 2>/dev/null); do '
+                 's=$(cut -d" " -f3 /proc/$p/stat 2>/dev/null); '
+                 '[ -n "$s" ] && [ "$s" != Z ] && return 0; done; return 1; }; ')
+        rc, _ = self._wait_cmd(alive + self._wait_loop("! alive", timeout, tick),
+                               timeout, tick)
+        _, who = self.run(
+            'for p in $(pgrep -x traduku 2>/dev/null); do '
+            's=$(cut -d" " -f3 /proc/$p/stat 2>/dev/null); '
+            '[ "$s" = Z ] || ps -o pid=,args= -p $p; done | head -3')
+        return rc, who.strip()
 
     def screen_size(self):
         """The compositor's scanout size, from the same QMP screendump the
@@ -305,8 +373,38 @@ class Grid:
                 return 1, out or "ssh did not answer within the wait"
             time.sleep(0.5)
 
+    def wait_ready(self, cursor, grep="traduku: ready", path="/tmp/traduku.log",
+                   timeout=25.0, tick=0.2):
+        """Wait for the app's own startup sentence, from either place it lands.
+
+        Which place is a property of the session, not of the app: Qt hands a
+        message to journald only when $JOURNAL_STREAM is in the environment. On
+        arch-kde (ssh session that has it) the line reaches the journal even
+        when fd 1 and 2 point at a file; on debian-kde (native X11 session from
+        sddm, ssh session without it) the journal stays silent and only the
+        file carries it - measured on both. Both texts are written by the
+        product, so accepting either is not a weaker wait, and waiting for only
+        one of them called a started app dead: a suite green on one guest
+        turned into a false red on the next.
+
+        start_app() does not need this - it launches the app as a systemd user
+        unit, which always has JOURNAL_STREAM.
+        """
+        # One shell TEST, because _wait_loop wraps this in `if <test>; then`:
+        # a compound if/then/else here is a syntax error, and a syntax error is
+        # an rc that is not 255, so the wait would return "timed out" in 0.0 s.
+        cmd = (f"journalctl --user --no-pager --after-cursor='{cursor}' 2>/dev/null"
+               f" | grep -qi --color=never '{grep}'"
+               f" || {{ [ -f {path} ] && grep -qi --color=never '{grep}' {path}; }}")
+        return self._wait_cmd(self._ses_prefix() + self._wait_loop(cmd, timeout, tick),
+                              timeout, tick)
+
     def wait_journal(self, cursor, grep, timeout=12.0, unit=None, tick=0.2):
-        """Wait for a journal line after `cursor`. Returns (rc, out); rc 1 = timed out."""
+        """Wait for a journal line after `cursor`. Returns (rc, out); rc 1 = timed out.
+
+        For the startup sentence prefer wait_ready(): on a session where Qt has
+        no JOURNAL_STREAM this waits for something that never arrives.
+        """
         unit_arg = f" -u {unit}" if unit else ""
         return self._wait_cmd(self._ses_prefix() + self._wait_loop(
             f"journalctl --user --no-pager --after-cursor='{cursor}'{unit_arg} 2>/dev/null"
@@ -385,8 +483,11 @@ class Grid:
         return mapped and window.isdigit(), out
 
     def clipget(self):
-        # wl-paste can block forever when the clipboard owner died (ssh-owned
-        # wl-copy daemons die with the session); always bound it.
+        # Both readers can block forever when the clipboard owner died
+        # (ssh-owned wl-copy daemons die with the session, xclip exits with the
+        # client that owned it); always bound them.
+        if self.clip_tool("paste") == "x11":
+            return self.ses("timeout 10 xclip -selection clipboard -o 2>/dev/null")[1]
         return self.ses("timeout 10 wl-paste 2>/dev/null")[1]
 
     def journal(self, since="--since -10min", grep="traduku"):
@@ -448,15 +549,30 @@ print(s);
         return self.run("pgrep -x kwin_wayland || pgrep -x kwin_x11")[0] == 0
 
     def x11_windows(self, name="Traduku"):
-        """The X server's own answer: `xdotool search --name` + geometry.
+        """The X server's own answer, per window: name, geometry, map state.
 
         Only meaningful on an X11 session. On Wayland a native client's
         window is not in the X server at all (an XWayland window list does not
         contain it), so this must never be the Wayland branch - it would read
         "no such window" while the window fills the screen.
+
+        The map state is part of the witness on purpose. `xdotool search --name`
+        also finds UNMAPPED windows, and our own process owns a 3x3 input-only
+        "Qt Selection Owner for traduku" - so a name match alone can be a green
+        over a window that was never shown. The tree dump at the end is what the
+        compositor added (mutter's frame) and it is what a failure quotes, so a
+        red here says which window existed and which did not.
         """
         return self.ses(
-            f"xdotool search --name '{name}' getwindowname getwindowgeometry 2>/dev/null"
+            f"for w in $(xdotool search --name '{name}' 2>/dev/null); do "
+            f"i=$(xwininfo -id $w 2>/dev/null); "
+            f"n=$(xdotool getwindowname $w 2>/dev/null); "
+            f"W=$(echo \"$i\" | awk '/Width:/{{print $2}}'); "
+            f"H=$(echo \"$i\" | awk '/Height:/{{print $2}}'); "
+            f"M=$(echo \"$i\" | awk '/Map State:/{{print $3}}'); "
+            f"C=$(xprop -id $w WM_CLASS 2>/dev/null | grep -o '\"[^\"]*\"' | tail -1 | tr -d '\"'); "
+            f"echo \"win $w name=$n class=$C geom=${{W}}x${{H}} map=$M\"; done; "
+            f"xwininfo -root -tree 2>/dev/null | grep -i '{name}' | head -8"
         )[1]
 
     def window_evidence(self, name="Traduku", cursor=None):

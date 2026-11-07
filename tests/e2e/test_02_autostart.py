@@ -81,9 +81,18 @@ def test_first_run_asks_and_writes_xdg_autostart(session):
     # ALSA's own writes). Waiting on the file therefore timed out on a healthy
     # app - the log is kept as the second witness in the failure message, since
     # it is where a non-Qt writer (ALSA, a crashing subprocess) does speak.
-    rc, _ = vm.wait_journal(cur, "traduku: ready", timeout=20, tick=0.2)
-    assert rc == 0, "app did not start, journal said:\n" + vm.ses(
-        "journalctl --user --no-pager --after-cursor='%s' | tail -15" % cur)[1]
+    # Either witness, both written by the app itself: see Grid.wait_ready. This
+    # launch is `setsid nohup`, so on the Debian X11 session there is no
+    # JOURNAL_STREAM for Qt to talk to journald with, and a journal-only wait
+    # called a healthy app dead - measured: the log held "traduku: ready (kde,
+    # x11; clipboard=x11 hotkey=x11-xi2 tray=yes)" while the journal had
+    # nothing but kded6.
+    rc, _ = vm.wait_ready(cur, path="/tmp/traduku.log", timeout=25)
+    assert rc == 0, ("app never said it was up, in the journal or in its own log. "
+                     "journal said:\n" + vm.ses(
+                         "journalctl --user --no-pager --after-cursor='%s' | tail -15" % cur)[1]
+                     + "\n/tmp/traduku.log said:\n"
+                     + vm.run("head -20 /tmp/traduku.log")[1])
 
     # the welcome/autostart question is a modal dialog: something appeared
     vm.shot("e2-autostart-offer")

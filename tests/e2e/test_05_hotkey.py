@@ -17,7 +17,7 @@ import time
 
 import pytest
 
-from conftest import clip_until, select_layout, set_layouts
+from conftest import clip, clip_until, select_layout, set_layouts
 
 SEED = "Translate me 12345"
 RU_SEED = "ru layout text 67890"
@@ -30,7 +30,10 @@ def _gesture(vm, seq="ctrl alt c;250;ctrl alt c"):
 
 
 def _clip(vm):
-    return vm.ses("wl-paste 2>/dev/null")[1]
+    # The session's own reader (conftest.clip -> Grid.clipget): wl-paste on a
+    # Wayland session, xclip on an X11 one. A hard-coded wl-paste here would
+    # read an empty string on debian-kde, whose Plasma is native X11.
+    return clip(vm)
 
 
 def _wait_mock(vm, cur, seconds=25):
@@ -79,6 +82,16 @@ def test_double_press_hotkey_layouts(env):
     cur = vm.cursor()
     _gesture(vm)
     assert _wait_mock(vm, cur), f"us gesture did not translate (clip: {_clip(vm)!r})"
+    # Let this leg finish before the next one seeds the clipboard. "translating"
+    # is the start of the request, not the end of it: the write-back lands when
+    # the mock's stream completes, and on a KDE session that arrived after the
+    # russian leg had already put its own text on the clipboard - the app then
+    # wrote over it and the test reported "the russian seed never reached the DE
+    # clipboard" while the clipboard was full of the PREVIOUS leg's answer.
+    ok, seen = clip_until(vm, "[MOCK -> ")
+    assert ok and SEED in seen, (
+        f"the us leg's answer never settled on the clipboard, so the next seed "
+        f"would race it: {seen!r}")
 
     # ru layout: identical scancodes must fire (physical keycode matching).
     # The layout is selected and the desktop's own answer is checked - not

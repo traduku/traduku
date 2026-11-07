@@ -219,10 +219,35 @@ gdbus call -e -d org.kde.plasmashell -o /PlasmaShell -m org.kde.PlasmaShell.eval
     # was protecting nothing here - kwinidlerc matters for idle guards, which
     # powerdevil also covers, and the guards cannot fire inside a 60 s suite.
     vm.ses("setsid sh -c 'systemctl --user restart plasma-kglobalaccel.service' >/dev/null 2>&1 &")
-    rc, _ = vm.wait_until(
-        "ls /run/user/1000/ | grep -qE '^wayland-[0-9]+$' && pgrep -u vm -x kwin_wayland",
-        timeout=45, tick=0.5)
-    assert rc == 0, "KWin did not come back after the bounce"
+    # Readiness has to describe the session the desktop actually runs. This
+    # probe waited for a wayland-<n> socket + kwin_wayland, and on debian-kde
+    # that errored all 22 tests in setup with "KWin did not come back after the
+    # bounce" - while its compositor had been up the whole time: the image
+    # boots a native X11 Plasma (measured: kwin_x11 + /usr/lib/xorg/Xorg on
+    # vt2, kwin_wayland 0, Xwayland 0, XDG_SESSION_TYPE=x11). Waiting for the
+    # other session type is not a readiness check, it is an assumption about
+    # the image - so ask which compositor is really there and wait for that one
+    # to own something: a socket for Wayland, the X display for X11.
+    rc, out = vm.run(
+        "if pgrep -u vm -x kwin_wayland >/dev/null; then echo wayland; "
+        "elif pgrep -u vm -x kwin_x11 >/dev/null; then echo x11; else echo none; fi")
+    backend = out.strip().splitlines()[-1].strip() if out.strip() else "none"
+    assert backend != "none", (
+        "no KDE compositor in the guest at all (neither kwin_wayland nor "
+        "kwin_x11) - autologin is broken, this is not a test problem")
+    if backend == "wayland":
+        ready = ("ls /run/user/1000/ | grep -qE '^wayland-[0-9]+$' "
+                 "&& pgrep -u vm -x kwin_wayland")
+    else:
+        # The socket of the display session.env names, not a hard-coded X0.
+        ready = ('pgrep -u vm -x kwin_x11 >/dev/null && [ -n "$DISPLAY" ] '
+                 '&& S=$(printf %s "$DISPLAY" | sed "s/.*://;s/\\..*//") '
+                 '&& test -S /tmp/.X11-unix/X$S')
+        ready = f'source /tmp/session.env 2>/dev/null; {ready}'
+    rc, _ = vm.wait_until(ready, timeout=45, tick=0.5)
+    assert rc == 0, (
+        f"{backend} KWin did not come back after the bounce "
+        f"(compositor process + its socket are the condition)")
     # env/app starts must not race the bounced KGA (see restart_kwin note).
     # Introspect answering IS the readiness probe; the two extra seconds that
     # used to follow it protected nothing, and _gesture_is_alive below is the
@@ -474,8 +499,12 @@ def clip(vm):
     separate `wl-paste` for the assert are two reads, and on arch-kde they
     disagreed for 8 s while the clipboard carried the text the assert found
     immediately.
+
+    The tool is the session's own (Grid.clip_tool): wl-paste where a Wayland
+    compositor answers, xclip where the session is X11 - see there for the
+    debian-kde measurement that made this necessary.
     """
-    return vm.ses("wl-paste 2>/dev/null")[1]
+    return vm.clipget()
 
 
 def clip_until(vm, needle, timeout=6, tick=0.3):

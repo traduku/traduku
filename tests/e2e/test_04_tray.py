@@ -25,7 +25,13 @@ name (git revert of the configureApplication line) fails it on GNOME.
 import re
 import time
 
+import pytest
+
 from conftest import ensure_sni_host
+# (pytest is imported because the SNI-host check can skip: on debian-gnome no
+# appindicator host is present at all, and this suite skipped by crashing here
+# with NameError until the import was added - a skip path nobody had ever taken
+# is as untested as a red one.)
 
 WATCHER = "org.kde.StatusNotifierWatcher"
 
