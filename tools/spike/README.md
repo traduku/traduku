@@ -1,9 +1,9 @@
 # tools/spike — Stage 0 diagnostics
 
-Manual probes, not product code and not ctest suites (GNOME_PLAN.md §9,
+Manual probes, not product code and not ctest suites (ROADMAP.md §3,
 Stage 0). They answer "which backend can actually work on THIS compositor"
 before a line of product code is written, and their output belongs in
-GNOME_PLAN.md. Nothing here is installed or linked into `traduku`.
+ROADMAP.md. Nothing here is installed or linked into `traduku`.
 
 | tool | question it answers | measured on |
 |---|---|---|
@@ -23,4 +23,4 @@ cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release && cmake --build build
 
 Two rules for these files: they must not link product code (a broken spike
 must still be able to describe reality), and their output is a measurement,
-so it is copied into GNOME_PLAN.md instead of being asserted in a test.
+so it is copied into ROADMAP.md instead of being asserted in a test.

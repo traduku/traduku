@@ -1,7 +1,7 @@
 """Session fixtures for the traduku GUI grid tests.
 
 TRADUKU_VM selects the grid VM (default arch-kde — the program's native
-environment, KDE Plasma Wayland, see PIPELINE.md).
+environment, KDE Plasma Wayland, see ROADMAP.md §6).
 """
 import os
 import pytest

@@ -11,7 +11,7 @@ namespace lt {
  * Tray presence, whatever draws it.
  *
  * One implementation today - `QtTray` (QSystemTrayIcon, which on Wayland is
- * Qt's own generic DBus SNI client; GNOME_PLAN.md D3 records the measurement
+ * Qt's own generic DBus SNI client; ROADMAP.md §2 records the measurement
  * that chose it). `KdeTray` (KF6 KStatusNotifierItem) is deleted: the Qt tray
  * reproduced its menu entry for entry in a live Plasma session, and KF6's item
  * segfaulted when destroyed with a live session bus, which is what `Quit` did

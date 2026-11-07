@@ -11,7 +11,7 @@ namespace lt {
 namespace {
 
 /// dev.traduku.Traduku - a reverse-DNS name, no org.kde.* outside the KDE
-/// shell (GNOME_PLAN.md D5).
+/// shell (ROADMAP.md §2).
 QString busNameFor(const QString &id)
 {
     QString pretty = id;

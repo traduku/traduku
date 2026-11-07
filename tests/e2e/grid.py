@@ -1,4 +1,4 @@
-"""Grid access for the traduku E2E suite (see PIPELINE.md).
+"""Grid access for the traduku E2E suite (see ROADMAP.md §6).
 
 Host-side helper: SSH into a grid VM (QEMU, port 2200+idx) + QMP virtual
 keyboard/screenshots through tools/vms/vmctl.sh (docker exec, the QMP socket

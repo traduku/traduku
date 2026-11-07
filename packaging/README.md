@@ -15,10 +15,10 @@ truth; PKGBUILD `pkgver` and `debian/changelog` must match on release.
 
 | package | where | why |
 |---|---|---|
-| `wl-clipboard` | **Depends** in `debian/`, `optdepends` in `arch/` | Wayland offers the selection only to the focused client, and Traduku is a background tray app. Measured on GNOME 50 (`tools/spike/clip-spike`, GNOME_PLAN.md §0b): `QClipboard::text()` returns nothing for a background wayland client, `wl-paste`/`wl-copy` read and write it in ~13 ms. Plasma normally does not need it (the `org.kde.KClipboard` D-Bus is tried first), which is why Arch keeps it optional and the .deb - which builds the GNOME shell - requires it. The app also says it out loud: `IClipboard::diagnostic()` turns "clipboard is empty" into "install wl-clipboard" (`tst_clipboards`, `tst_appcontroller`). |
+| `wl-clipboard` | **Depends** in `debian/`, `optdepends` in `arch/` | Wayland offers the selection only to the focused client, and Traduku is a background tray app. Measured on GNOME 50 (`tools/spike/clip-spike`, ROADMAP.md §2): `QClipboard::text()` returns nothing for a background wayland client, `wl-paste`/`wl-copy` read and write it in ~13 ms. Plasma normally does not need it (the `org.kde.KClipboard` D-Bus is tried first), which is why Arch keeps it optional and the .deb - which builds the GNOME shell - requires it. The app also says it out loud: `IClipboard::diagnostic()` turns "clipboard is empty" into "install wl-clipboard" (`tst_clipboards`, `tst_appcontroller`). |
 | `qt6-wayland`, `gstreamer1.0-plugins-good`, `libqt6multimedia6` | Depends (`debian/`) | wayland platform plugin; audio cues for start/finish/error |
 | `gnome-shell-extension-appindicator` \| `gnome-shell-ubuntu-extensions` | Recommends (`debian/`) | GNOME has no SNI host without it; the app runs tray-less, so it is not a hard dep |
-| `xdg-desktop-portal-gnome` | not packaged yet | the GlobalShortcuts portal is advertised here but rejects non-sandboxed callers (GNOME_PLAN.md §0b) - the gesture uses `/dev/input` + gsettings instead |
+| `xdg-desktop-portal-gnome` | not packaged yet | the GlobalShortcuts portal is advertised here but rejects non-sandboxed callers (ROADMAP.md §2) - the gesture uses `/dev/input` + gsettings instead |
 
 ## Keyboard observation (`/dev/input`) and the udev rule
 
@@ -66,5 +66,7 @@ How the ACL is finally produced (`src/udev/udev-builtin-uaccess.c`, v259):
 Verify a rule without root before installing it:
 `udevadm test --extra-rules-dir=<dir> "$(udevadm info -q path -n /dev/input/event3)"`.
 
-(Stage 3 of GNOME_PLAN.md turns this into `traduku --grant-keyboard-access
-[--revoke]` and reports the state in `--backend-info`.)
+(The package does this itself - `traduku-gnome.postinst` on Debian, the
+`install=traduku-gnome.install` hook on Arch - and `--backend-info` reports
+the state plus the exact fix command; ROADMAP.md §2 records why the file
+alone is not enough.)

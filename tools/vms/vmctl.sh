@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # VM grid controller (runs on the HOST; talks to the traduku-pipeline-vmm
-# container). Grid (PIPELINE.md): arch-kde debian-kde debian-gnome
+# container). Grid (ROADMAP.md §6): arch-kde debian-kde debian-gnome
 # ubuntu-kde ubuntu-gnome — one matrix, one container (the two grids that
 # grew up separately - "pipeline" (arch base) and "debian" (cloud images +
 # GNOME) - are merged here; ports are the position in VMS, so a VM's ssh

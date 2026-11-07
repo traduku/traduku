@@ -3,12 +3,12 @@
 // Composition only: settings, backends (clipboard/gesture/notifier/sounds/
 // autostart), the AppController and the tray. No business logic here.
 //
-// Deliberately NO KF6 (GNOME_PLAN.md D3): GNOME ships none of it, and every
+// Deliberately NO KF6 (ROADMAP.md §2): GNOME ships none of it, and every
 // layer this shell needs - tray (SNI + dbusmenu), notifications (FDO),
 // global shortcut (gsettings), gesture (/dev/input), clipboard (wl-clipboard)
 // - is plain D-Bus/ioctl/exec, so the GNOME build links Qt and nothing else.
 //
-// Stage status (GNOME_PLAN.md §9): this is the Stage 1 skeleton. The CLI
+// Stage status (ROADMAP.md §3): this is the Stage 1 skeleton. The CLI
 // modes (--translate, --selftest, --backend-info) are complete; the tray
 // mode is refused until the gesture/notifier/tray layers land (Stages 3, 2,
 // 5) - refusing loudly beats starting an app that silently never reacts to
@@ -75,7 +75,7 @@ bool cliNeedsWidgets(const QStringList &argv)
     return true;                                       // no mode flag: tray mode
 }
 
-/// The gesture stack (GNOME_PLAN.md D1): /dev/input is the primary because
+/// The gesture stack (ROADMAP.md §2): /dev/input is the primary because
 /// it is the only channel that sees the literal Ctrl+C+C on Wayland. The
 /// gsettings shortcut fallback lands in the next commit; until then a box
 /// without keyboard ACLs has no gesture and the shell refuses to start
@@ -255,7 +255,7 @@ int main(int argc, char **argv)
 
     // ---- tray mode ------------------------------------------------------
     // One Traduku per session: a second launch wakes the running one instead
-    // of starting a duplicate tray (GNOME_PLAN.md D5).
+    // of starting a duplicate tray (ROADMAP.md §2).
     SingleInstance instance;
     if (!instance.start()) {
         out << QStringLiteral("Traduku is already running (asked it to surface "

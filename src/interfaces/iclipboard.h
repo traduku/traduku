@@ -16,7 +16,7 @@ public:
 
     /// Actionable hint when this backend cannot actually see the DE
     /// clipboard - empty means "nothing to complain about". Measured on
-    /// GNOME 50 (GNOME_PLAN.md §0b): a background wayland client gets no
+    /// GNOME 50 (ROADMAP.md §2): a background wayland client gets no
     /// data offer at all, so the Qt fallback there is blind; without a
     /// hint the user is told "clipboard is empty" while the real cause is
     /// a missing wl-clipboard package. The app shows this verbatim.

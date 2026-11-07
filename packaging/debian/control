@@ -30,8 +30,7 @@ Package: traduku
 Architecture: any
 Depends: ${shlibs:Depends}, ${misc:Depends}, libqt6multimedia6,
  qt6-wayland, gstreamer1.0-plugins-good
-Recommends: wl-clipboard, gnome-shell-extension-appindicator |
- gnome-shell-ubuntu-extensions
+Recommends: wl-clipboard
 Provides: traduku-gnome (= ${binary:Version})
 Conflicts: traduku-gnome
 Description: Clipboard translator powered by any OpenAI-compatible LLM (Plasma)
@@ -52,7 +51,13 @@ Architecture: any
 # app still runs and says so out loud, but it cannot do its job.
 Depends: ${shlibs:Depends}, ${misc:Depends}, libqt6multimedia6,
  qt6-wayland, gstreamer1.0-plugins-good, wl-clipboard
-Recommends: gnome-shell-extension-appindicator | gnome-shell-ubuntu-extensions
+# Not a Recommends: the app runs and translates without any tray host
+# (measured on a guest with no extension - gesture, clipboard and FDO
+# notifications all work). The extension only decides whether the icon is
+# *drawn*, and only on a shell that has no StatusNotifier host of its own;
+# Ubuntu ships one out of the box. A user who never touches the tray should
+# not be offered a shell extension.
+Suggests: gnome-shell-extension-appindicator | gnome-shell-ubuntu-extensions
 Provides: traduku (= ${binary:Version})
 Conflicts: traduku
 Description: Clipboard translator powered by any OpenAI-compatible LLM (GNOME)

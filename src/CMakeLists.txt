@@ -8,7 +8,7 @@ add_subdirectory(platform/wl)
 add_subdirectory(platform/fdo)
 add_subdirectory(platform/evdev)
 
-# ---- which DE shell builds the `traduku` executable (GNOME_PLAN.md D5) ---
+# ---- which DE shell builds the `traduku` executable (ROADMAP.md §2) ---
 # KF6 is probed first (QUIET, never fatal here), then LT_SHELL decides.
 set(LT_KDE_AVAILABLE FALSE)
 if(NOT LT_SHELL STREQUAL "gnome")

@@ -46,7 +46,7 @@ using namespace lt;
 
 namespace {
 
-/// The tray the shell shows is configuration, not code (GNOME_PLAN.md D3).
+/// The tray the shell shows is configuration, not code (ROADMAP.md §2).
 /// LT_TRAY=none / TRADUKU_TRAY=none gets a tray that is not there (kiosk and
 /// --translate-only deployments). Returning an object instead of nullptr keeps
 /// every `connect(tray, ...)` below unconditional, so nobody has to remember

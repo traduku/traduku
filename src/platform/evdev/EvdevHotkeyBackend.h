@@ -14,7 +14,7 @@ class QSocketNotifier;
 namespace lt {
 
 /*!
- * The literal Ctrl+C+C gesture on Wayland (GNOME_PLAN.md D1).
+ * The literal Ctrl+C+C gesture on Wayland (ROADMAP.md §2).
  *
  * A Wayland compositor never hands foreign keystrokes to a client, and the
  * advertised gesture is literally "Ctrl+C twice", so the only channel left

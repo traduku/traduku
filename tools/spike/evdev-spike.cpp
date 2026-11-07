@@ -1,4 +1,4 @@
-// evdev-spike — Stage 0 diagnostic (NOT product code; see GNOME_PLAN.md D1).
+// evdev-spike — Stage 0 diagnostic (NOT product code; see ROADMAP.md §2).
 //
 // Question it answers: can the app observe the literal Ctrl+C+C gesture on
 // Wayland by reading /dev/input directly (no grab, no injection, copying

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""portal-spike — Stage 0 diagnostic (NOT product code; GNOME_PLAN.md D1-B/C).
+"""portal-spike — Stage 0 diagnostic (NOT product code; ROADMAP.md §2-B/C).
 
 Question it answers: can a NON-sandboxed Qt app really register a global
 shortcut through org.freedesktop.portal.GlobalShortcuts on this GNOME — and

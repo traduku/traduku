@@ -21,19 +21,19 @@ option(LT_BUILD_X11 "Build the X11 (XI2/RECORD) passive hotkey backend" ON)
 option(LT_BUILD_KDE "Build the KDE Platform backend and the tray application" ON)
 option(LT_BUILD_SPIKES "Build the tools/spike Stage 0 diagnostics (manual tools, not tests)" ON)
 
-# Which DE shell the `traduku` executable is (GNOME_PLAN.md D5). One binary
+# Which DE shell the `traduku` executable is (ROADMAP.md §2). One binary
 # name, one shell per build: two targets both called `traduku` would fail
 # CMake anyway, so the choice is made here and enforced in src/.
 #   auto  - KDE when the KF6 stack is present, GNOME otherwise
 #   kde   - require KF6, fail loudly if it is missing
-#   gnome - never look for KF6 (GNOME ships none; see GNOME_PLAN.md D3)
+#   gnome - never look for KF6 (GNOME ships none; see ROADMAP.md §2)
 set(LT_SHELL "auto" CACHE STRING "Shell to build: auto|kde|gnome")
 set_property(CACHE LT_SHELL PROPERTY STRINGS auto kde gnome)
 if(NOT LT_SHELL MATCHES "^(auto|kde|gnome)$")
     message(FATAL_ERROR "LT_SHELL must be one of auto, kde, gnome (got '${LT_SHELL}')")
 endif()
 
-# Which tray the KDE shell shows (GNOME_PLAN.md Stage 6b). The GNOME shell has
+# Which tray the KDE shell shows (ROADMAP.md §2). The GNOME shell has
 # no KF6 to link, so it always uses QtTray; the value is validated and passed
 # through anyway, so a packaging typo fails at configure time in either
 # package rather than shipping the tray nobody tested.
