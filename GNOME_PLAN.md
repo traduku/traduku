@@ -19,7 +19,7 @@
 | 1b | X11 нужен в основном старым ОС (Ubuntu 24.04 Xorg, Debian 13) | XI2/RECORD-слой остаётся (`LT_BUILD_X11=ON`), в матрице — один X11-джоб как свойство сессии |
 | 2 | Главное — жест + чтение/запись буфера. AppIndicator-расширение добавить, но **программа обязана работать без него** | D3: расширение — рекомендация в README и в `--backend-info`; отсутствие watchера = деградация без падения, с явной строкой в логе |
 | 3 | gsettings-fallback — сразу, только если портал в текущем окружении не подтвердится | D1-B: правило решения привязано к спайку Stage 0, результат записывается в §9 |
-| 4 | `KdeTray` не удалять, пока `SniTray` не проверен в KDE | Stage 5 = SniTray на GNOME; Stage 6b = прогон `SniTray` на arch-kde (e2e 8/8 + руками), удаление `KdeTray` — отдельным коммитом **после** зелёного прогона и вашего «да» |
+| 4 | `KdeTray` не удалять, пока `QtTray` не проверен в KDE | Stage 5 = `QtTray` на GNOME (готово, оператор подтвердил); Stage 6b = прогон `QtTray` на arch-kde (e2e 8/8 + руками), удаление `KdeTray` — отдельным коммитом **после** зелёного прогона и вашего «да» |
 | 5 | Схема мержа веток одобрена | §7; уже выполнено: `integration/gnome-base` = `pipeline` + `debian`, мерж-коммит `3fc9f6a` |
 | 6 | Build-deps ставим локально | §8 (команды для `apt`) |
 
@@ -109,7 +109,7 @@ auto-repeat) — 7/7. Залишився лише живий прогін `liste
 | `IClipboard` | `ClipboardFactory` → Qt/Wl | те же + **`X11Clipboard`** (чтение/запись через XWayland) и, опционально, мост через расширение Shell (D2) |
 | `INotifier` | `KdeNotifier` (+notifyrc) | `FdoNotifier` — прямой `org.freedesktop.Notifications` (D4) |
 | `IAutostart` | `XdgAutostart` | он же (GNOME уважает XDG autostart) |
-| трей | `KdeTray` (KF6) | `SniTray` — чистый D-Bus SNI + `com.canonical.dbusmenu` (D3); общий для KDE и GNOME |
+| трей | `KdeTray` (KF6) | `QtTray` — `QSystemTrayIcon`, у Wayland це generic unix SNI-клієнт Qt (D3); спільний для KDE і GNOME |
 | один экземпляр | `KDBusService(Unique)` | `SingleInstance` (QLocalServer + сессионное имя `dev.traduku.Traduku`) (D5) |
 | composition root | `app/kde/main.cpp` | `app/gnome/main.cpp`; общий парсер CLI → `app/cli.*` |
 | id приложения | — | `QCoreApplication::setApplicationName` + `QGuiApplication::setDesktopFileName("traduku")` + установленный `traduku.desktop` (нужно порталу, уведомлениям и иконке окна) |
@@ -223,20 +223,52 @@ Focus-window трюк из плана **исключён**: замер B пок�
 
 ---
 
-## 4. D3 — трей: общий `SniTray`, KDE не ломать
+## 4. D3 — трей: `QSystemTrayIcon`, KDE не ломать (рішення переглянуто за виміром)
 
-`src/platform/sni/`: `SniTray` + `SniWatcher` + `DBusMenuExporter`
-(`GetLayout`, `GetGroupProperties`, `Event`, `AboutToShow`), интерфейс
-`org.kde.StatusNotifierItem` (Category/Id/Title/Status/IconName/ToolTip/
-ItemIsMenu + `Activate`/`ContextMenu`/`SecondaryActivate`), регистрация у
-`org.kde.StatusNotifierWatcher`. Сигналы — те же, что у `KdeTray`
-(`translateRequested`, `settingsRequested`, `targetLanguagePicked`),
-`AppController` не меняется.
+**Вирішення 2026-01: власний `SniTray` не пишеться; обидві оболонки беруть
+`QtTray` (`src/platform/qt/QtTray.{h,cpp}`) на `QSystemTrayIcon`.**
+
+Чому. У Wayland `QSystemTrayIcon` — це і є generic unix SNI-клієнт Qt
+(`QDBusTrayIcon` + `QStatusNotifierItemAdaptor` + `QDBusMenuAdaptor` у
+`libQt6Gui`); символи присутні в дистрибутивних збірках від Qt 6.4
+(перевірено в `libqt6gui6` Debian 12/13 і в дереві upstream 6.6.3), тобто
+покривають усі наші цілі. На живій GNOME 50.1 він реєструється у watcher'і,
+малює іконку й відкриває меню — власний клієнт не дає нічого нового, крім
+власних D-Bus-сигнатур, які треба супроводжувати.
+
+Виміряна поведінка кліка (першоджерело — сам хост,
+`/usr/share/gnome-shell/extensions/ubuntu-appindicators@ubuntu.com`):
+
+| миша | `indicatorStatusIcon.js` | що доходить до застосунку |
+|---|---|---|
+| одинарний лівий | `menu.toggle()` після таймаута подвійного | нічого (`activated` не емиться) |
+| **подвійний лівий** | `open()` → `ActivateAsync(x,y)` | `activated(Trigger)` → переклад |
+| середня | `secondaryActivate()` | `activated(MiddleClick)` → переклад |
+| правий | `this.menu.toggle()` без умов | нічого |
+
+`ToolTip`-властивість SNI хост не читає взагалі (нуль звертань у
+`appIndicator.js`; `_onHoverChanged()` лише знімає затемнення), тому
+підказка про подвійний клік лежить **в меню** вимкненим пунктом — тест
+`menuCarriesTheClickHint()` тримає це як вимогу. Друга половина матриці
+виміряна `tray-spike --no-menu`: предмет без меню (`Menu: '/'`) не отримує
+взагалі нічого (`numMenuItems == 0`) — саме це робило перший спайк
+«мертвим». Обробник логирує причину активації,
+тож «яку кнопку мав на увазі хост» відповідається з логу.
+
+Поведінка скопійована з `KdeTray` 1-в-1 (меню: Translate Clipboard Now /
+Translate To ▸ / Settings… / Launch on Login / Quit; лівий клік =
+`translateRequested`), тож KDE-користувач нічого не втрачає — у Plasma
+одинарний клік і є `Activate`.
+
+`SniTray` у `src/platform/sni/` **не створюється**; референс-реалізація
+залишається в `tools/spike/tray-spike.cpp` (+`xml/`, адаптери з
+`qdbusxml2cpp`) як задокументований fallback, якщо колись знадобиться хост
+без generic-tray у Qt.
 
 Порядок по решению 4:
-1. Stage 5 — `SniTray` включён в GNOME-оболочку; `KdeTray` не трогаем.
-2. Stage 6b — переключатель `LT_TRAY=sni|kde` (по умолчанию `kde`),
-   `SniTray` прогоняется на arch-kde: e2e `test_04` (watcher + Title +
+1. Stage 5 — `QtTray` включён в GNOME-оболочку (готово); `KdeTray` не трогаем.
+2. Stage 6b — переключатель `LT_TRAY=qt|kde` (по умолчанию `kde`),
+   `QtTray` прогоняется на arch-kde: e2e `test_04` (watcher + Title +
    red-check «убили — иконка пропала») + панель глазами (`vmctl.sh vnc
    arch-kde`).
 3. Только после зелёного прогона и вашего «да» — `KdeTray` и зависимость от
@@ -269,7 +301,7 @@ ItemIsMenu + `Activate`/`ContextMenu`/`SecondaryActivate`), регистраци
 src/app/cli.{h,cpp}            # общий QCommandLineParser (+--gesture, --backend-info, --no-tray)
 src/app/gnome/main.cpp         # GNOME composition root
 src/platform/evdev/            # EvdevHotkeyBackend            [D1]
-src/platform/sni/              # SniTray, DBusMenuExporter     [D3]
+tools/spike/tray-spike.cpp   # референс SNI-клієнта (fallback)  [D3]
 src/platform/gnome/            # PortalGlobalShortcut, GsettingsGlobalShortcut, GestureService
 src/platform/qt/               # + FdoNotifier, SingleInstance
 src/platform/x11/              # + X11Clipboard                [D2]
@@ -501,7 +533,7 @@ PipeWire, перелогин → процесс жив.
 (`ubuntu-appindicators@ubuntu.com`), в Debian это
 `gnome-shell-extension-appindicator` — в `Recommends` оба имени.
 
-**Stage 6b — `SniTray` в KDE (решение 4).** `LT_TRAY=sni` на arch-kde:
+**Stage 6b — `QtTray` в KDE (решение 4).** `LT_TRAY=qt` на arch-kde:
 `test_04` + глаза (`vmctl.sh vnc arch-kde`). Только потом — коммит
 «remove KdeTray» (с вашего «да»).
 
