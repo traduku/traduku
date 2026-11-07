@@ -44,9 +44,11 @@ const QString WELCOME = QString::fromUtf8("\xD0\x9F\xD1\x80\xD0\xB8\xD0\xB2\xD0\
 class ForeignOwner
 {
 public:
-    ForeignOwner(QStringList targets, QByteArray payload, QString wireType)
+    ForeignOwner(QStringList targets, QByteArray payload, QString wireType,
+                 bool brokenTargetsReply = false, bool ignoreTargetsRequest = false)
         : m_targets(std::move(targets)), m_payload(std::move(payload)),
-          m_wireType(std::move(wireType))
+          m_wireType(std::move(wireType)),
+          m_brokenTargets(brokenTargetsReply), m_ignoreTargets(ignoreTargetsRequest)
     {
     }
 
@@ -127,10 +129,30 @@ private:
         reply.xselection.target = rq->target;
         reply.xselection.property = None;
 
+        if (target == QLatin1String("TARGETS") && m_ignoreTargets) {
+            return;                         // silence, as a lazy owner does
+        }
         if (target == QLatin1String("TARGETS")) {
-            std::vector<Atom> offered;
+            // uint32_t: a format-32 property is 4 bytes per element, while
+            // Atom is unsigned long (8 on LP64). Writing an Atom[] is how
+            // xclip loses every target after the first - reproduced here on
+            // purpose by m_brokenTargets, and the reason the reader must not
+            // treat this list as a permission slip.
+            // long, because that is what XChangeProperty takes for format 32
+            // and what XGetWindowProperty hands back on the reading side.
+            std::vector<long> offered;
             for (const QString &t : m_targets) {
-                offered.push_back(XInternAtom(m_display, t.toUtf8().constData(), False));
+                offered.push_back(static_cast<long>(
+                    XInternAtom(m_display, t.toUtf8().constData(), False)));
+            }
+            if (m_brokenTargets) {
+                // Exactly what a truncated list looks like on the wire: the
+                // first item and zeros where the rest should be - the shape
+                // our own reader produced when it cut long[] into 4-byte words.
+                for (auto &v : offered) {
+                    static int keep = 0;
+                    v = (keep++ == 0) ? v : 0;
+                }
             }
             XChangeProperty(m_display, rq->requestor, rq->property, XA_ATOM, 32,
                             PropModeReplace,
@@ -156,6 +178,8 @@ private:
     QStringList m_targets;
     QByteArray m_payload;
     QString m_wireType;
+    bool m_brokenTargets = false;
+    bool m_ignoreTargets = false;
     Display *m_display = nullptr;
     Window m_window = 0;
     Atom m_selection = None;
@@ -206,6 +230,72 @@ QString strangerFetch(const QString &target, int timeoutMs = 3000)
     }
     XCloseDisplay(dpy);
     return out;
+}
+
+/// Read the TARGETS list off the test selection the way a client that
+/// understands ATOM properties does: parse 32-bit items and resolve each one
+/// by name. strangerFetch() would hand back the raw bytes as if they were
+/// text, which is how an atom list looks - garbage - and a test asserting on
+/// target names through it would be asserting on nothing.
+QStringList strangerTargets(int timeoutMs = 3000)
+{
+    QStringList names;
+    Display *dpy = XOpenDisplay(nullptr);
+    if (!dpy) {
+        return names;
+    }
+    const Window win = XCreateSimpleWindow(dpy, RootWindow(dpy, DefaultScreen(dpy)),
+                                           0, 0, 1, 1, 0, 0, 0);
+    XSelectInput(dpy, win, SelectionNotify);
+    const Atom sel = XInternAtom(dpy, kTestSelection, False);
+    const Atom prop = XInternAtom(dpy, "TRADUKU_TARGETS", False);
+    XDeleteProperty(dpy, win, prop);
+    XConvertSelection(dpy, sel, XInternAtom(dpy, "TARGETS", False), prop, win, CurrentTime);
+    XFlush(dpy);
+    QElapsedTimer timer;
+    timer.start();
+    unsigned char *data = nullptr;
+    unsigned long n = 0;
+    int fmt = 0;
+    while (!data && timer.elapsed() < timeoutMs) {
+        while (XPending(dpy)) {
+            XEvent ev;
+            XNextEvent(dpy, &ev);
+            if (ev.type == SelectionNotify && ev.xselection.property != None) {
+                Atom type = None;
+                unsigned long rest = 0;
+                XGetWindowProperty(dpy, win, prop, 0, 65536, False, AnyPropertyType,
+                                   &type, &fmt, &n, &rest, &data);
+            }
+        }
+        usleep(2000);
+    }
+
+    if (data) {
+        const int itemSize = (fmt == 32) ? static_cast<int>(sizeof(long)) : (fmt / 8);
+        const auto *bytes = reinterpret_cast<const unsigned char *>(data);
+        for (int i = 0; i + itemSize <= n * itemSize; i += itemSize) {
+            quint64 v = 0;
+            for (int b = itemSize - 1; b >= 0; --b) {
+                v = (v << 8) | bytes[i + b];
+            }
+            if (v == 0) {
+                // None: the signature of an Atom[] written into a format-32
+                // property. XGetAtomName(0) is a BadAtom protocol error, and
+                // the Xlib default handler answers it by exiting the test.
+                names << QStringLiteral("<none:0>");
+                continue;
+            }
+            char *nm = XGetAtomName(dpy, static_cast<Atom>(v));
+            names << (nm ? QString::fromUtf8(nm) : QStringLiteral("<unresolved:%1>").arg(v));
+            if (nm) {
+                XFree(nm);
+            }
+        }
+        XFree(data);
+    }
+    XCloseDisplay(dpy);
+    return names;
 }
 
 /// Reachable server at all?
@@ -316,6 +406,90 @@ private slots:
         QVERIFY(owner.start());
         X11Clipboard cb(testSelection());
         QCOMPARE(cb.text(), WELCOME);
+    }
+
+    void anOwnerOfferingOnlyUtf8StringIsStillRead()
+    {
+        requireServer();
+        // The list is not decoration: this is xclip's entire offer, measured
+        // on the debian-kde guest with `xclip -selection clipboard -t TARGETS
+        // -o`:
+        //     TARGETS
+        //     UTF8_STRING
+        // - no STRING, no TEXT, no text/plain MIME. Against that owner the
+        // app answered "nothing to translate (clipboard is empty)" while the
+        // same build read a Qt-owned selection on the same machine, so the
+        // X11 clipboard could not be measured by the grid at all (tests 5/6/7/8
+        // were red there for a reason no assertion could see) and a user
+        // copying from any minimal client gets an empty translation.
+        ForeignOwner owner({QStringLiteral("TARGETS"), QStringLiteral("UTF8_STRING")},
+                           WELCOME.toUtf8(), QStringLiteral("UTF8_STRING"));
+        QVERIFY(owner.start());
+        X11Clipboard cb(testSelection());
+        QCOMPARE(cb.text(), WELCOME);
+    }
+
+    void anOwnerWhoseTargetsListIsBrokenIsStillRead()
+    {
+        requireServer();
+        // The xclip case, measured rather than imagined. Its TARGETS reply on
+        // Debian 13 is
+        //     type=ATOM format=32 nitems=2 bytes=2f 01 00 00 00 00 00 00
+        // - the first target and a zero, because it writes an Atom[] into a
+        // format-32 property. `xclip -o` returns the text, so refusing to read
+        // this clipboard reported an empty clipboard to a user who had one
+        // (and made the X11 columns of the E2E grid unmeasurable: tests
+        // 5/6/7/8 were red on debian-kde with no assertion able to see why).
+        ForeignOwner owner({QStringLiteral("TARGETS"), QStringLiteral("UTF8_STRING")},
+                           WELCOME.toUtf8(), QStringLiteral("UTF8_STRING"),
+                           /*brokenTargetsReply=*/true);
+        QVERIFY(owner.start());
+        X11Clipboard cb(testSelection());
+        QCOMPARE(cb.text(), WELCOME);
+    }
+
+    void anOwnerThatNeverAnswersTargetsIsStillRead()
+    {
+        requireServer();
+        // ICCCM does not require an owner to answer TARGETS before it will
+        // hand over text; ask for the target and the bytes are there. An
+        // owner that ignores the question must not cost the user the paste.
+        ForeignOwner owner({QStringLiteral("UTF8_STRING")},
+                           WELCOME.toUtf8(), QStringLiteral("UTF8_STRING"),
+                           /*brokenTargetsReply=*/false, /*ignoreTargetsRequest=*/true);
+        QVERIFY(owner.start());
+        X11Clipboard cb(testSelection());
+        QCOMPARE(cb.text(), WELCOME);
+    }
+
+    void theTargetsListWeServeSurvivesTheWire()
+    {
+        requireServer();
+        // Our side of the same wire. An Atom[] reply truncated to 4 bytes per
+        // element would tell every client that wants to paste from Traduku
+        // that we offer one target and a None - which is precisely the claim
+        // that made xclip unreadable to us.
+        X11Clipboard cb(testSelection());
+        QVERIFY2(cb.setText(WELCOME), "we did not get the selection");
+        // We are the owner now, so the reply has to be served - and the only
+        // thing that serves it in the app is the Qt event loop. Same shape as
+        // theQtEventLoopKeepsUsServing: stranger in a thread, pump here.
+        QStringList list;
+        std::thread stranger([&] { list = strangerTargets(); });
+        for (int i = 0; i < 100 && list.isEmpty(); ++i) {
+            QTest::qWait(20);
+        }
+        stranger.join();
+        QVERIFY2(!list.isEmpty(), "a client reading our TARGETS list got nothing at all");
+        for (const char *t : {"UTF8_STRING", "TEXT", "STRING"}) {
+            QVERIFY2(list.contains(QLatin1String(t)),
+                     qPrintable(QStringLiteral("the targets we advertise are missing %1; "
+                                               "a client reading our list sees: %2")
+                                    .arg(QLatin1String(t), list.join(QStringLiteral(", ")))));
+        }
+        QVERIFY2(!list.contains(QStringLiteral("<none:0>")) && !list.contains(QString()),
+                 qPrintable(QStringLiteral("our TARGETS reply carries a zero item: ")
+                            + list.join(QStringLiteral(", "))));
     }
 
     void readsLegacyTextOfferDecodedByItsRealCharset()

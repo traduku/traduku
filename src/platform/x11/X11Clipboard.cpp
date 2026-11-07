@@ -231,12 +231,18 @@ QString atomName(Display *dpy, Atom a)
     return name;
 }
 
-/// TARGETS come back as a list of 32-bit items on the wire.
-/// `reinterpret_cast<Atom *>` is the trap here: Atom is unsigned long, which
-/// is 8 bytes on LP64, so the cast reads half the list and - by the luck of
-/// little-endian - gets the first target right. That is exactly how a
-/// TEXT-only owner looked like an owner with nothing to offer. Parse the
-/// words, and honour the server's byte order rather than the host's.
+/// Parse a TARGETS reply. Two traps, both paid for:
+///
+///   * `reinterpret_cast<Atom *>` on the raw buffer, which is the same bug as
+///     reading fixed 4-byte words - on LP64 Xlib hands format-32 properties
+///     back as `long[]`, so both read half the list and, by the luck of
+///     little-endian, get the first item right. A TEXT-only owner then looked
+///     like an owner with nothing to offer, and an xclip owner looked like one
+///     whose only target was TARGETS.
+///   * the server's byte order is not the host's. Honour ImageByteOrder, and
+///     size the items the way Xlib delivered them rather than guessing 32.
+///
+/// A zero item is skipped rather than turned into a name: 0 is None.
 QStringList atomListFromWire(const QByteArray &raw, Display *dpy)
 {
     QStringList out;
@@ -245,12 +251,22 @@ QStringList atomListFromWire(const QByteArray &raw, Display *dpy)
     const bool serverIsBigEndian = (ImageByteOrder(dpy) == MSBFirst);
     const bool hostIsBigEndian = (QSysInfo::ByteOrder == QSysInfo::BigEndian);
     const bool swap = serverIsBigEndian != hostIsBigEndian;
+    const int itemSize = static_cast<int>(sizeof(long));   // as Xlib hands it to us
     const auto *bytes = reinterpret_cast<const unsigned char *>(raw.constData());
-    for (int i = 0; i + 4 <= raw.size(); i += 4) {
-        const quint32 v = swap ? (quint32(bytes[i]) << 24 | quint32(bytes[i + 1]) << 16
-                                 | quint32(bytes[i + 2]) << 8 | bytes[i + 3])
-                               : (quint32(bytes[i + 3]) << 24 | quint32(bytes[i + 2]) << 16
-                                  | quint32(bytes[i + 1]) << 8 | bytes[i]);
+    for (int i = 0; i + itemSize <= raw.size(); i += itemSize) {
+        quint64 v = 0;
+        if (swap) {
+            for (int b = 0; b < itemSize; ++b) {
+                v = (v << 8) | bytes[i + b];
+            }
+        } else {
+            for (int b = itemSize - 1; b >= 0; --b) {
+                v = (v << 8) | bytes[i + b];
+            }
+        }
+        if (v == 0) {
+            continue;                       // a None in the list is not a target
+        }
         const QString name = atomName(dpy, static_cast<Atom>(v));
         if (!name.isEmpty()) {
             out << name;
@@ -284,10 +300,16 @@ void serveOne(Display *dpy, const QByteArray &payload, const XEvent &ev)
 
     const QString target = atomName(dpy, rq->target);
     if (target == QLatin1String("TARGETS")) {
-        Atom offered[4] = {None, None, None, None};
+        // `long` is the type XChangeProperty documents for format 32, and the
+        // reply is read back through XGetWindowProperty as long[] on the other
+        // side - so this is the same contract as the reader's, not a guess.
+        // (The spelling matters: a narrower array here is what made our own
+        // list arrive as "UTF8_STRING, <zero>, TEXT, <zero>" in
+        // theTargetsListWeServeSurvivesTheWire.)
+        long offered[4] = {0, 0, 0, 0};
         int n = 0;
         for (const char *t : kServedTargets) {
-            offered[n++] = XInternAtom(dpy, t, False);
+            offered[n++] = static_cast<long>(XInternAtom(dpy, t, False));
         }
         XChangeProperty(dpy, rq->requestor, rq->property, XA_ATOM, 32,
                         PropModeReplace, reinterpret_cast<const unsigned char *>(offered), n);
@@ -521,8 +543,18 @@ QByteArray X11Clipboard::requestProperty(const QString &target, const QString &w
                            AnyPropertyType, &actualType, &format, &items, &bytesAfter,
                            &data) == Success
         && data) {
+        // Xlib's contract: "regardless of the format, data is returned as an
+        // array of long values". items * (format / 8) - 4 bytes per item for
+        // format 32 - reads HALF the buffer on LP64, and the half it reads is
+        // [first atom, zero]. That is the whole xclip story from the E2E grid:
+        // the owner's list was fine, we truncated it to one target and a None,
+        // found no text target, and reported "clipboard is empty" over a
+        // clipboard the user could paste from.
+        const int bytesPerItem = (format == 32)
+                                     ? static_cast<int>(sizeof(long))
+                                     : (format / 8);
         out = QByteArray(reinterpret_cast<const char *>(data),
-                         static_cast<int>(items * (format / 8)));
+                         static_cast<int>(items * bytesPerItem));
         XFree(data);
         if (!wantType.isEmpty() && atomName(m_display, actualType) != wantType) {
             return {};
@@ -563,10 +595,33 @@ QString X11Clipboard::text() const
                                                  QStringLiteral("ATOM"));
     const QStringList offered = atomListFromWire(targetList, m_display);
     const QString best = TextTargets::pickBestAtom(offered);
-    if (best.isEmpty()) {
-        return {};                          // an image, a URI list: not ours
+    if (!best.isEmpty()) {
+        return requestText(best);
     }
-    return requestText(best);
+
+    // No text target in the list is a reason to ask differently, not a reason
+    // to say "empty". Measured against xclip on Debian 13 - the tool people
+    // paste with out of terminals, tmux and scripts - whose TARGETS reply is
+    //
+    //     type=ATOM  format=32  nitems=2  bytes=2f 01 00 00 00 00 00 00
+    //
+    // one target (TARGETS itself) and a zero: xclip writes an `Atom[]` into a
+    // format-32 property, Xlib takes 4 bytes per element and Atom is 8 on
+    // LP64, so every target after the first is lost on the wire. `xclip -o`
+    // still returns the text, so the user had a clipboard and Traduku reported
+    // "clipboard is empty". ICCCM lets a client ask any target it wants: when
+    // the list tells us nothing, ask the ones text owners answer.
+    //
+    // An image or URI selection still reads as empty - such an owner answers
+    // None to these targets and the loop finds nothing.
+    static const char *const kStandardTextTargets[] = {"UTF8_STRING", "STRING", "TEXT"};
+    for (const char *t : kStandardTextTargets) {
+        const QString text = requestText(QLatin1String(t));
+        if (!text.isEmpty()) {
+            return text;
+        }
+    }
+    return {};
 }
 
 bool X11Clipboard::setText(const QString &text)
