@@ -149,6 +149,27 @@ BackendReport collectBackends(Settings *settings)
                      ? QStringLiteral("knotification") : QString();
     r.tray = QtTray::hostSupportsTray() ? trayDisplayName(QStringLiteral("qt"))
                                         : QStringLiteral("none (no tray host)");
+    // Sound is the failure nobody can see: the translation finishes, nothing
+    // chirps, and "switched off", "no sound theme" and "no player installed"
+    // look the same from outside. Same wording as the GNOME shell - the
+    // e2e greps this line on both desktops.
+    if (settings) {
+        SoundPlayer probe(settings);
+        const auto st = probe.status(SoundEvent::Finished);
+        if (!st.enabled) {
+            r.audio = QStringLiteral("off (Sounds.Enabled=false)");
+        } else if (!st.problem.isEmpty()) {
+            r.audio = st.problem;
+        } else {
+            r.audio = QStringLiteral("%1 - %2").arg(st.player, st.file);
+        }
+    }
+    // Plasma has no packaged entry (the first-run dialog asks instead), so this
+    // line normally names a file in ~/.config - or says there is none, which is
+    // the answer a user needs when the app did not come back after a reboot.
+    r.autostart = XdgAutostart(QStringLiteral("traduku"),
+                               QCoreApplication::applicationFilePath())
+                      .diagnostic();
     r.reasoning = (settings && settings->disableReasoning())
         ? QStringLiteral("skipped (request options sent)")
         : QStringLiteral("NOT disabled - the model may stream hidden reasoning");
@@ -223,6 +244,10 @@ int main(int argc, char **argv)
         // the tray and the controller, so this shell reports rather than tests.
         out << QStringLiteral("notify: knotify (KDE notifications)\n");
         return 0;
+    case CliOptions::Mode::Autostart:
+        // Same command as the GNOME shell - it drives the object the tray menu
+        // drives, so "start at login" has one implementation reached two ways.
+        return runAutostartCommand(cli.autostartValue);
     case CliOptions::Mode::Tray:
         break;
     }
@@ -329,11 +354,27 @@ int main(int argc, char **argv)
         }
         settings.setFirstRunDone(true);
         settings.save();
+        // The decision is shared with the GNOME shell (app/AppFlavour.cpp) and
+        // differs on purpose: Plasma has no packaged autostart entry, so this
+        // dialog is the only thing that can ask - and the only thing allowed to
+        // write one.
+        const FirstRunPlan plan = lt::planFirstRun(
+            QStringLiteral("kde"), true, !settings.apiUrl().trimmed().isEmpty());
         notifier.notify(QStringLiteral("Traduku is installed"),
                         QStringLiteral("Press Ctrl+C twice quickly to "
                                        "translate the clipboard (a single "
                                        "copy is left alone). Configure your "
                                        "LLM endpoint in the settings dialog."));
+        if (!plan.askAboutAutostart) {
+            // Not this shell's question to ask (see AppFlavour.h): the entry is
+            // installed by the package, and asking about something the user
+            // cannot change is how a welcome dialog becomes a lie.
+            if (plan.openSettings) {
+                SettingsDialog dlg(&settings);
+                dlg.exec();
+            }
+            return;
+        }
         const auto answer = QMessageBox::question(
             &window, QStringLiteral("Welcome to Traduku"),
             QStringLiteral("Copy text anywhere, press Ctrl+C twice - the "

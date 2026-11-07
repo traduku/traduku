@@ -24,6 +24,8 @@ private slots:
         m_r.gestureSource = QStringLiteral("evdev /dev/input/event*");
         m_r.notifier = QStringLiteral("fdo");
         m_r.tray = QStringLiteral("sni");
+        m_r.audio = QStringLiteral("pw-play - complete.oga");
+        m_r.autostart = QStringLiteral("enabled by the package");
     }
 
     void healthyReportNamesEveryLayer()
@@ -36,6 +38,12 @@ private slots:
         QVERIFY(s.contains(QStringLiteral("gesture: evdev /dev/input/event*")));
         QVERIFY(s.contains(QStringLiteral("notifier: fdo")));
         QVERIFY(s.contains(QStringLiteral("tray: sni")));
+        // Two more questions only the desktop can answer, and both are ones a
+        // developer would otherwise guess: will the user hear anything, and
+        // does the app come back at login (on GNOME the package decides, on
+        // Plasma the user does - the report says which).
+        QVERIFY(s.contains(QStringLiteral("audio: pw-play - complete.oga")));
+        QVERIFY(s.contains(QStringLiteral("autostart: enabled by the package")));
         QVERIFY2(!s.contains(QStringLiteral("hint")),
                  "a healthy machine must not print hints:\n" + s.toUtf8());
     }

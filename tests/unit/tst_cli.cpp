@@ -47,6 +47,31 @@ private slots:
                  int(CliOptions::Mode::Translate));
     }
 
+    // The tray's "Launch on Login" is the only way to change autostart, and
+    // on GNOME it lives in a panel icon that needs a shell extension to be
+    // visible at all. When that icon is missing - the exact situation of the
+    // user who reaches for a terminal - the control must exist somewhere
+    // reachable.
+    void autostartModeTakesOnOffOrStatus()
+    {
+        const CliOptions off = parse({QStringLiteral("--autostart=off")});
+        QCOMPARE(int(off.mode), int(CliOptions::Mode::Autostart));
+        QCOMPARE(off.autostartValue, QString("off"));
+        QCOMPARE(off.exitCode, 0);
+        QCOMPARE(parse({QStringLiteral("--autostart=on")}).autostartValue,
+                 QString("on"));
+        QCOMPARE(parse({QStringLiteral("--autostart"), QStringLiteral("status")}).autostartValue,
+                 QString("status"));
+
+        // A typo must not quietly start a tray app: the user typed a command
+        // and deserves the error, not a process that never exits.
+        const CliOptions bad = parse({QStringLiteral("--autostart=yes-please")});
+        QVERIFY(!bad.errors.isEmpty());
+        QVERIFY2(bad.errors.join(QStringLiteral("; ")).contains(QStringLiteral("status")),
+                 qPrintable(bad.errors.join(QStringLiteral("; "))));
+        QVERIFY(bad.exitCode != 0);
+    }
+
     void translateCarriesExplicitText()
     {
         const CliOptions o = parse({QStringLiteral("--translate"),

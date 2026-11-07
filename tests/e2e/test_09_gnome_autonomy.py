@@ -1,0 +1,243 @@
+"""E2E-9: Stage 6 - a GNOME user alone with the package.
+
+Everything here is about the situation where nobody opens a terminal and
+nobody reads the source: the package is installed, the session is a stock
+GNOME, and the app has to say for itself that it exists, keep the promise
+that it comes back at login, and be honest about the cues it cannot play.
+
+Each test names the machine fact it was written against, because every one
+of them was measured on ubuntu-gnome first and each contradicted an
+assumption:
+
+  * no icon in the panel (GNOME shows an SNI only with the appindicator
+    extension), so a first-run greeting is the only thing that can teach the
+    gesture;
+  * only pw-play is installed (no paplay, no aplay), so "is there sound?"
+    cannot be answered by guessing a player name;
+  * the package installs /etc/xdg/autostart/traduku.desktop, so a menu tick
+    that only looks at ~/.config/autostart is wrong twice over: it reads
+    "off" while the app autostarts, and un-ticking removed a file that was
+    not the reason it started.
+"""
+import json
+import time
+
+import pytest
+
+_NOTIFY_WATCH = (
+    "cat > /tmp/notify-watch.sh <<'SH'\n"
+    "#!/bin/sh\n"
+    "timeout 40 dbus-monitor --session "
+    '"type=\'method_call\',interface=org.freedesktop.Notifications" '
+    "> /tmp/notify.log 2>&1\n"
+    "SH\n"
+    "chmod +x /tmp/notify-watch.sh; rm -f /tmp/notify.log; "
+)
+
+USER_AUTOSTART = "/home/vm/.config/autostart/traduku.desktop"
+PACKAGED_AUTOSTART = "/etc/xdg/autostart/traduku.desktop"
+
+
+def _gnome_only(vm):
+    if not vm.vm.endswith("-gnome"):
+        pytest.skip("GNOME-specific: Plasma has no packaged autostart entry and "
+                    "its own tray/first-run path (test_02 covers it)")
+
+
+def _reset_autostart(vm):
+    """Back to the packaged state: no user file, so the entry the package
+    installs is the one in effect again."""
+    vm.run(f"rm -f {USER_AUTOSTART}")
+
+
+# ---------------------------------------------------------------------------
+def test_first_run_tells_the_user_what_to_press(session):
+    """The gesture is the whole interface, and nothing in the package says so.
+
+    Observed on ubuntu-gnome: a fresh install autostarts, shows no icon
+    (appindicator missing), and the user - who has no reason to believe the
+    app is even running - never learns that Ctrl+C twice is the interface.
+    The greeting is the only moment available, so its text is the product.
+    """
+    vm = session
+    _gnome_only(vm)
+    vm.run("pkill -x traduku; rm -f ~/.config/traduku/config.ini; true")
+
+    # org.freedesktop.Notifications is a method call on gnome-shell's service,
+    # so the only witness is the bus itself. Written as a script: an inline
+    # `dbus-monitor ... &` over ssh holds the connection open until the
+    # harness timeout, which is not the failure being looked for. The timeout
+    # bounds the watcher so a red run cannot leak a monitor into the guest.
+    vm.ses(_NOTIFY_WATCH + "setsid nohup /tmp/notify-watch.sh >/dev/null 2>&1 </dev/null & sleep 1")
+
+    # An endpoint is configured, so the greeting must arrive without a modal
+    # settings window: this app is autostarted unattended at login, and the
+    # surest way to teach someone to switch autostart off is a dialog at login.
+    vm.run("mkdir -p ~/.config/traduku; printf '%s\\n' '[General]' "
+           "'ApiUrl=http://127.0.0.1:9/null' 'Model=m' 'SourceLang=auto' "
+           "'TargetLang=ru' 'FirstRunDone=false' > ~/.config/traduku/config.ini")
+    vm.ses("(setsid traduku > /tmp/first-run.out 2>&1 &) ; sleep 6")
+
+    rc, log = vm.ses("cat /tmp/notify.log")
+    rc2, out = vm.ses("cat /tmp/first-run.out")
+    try:
+        vm.run("pkill -x traduku; true")
+    except Exception:
+        pass
+    assert "org.freedesktop.Notifications" in log and "Notify" in log, (
+        "no notification was sent on the first run; the bus log was:\n"
+        f"{log}\nstdout was:\n{out}")
+    lowered = log.lower()
+    assert "ctrl+c" in lowered or "ctrl c" in lowered, (
+        "the first-run notification never names the gesture - a greeting that "
+        f"does not say what to press teaches nothing:\n{log}")
+    # ... and it must not ask the question the package already answered.
+    assert "start at login" not in lowered and "automatically at login" not in lowered, (
+        "the GNOME first run asks about autostart, which the package installs "
+        f"(packaging/gnome/traduku.desktop): {log}")
+
+
+def test_first_run_does_not_grab_the_desktop_when_it_is_configured(session):
+    """No modal at login. Measured by asking the XWayland server for toplevels.
+
+    With an endpoint configured there is nothing to fill in, so the first run
+    must notify and stay out of the way. The KDE shell deliberately does open
+    the settings dialog (it is also asking about autostart there); this shell
+    starts from gdm's autologin with nobody watching the screen.
+    """
+    vm = session
+    _gnome_only(vm)
+    vm.run("pkill -x traduku; true")
+    vm.run("mkdir -p ~/.config/traduku; printf '%s\\n' '[General]' "
+           "'ApiUrl=http://127.0.0.1:9/null' 'Model=m' 'SourceLang=auto' "
+           "'TargetLang=ru' 'FirstRunDone=false' > ~/.config/traduku/config.ini")
+    vm.ses("(setsid traduku > /tmp/first-run2.out 2>&1 &) ; sleep 6")
+    # The settings dialog is a QWidget window; on this session XWayland lists
+    # it (xdotool saw the translation window in test_06).
+    rc, out = vm.ses("DISPLAY=:0 XAUTHORITY=$(ls -1 /run/user/1000/.mutter-Xwaylandauth.* "
+                     "2>/dev/null | head -1) xdotool search --name . getwindowname %a "
+                     "2>/dev/null | tr '\\n' '|'")
+    try:
+        vm.run("pkill -x traduku; true")
+    except Exception:
+        pass
+    names = out.lower()
+    assert "settings" not in names or "traduku" not in names, (
+        "a settings dialog opened unattended at login on a configured install: "
+        f"windows were {out!r}")
+
+
+# ---------------------------------------------------------------------------
+def test_autostart_command_overrides_the_packaged_entry(session):
+    """`--autostart=off` must stop the next login, not just tidy ~/.config.
+
+    The tray menu is the other way in, and on this desktop the menu lives in a
+    panel icon that needs a shell extension to be visible - so the command has
+    to be able to finish the job by itself. Red check (measured while writing
+    this): with the old implementation `off` deleted the user file, the status
+    line still said the app would start, and the next login started it again.
+    """
+    vm = session
+    _gnome_only(vm)
+    rc, owner = vm.run(f"test -f {PACKAGED_AUTOSTART} && echo packaged")
+    assert "packaged" in owner, f"no {PACKAGED_AUTOSTART} to override"
+
+    _reset_autostart(vm)
+    rc, out = vm.ses("traduku --autostart=status 2>&1; echo rc=$?")
+    assert "rc=0" in out, f"--autostart=status failed: {out}"
+    assert "autostart:" in out, f"no status line: {out}"
+    assert "package" in out.lower(), (
+        f"status does not say the entry comes from the package: {out}")
+
+    rc, out = vm.ses(f"traduku --autostart=off 2>&1; echo rc=$?; "
+                     f"cat {USER_AUTOSTART} 2>&1")
+    assert "rc=0" in out, f"--autostart=off failed: {out}"
+    assert "Hidden=true" in out, (
+        "disabling left no shadowing entry, so the next login starts the app "
+        f"anyway ({USER_AUTOSTART} was):\n{out}")
+
+    rc, out = vm.ses("traduku --autostart=status 2>&1")
+    assert "off" in out.lower(), f"still claims to start after off: {out}"
+
+    rc, out = vm.ses("traduku --autostart=on 2>&1; traduku --autostart=status 2>&1")
+    assert "enabled" in out.lower(), f"re-enabling did not take: {out}"
+
+    # ... and it must answer with no session at all: the person who cannot
+    # see the icon is often the person connected over ssh.
+    rc, out = vm.run("env -u DISPLAY -u WAYLAND_DISPLAY -u QT_QPA_PLATFORM "
+                     "traduku --autostart=status 2>&1; echo rc=$?")
+    assert "rc=0" in out and "autostart:" in out, (
+        f"--autostart=status needs a display, which is the one thing the user "
+        f"without a panel icon may not have: {out}")
+
+    # A typo is an error, not a tray that never exits.
+    rc, out = vm.ses("traduku --autostart=yes-please 2>&1; echo rc=$?")
+    assert "rc=0" not in out and "status" in out.lower(), (
+        f"--autostart=yes-please was not refused as a command: {out}")
+    _reset_autostart(vm)
+
+
+# ---------------------------------------------------------------------------
+def test_backend_info_reports_the_sound_path(session):
+    """"It is silent" must be distinguishable from "it is off" and "no theme".
+
+    ubuntu-gnome has PipeWire and exactly one player: pw-play (measured:
+    paplay and aplay are not installed). So the report has to name the player
+    it found here rather than the one the developer's machine happens to have.
+    """
+    vm = session
+    rc, out = vm.ses("traduku --backend-info 2>&1; echo rc=$?")
+    assert "rc=0" in out, f"--backend-info failed: {out}"
+    line = [l for l in out.splitlines() if l.startswith("audio:")]
+    assert line, f"no audio: line, so a silent app cannot be diagnosed:\n{out}"
+    value = line[0].split(":", 1)[1].strip()
+
+    if value.startswith("off"):
+        return                      # the user switched it off; nothing to check
+    if "not found" in value or "none of" in value or "not installed" in value:
+        # A refusal is allowed, but only a true one.
+        rc, chk = vm.ses("for p in paplay pw-play aplay; do command -v $p; done")
+        assert not chk.strip(), (
+            f"the report says nothing can play sound, but these are installed: "
+            f"{chk}\nreport: {value}")
+        return
+
+    player = value.split(" - ")[0].strip()
+    rc, found = vm.ses(f"command -v {player}")
+    assert found.strip(), f"the report names a player that is not installed: {value}"
+    if " - " in value:
+        path = value.split(" - ", 1)[1].strip()
+        rc, ok = vm.ses(f"test -r {path} && echo readable")
+        assert "readable" in ok, f"the report names a sound file that is not there: {value}"
+
+
+def test_backend_info_reports_autostart(session):
+    """The first question after a reboot is "did it come back?", and only a
+    file on that machine answers it."""
+    vm = session
+    rc, out = vm.ses("traduku --backend-info 2>&1")
+    line = [l for l in out.splitlines() if l.startswith("autostart:")]
+    assert line, f"no autostart line:\n{out}"
+
+
+# ---------------------------------------------------------------------------
+def test_non_latin_text_survives_the_whole_path(env):
+    """Cyrillic in, Cyrillic out: clipboard -> window -> back to clipboard.
+
+    A locale is not the risk here (the guest runs C.utf8 and the app speaks
+    UTF-8 end to end); the risk is a single QString::toLocal8Bit or a
+    latin1()-typed byte array on the way, which turns Привет into ??????? and
+    only ever shows up on a real desktop with a real IME.
+    """
+    vm = env
+    text = "Привет, мир — перевод 42"
+    vm.clipset(text)
+    # ensure_ascii=False is the point: json.dumps' default escapes the word to
+    # \uXXXX, and the test then measures whether the shell passes backslashes
+    # through - not whether the app survives Cyrillic. (It cost a detour
+    # chasing a "double escaping bug" that was this line.)
+    rc, out = vm.ses(f"traduku --translate --text {json.dumps(text, ensure_ascii=False)} "
+                     f"2>&1; echo rc=$?")
+    assert "rc=0" in out, f"one-shot translation of non-latin text failed:\n{out}"
+    assert "Привет" in out, (
+        f"the non-latin text did not survive the request path:\n{out}")

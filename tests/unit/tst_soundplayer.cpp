@@ -29,6 +29,70 @@ private slots:
         qputenv("XDG_DATA_HOME", (m_dir.path() + "/data").toUtf8());
     }
 
+    // ---- what --backend-info has to be able to say ----------------------
+    // Sound is the one feature whose failure the user cannot see: the
+    // translation happens, nothing chirps, and "is it off, is the theme
+    // missing, or is there no player?" all look identical. On ubuntu-gnome
+    // only pw-play is installed (no paplay, no aplay), which is exactly the
+    // case a guess would get wrong.
+
+    void statusNamesThePlayerThatWouldRun()
+    {
+        const QString theme = makeTheme(m_dir.path() + "/pipe",
+                                       {"bell.oga", "complete.oga", "dialog-error.oga"});
+        Settings s(m_dir.path() + "/pipe.ini");
+        SoundPlayer p(&s, {}, {theme}, false,
+                      [](const QString &prog) {
+                          return prog == QLatin1String("pw-play")
+                              ? QStringLiteral("/usr/bin/pw-play") : QString();
+                      });
+        const auto st = p.status(SoundEvent::Finished);
+        QCOMPARE(st.player, QString("pw-play"));
+        QCOMPARE(st.file, theme + QStringLiteral("/complete.oga"));
+        QVERIFY2(st.problem.isEmpty(), qPrintable(st.problem));
+    }
+
+    void statusSaysWhenNothingCanPlay()
+    {
+        const QString theme = makeTheme(m_dir.path() + "/noplayer",
+                                       {"complete.oga"});
+        Settings s(m_dir.path() + "/noplayer.ini");
+        SoundPlayer p(&s, {}, {theme}, false, [](const QString &) { return QString(); });
+        const auto st = p.status(SoundEvent::Finished);
+        QVERIFY(st.player.isEmpty());
+        QVERIFY2(!st.problem.isEmpty(),
+                 "a machine that cannot play the cue has to be told why");
+        // The advice must name something a package manager knows.
+        QVERIFY2(st.problem.contains(QStringLiteral("pw-play")),
+                 qPrintable(QStringLiteral("the hint does not name a player: ") + st.problem));
+    }
+
+    void statusSaysWhenTheSoundThemeIsMissing()
+    {
+        makeTheme(m_dir.path() + "/emptytheme", {});
+        Settings s(m_dir.path() + "/emptytheme.ini");
+        SoundPlayer p(&s, {}, {m_dir.path() + "/emptytheme"}, false,
+                      [](const QString &) { return QStringLiteral("/usr/bin/paplay"); });
+        const auto st = p.status(SoundEvent::Finished);
+        QVERIFY(st.file.isEmpty());
+        QVERIFY2(st.problem.contains(QStringLiteral("complete.oga")),
+                 qPrintable(QStringLiteral("the hint does not name the missing file: ")
+                            + st.problem));
+    }
+
+    void statusDoesNotComplainAboutASwitchTheUserTurnedOff()
+    {
+        Settings s(m_dir.path() + "/muted.ini");
+        s.setSoundsEnabled(false);
+        SoundPlayer p(&s, {}, {m_dir.path() + "/nowhere"}, false,
+                      [](const QString &) { return QString(); });
+        const auto st = p.status(SoundEvent::Finished);
+        QVERIFY(!st.enabled);
+        QVERIFY2(st.problem.isEmpty(),
+                 "sounds are off by choice; a wall of advice about a disabled "
+                 "feature trains the user to ignore the advice that matters");
+    }
+
     void mapsEventsToThemeFiles()
     {
         QCOMPARE(SoundPlayer::fileName(SoundEvent::Started), QString("bell.oga"));

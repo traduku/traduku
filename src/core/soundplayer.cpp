@@ -15,10 +15,11 @@ QString detect(const QString &program)
     return QStandardPaths::findExecutable(program);
 }
 
-SoundPlayer::Player detachedPlayer(const QString &program)
+SoundPlayer::Player detachedPlayer(const QString &program,
+                                   const SoundPlayer::ToolFinder &find)
 {
-    return [program](const QString &file) {
-        const QString exe = detect(program);
+    return [program, find](const QString &file) {
+        const QString exe = find(program);
         if (exe.isEmpty()) {
             return false;
         }
@@ -37,24 +38,34 @@ QString SoundPlayer::fileName(SoundEvent event)
     return QString();
 }
 
-QVector<SoundPlayer::Player> SoundPlayer::defaultChain()
+const QStringList &SoundPlayer::candidatePlayers()
 {
-    // PulseAudio/PipeWire native players first (they decode .oga);
-    // aplay covers plain .wav themes.
+    // PulseAudio/PipeWire native players first (they decode the .oga files the
+    // freedesktop theme ships); aplay covers plain .wav themes. Order matters
+    // on PipeWire, which is what both of our test desktops run: pw-play talks
+    // to it directly, paplay needs the pipewire-pulse shim.
+    static const QStringList players = {QStringLiteral("paplay"),
+                                        QStringLiteral("pw-play"),
+                                        QStringLiteral("aplay")};
+    return players;
+}
+
+QVector<SoundPlayer::Player> SoundPlayer::defaultChain(const ToolFinder &finder)
+{
     QVector<Player> chain;
-    for (const QString &prog : {QStringLiteral("paplay"),
-                                QStringLiteral("pw-play"),
-                                QStringLiteral("aplay")}) {
-        chain.append(detachedPlayer(prog));
+    for (const QString &prog : candidatePlayers()) {
+        chain.append(detachedPlayer(prog, finder));
     }
     return chain;
 }
 
 SoundPlayer::SoundPlayer(Settings *settings, Player singlePlayer,
                          const QStringList &searchDirs,
-                         bool includeSystemThemeDirs, QObject *parent)
+                         bool includeSystemThemeDirs, ToolFinder finder,
+                         QObject *parent)
     : QObject(parent)
     , m_settings(settings)
+    , m_find(finder ? std::move(finder) : ToolFinder(detect))
 {
     m_dirs = searchDirs;
     // Freedesktop theme locations (XDG_DATA_HOME first, then XDG_DATA_DIRS,
@@ -69,7 +80,7 @@ SoundPlayer::SoundPlayer(Settings *settings, Player singlePlayer,
     if (singlePlayer) {
         m_chain = {std::move(singlePlayer)};
     } else {
-        m_chain = defaultChain();
+        m_chain = defaultChain(m_find);
     }
 }
 
@@ -88,6 +99,39 @@ QString SoundPlayer::resolve(SoundEvent event) const
         }
     }
     return QString();
+}
+
+SoundPlayer::Status SoundPlayer::status(SoundEvent event) const
+{
+    Status st;
+    st.enabled = !m_settings || m_settings->soundsEnabled();
+    if (!st.enabled) {
+        // The user switched it off. Nothing is broken, and advice about a
+        // feature someone turned off is noise that gets the real advice
+        // ignored.
+        return st;
+    }
+    st.file = resolve(event);
+    for (const QString &prog : candidatePlayers()) {
+        if (!m_find(prog).isEmpty()) {
+            st.player = prog;
+            break;
+        }
+    }
+    if (st.file.isEmpty()) {
+        st.problem = QStringLiteral("no sound theme: %1 was not found in %2 "
+                                    "(install yaru-sound-theme / freedesktop-sound-theme, "
+                                    "or point [Sounds] ThemeDir at a directory that has it)")
+                        .arg(fileName(event),
+                             m_dirs.isEmpty() ? QStringLiteral("the XDG sound dirs")
+                                              : m_dirs.first());
+    } else if (st.player.isEmpty()) {
+        st.problem = QStringLiteral("nothing can play %1: none of %2 is installed "
+                                    "(on PipeWire: sudo apt install wireplumber, or "
+                                    "pulseaudio-utils for paplay)")
+                        .arg(fileName(event), candidatePlayers().join(QStringLiteral(", ")));
+    }
+    return st;
 }
 
 void SoundPlayer::play(SoundEvent event)

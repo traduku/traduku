@@ -48,6 +48,9 @@ QString formatBackendInfo(const BackendReport &r)
     if (!r.tray.isEmpty()) {
         add(QStringLiteral("tray"), r.tray);
     }
+    if (!r.autostart.isEmpty()) {
+        add(QStringLiteral("autostart"), r.autostart);
+    }
     if (!r.audio.isEmpty()) {
         add(QStringLiteral("audio"), r.audio);
     }

@@ -33,6 +33,8 @@
 #include "platform/qt/QtTray.h"
 #include "platform/qt/XdgAutostart.h"
 #include "ui/SettingsDialog.h"
+
+#include <QTimer>
 #include "ui/TranslatorWindow.h"
 
 #include <QApplication>
@@ -150,6 +152,27 @@ BackendReport collectBackends(Settings *settings)
     // watcher the app still works - so report, do not fail.
     r.tray = QtTray::hostSupportsTray() ? trayDisplayName(QStringLiteral("qt"))
                                        : trayDisplayName(QStringLiteral("none"));
+    // Sound is the failure nobody can see: the translation finishes, nothing
+    // chirps, and "switched off", "no sound theme" and "no player installed"
+    // look identical from the outside. Naming the player that would run is the
+    // point - on ubuntu-gnome that is pw-play alone (measured: no paplay, no
+    // aplay), which is exactly the answer a guess would get wrong.
+    if (settings) {
+        SoundPlayer probe(settings);
+        const auto st = probe.status(SoundEvent::Finished);
+        if (!st.enabled) {
+            r.audio = QStringLiteral("off (Sounds.Enabled=false)");
+        } else if (!st.problem.isEmpty()) {
+            r.audio = st.problem;
+        } else {
+            r.audio = QStringLiteral("%1 - %2").arg(st.player, st.file);
+        }
+    }
+    // "Does it come back at login?" is answered by a file the package owns on
+    // this desktop and by the user on Plasma; the report says which.
+    r.autostart = XdgAutostart(QStringLiteral("traduku"),
+                               QCoreApplication::applicationFilePath())
+                      .diagnostic();
     return r;
 }
 
@@ -244,6 +267,8 @@ int main(int argc, char **argv)
         return runOneShotMode(*app, settings, cli);
     case CliOptions::Mode::NotifyTest:
         return doNotifyTest();
+    case CliOptions::Mode::Autostart:
+        return runAutostartCommand(cli.autostartValue);
     case CliOptions::Mode::Tray:
         break;
     }
@@ -296,7 +321,13 @@ int main(int argc, char **argv)
     // offer - left click translates, right click is the menu - and the KDE
     // implementation is now deleted, so this is the only tray in the tree -
     // verified in a live Plasma session and in GNOME's appindicator host.
-    XdgAutostart autostart(QStringLiteral("dev.traduku.Traduku"),
+    // The id IS the file name, and it has to be the name the package uses
+    // (/etc/xdg/autostart/traduku.desktop): XDG shadowing works by file name,
+    // so an entry called dev.traduku.Traduku could never disable the packaged
+    // one - "Launch on Login" then moved a file that was not the reason the
+    // app started. dev.traduku.Traduku stays the D-Bus / single-instance name,
+    // a different namespace that shadows nothing.
+    XdgAutostart autostart(QStringLiteral("traduku"),
                            QCoreApplication::applicationFilePath());
     QtTray tray(&settings, &autostart);
     QObject::connect(&tray, &QtTray::translateRequested, &controller,
@@ -309,6 +340,50 @@ int main(int argc, char **argv)
     tray.setStatusLabel(QStringLiteral("Traduku %1 · tray qt")
                             .arg(QCoreApplication::applicationVersion()));
     tray.show();
+
+    // ---- first run -----------------------------------------------------
+    // A program whose only interface is a key gesture is invisible until
+    // somebody presses it, and on GNOME there is usually no icon either (the
+    // panel shows one only with the appindicator extension). The greeting is
+    // the one moment that can be spent; what it may not do is ask about
+    // autostart - this shell installs /etc/xdg/autostart/traduku.desktop in
+    // the package, so the question has an answer the user cannot change.
+    QTimer::singleShot(0, app.get(), [&]() {
+        if (settings.firstRunDone()) {
+            return;
+        }
+        settings.setFirstRunDone(true);
+        settings.save();
+        const FirstRunPlan plan = lt::planFirstRun(
+            QStringLiteral("gnome"), tray.isAvailable(),
+            !settings.apiUrl().trimmed().isEmpty());
+        if (!plan.greet) {
+            return;
+        }
+        QString body = QStringLiteral(
+            "Press Ctrl+C twice quickly to translate the clipboard (a single "
+            "copy is left alone).");
+        if (plan.explainMissingIcon) {
+            // "Where is the icon?" is the first question on a stock GNOME, and
+            // the answer is an extension GNOME does not ship.
+            body += QStringLiteral(
+                "\n\nNo icon in the top bar? GNOME only shows one with the "
+                "\u201cAppIndicator and KStatusNotifierItem Support\u201d "
+                "extension (GNOME Extensions, or gnome-shell-extension-appindicator).");
+        }
+        if (plan.openSettings) {
+            body += QStringLiteral(" Set your LLM endpoint in the window that "
+                                  "just opened.");
+        }
+        notifier.notify(QStringLiteral("Traduku is installed"), body);
+        if (plan.openSettings) {
+            // Only with nothing to translate with: this app autostarts
+            // unattended at login, and a modal at login is how people learn to
+            // switch autostart off.
+            SettingsDialog dlg(&settings);
+            dlg.exec();
+        }
+    });
 
     // No tray icon yet (Stage 5), so stderr is the only way to answer the
     // one question that matters when "nothing happens": did the gesture fire

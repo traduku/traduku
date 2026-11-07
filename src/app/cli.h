@@ -18,12 +18,16 @@ class Settings;
  */
 struct CliOptions
 {
-    enum class Mode { Tray, Translate, SelfTest, BackendInfo, NotifyTest };
+    enum class Mode { Tray, Translate, SelfTest, BackendInfo, NotifyTest, Autostart };
 
     Mode mode = Mode::Tray;
     QString text;              // --text; null means "read the clipboard"
     QString configPath;        // --config; empty = $TRADUKU_CONFIG or XDG
     bool live = false;         // --live, only meaningful with --selftest
+    /// --autostart=on|off|status; empty means "not asked". The tray menu is
+    /// the only other way to reach this, and on GNOME the tray may not be
+    /// visible at all.
+    QString autostartValue;
     bool wantsHelp = false;
     bool wantsVersion = false;
     QStringList errors;

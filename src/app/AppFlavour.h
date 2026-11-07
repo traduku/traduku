@@ -64,3 +64,47 @@ void prepareCliEnvironment(const QStringList &argv);
 bool qpaWasForcedByUs();
 
 } // namespace lt
+
+namespace lt {
+
+/*!
+ * What the first launch of an installed app should do, decided in one place.
+ *
+ * A program whose only interface is a key gesture is invisible until someone
+ * presses it, and the two desktops are invisible for different reasons. Plasma
+ * has no packaged autostart, so the app must ASK (nothing may write an
+ * autostart entry without a yes). GNOME ships /etc/xdg/autostart/traduku.desktop
+ * in the package, so asking there is a question with an answer the user cannot
+ * change - and its panel icon exists only with the appindicator extension, so
+ * the greeting is the one moment a user learns that Ctrl+C twice is the whole
+ * interface. Deciding it per shell is how one shell silently loses the
+ * behaviour (the KDE first-run dialog was once the only one in the tree).
+ */
+struct FirstRunPlan
+{
+    bool greet = false;               // notify: what to press
+    bool askAboutAutostart = false;   // modal yes/no, Plasma only
+    bool explainMissingIcon = false;  // how to get a panel icon, GNOME only
+    /// Put the settings dialog in front of the user. Plasma asks about
+    /// autostart in a modal anyway, so it may as well finish the setup there.
+    /// GNOME starts unattended at login, and a modal at login is how people
+    /// learn to switch autostart off - so only when there is nothing to
+    /// translate with yet.
+    bool openSettings = false;
+};
+
+/// `shell` is "gnome" or "kde"; `trayAvailable` is ITray::isAvailable() as
+/// measured at startup, not a guess about the desktop; `endpointConfigured`
+/// is whether an API endpoint is set.
+FirstRunPlan planFirstRun(const QString &shell, bool trayAvailable,
+                          bool endpointConfigured = true);
+
+/*!
+ * `traduku --autostart=on|off|status`, in one place. It drives the same
+ * IAutostart the tray menu drives rather than writing the file itself: two
+ * implementations of "start at login" is how a menu and a command end up
+ * disagreeing about the answer.
+ */
+int runAutostartCommand(const QString &action);
+
+} // namespace lt
