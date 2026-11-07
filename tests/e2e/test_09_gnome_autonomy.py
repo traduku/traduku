@@ -434,18 +434,44 @@ def test_a_relogin_starts_it_again(session):
         rc, out = vm.ses("traduku --autostart=on 2>&1")
         assert "enabled" in out.lower(), f"could not enable autostart: {out}"
 
-    vm.run("pkill -x traduku; true")
-    vm.sudo(f"systemctl restart {dm}")
-
-    back = 0
-    deadline = time.time() + 150
-    while time.time() < deadline:
-        time.sleep(5)
-        rc, back_out = vm.run("pgrep -cx traduku 2>/dev/null || echo 0")
+    def session_up():
+        probe = "gnome-shell" if vm.vm.endswith("-gnome") else "kwin_wayland"
+        rc, out = vm.run(f"pgrep -cx {probe} 2>/dev/null || echo 0")
         try:
-            back = int(back_out.strip().splitlines()[-1])
+            return int(out.strip().splitlines()[-1]) > 0
         except ValueError:
-            back = 0
+            return False
+
+    def count_app():
+        rc, out = vm.run("pgrep -cx traduku 2>/dev/null || echo 0")
+        try:
+            return int(out.strip().splitlines()[-1])
+        except ValueError:
+            return 0
+
+    vm.run("pkill -x traduku; true")
+    # Two attempts, and the distinction is the point. Measured on arch-kde:
+    # the first `systemctl restart sddm` after a killed session left the
+    # greeter sitting there ("Message received from greeter: Connect" and no
+    # session), while the second one logged in and started Plasma. Whether the
+    # image's display manager hands back a session is the image's business;
+    # whether the app runs once a session exists is ours - so a missing
+    # session is retried and then skipped, and only a session without the app
+    # is a failure.
+    back = 0
+    for attempt in (1, 2):
+        vm.sudo(f"systemctl restart {dm}")
+        deadline = time.time() + 90
+        while time.time() < deadline and not session_up():
+            time.sleep(5)
+        if not session_up():
+            continue
+        deadline = time.time() + 90
+        while time.time() < deadline:
+            back = count_app()
+            if back:
+                break
+            time.sleep(5)
         if back:
             break
     # The display manager restart also drops the harness' view of the session,
@@ -454,6 +480,9 @@ def test_a_relogin_starts_it_again(session):
         capture_sessionenv(vm)
     except Exception as exc:                       # noqa: BLE001 - reported below
         pytest.skip(f"session did not come back to a usable state: {exc}")
+    if not session_up():
+        pytest.skip(f"{dm} gave no session on {vm.vm} after two restarts; the "
+                    "image's autologin is what would be under test, not our entry")
 
     rc, who = vm.run("pgrep -af '^/usr/bin/traduku$' ; pgrep -x traduku | head -1")
     assert back, (
