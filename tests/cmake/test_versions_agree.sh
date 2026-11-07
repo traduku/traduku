@@ -77,10 +77,26 @@ test -f "$src/packaging/gnome/$base.desktop" \
 # project is two releases behind its own docs. Only artifact lines are read,
 # so "Qt 6.4+" and "CMake >= 3.21" stay out of it.
 if [ -f "$src/README.md" ]; then
-    for v in $(grep -E 'pkg\.tar\.zst|amd64\.deb' "$src/README.md" \
-                 | grep -oE '[0-9]+\.[0-9]+(\.[0-9]+)?' | sort -u); do
-        [ "$v" = "$cmake_ver" ] || fail "README.md pins artifact version $v while the packages are $cmake_ver - the install command it prints names a file nothing builds"
-    done
+    # Match artifact FILE NAMES, not any number on the line. The first version
+    # of this check took `[0-9]+\.[0-9]+` from any line mentioning a package,
+    # and went red on "…18 passed / 5 skipped, 103.0 s" - a timing that happens
+    # to sit on the same row as a .deb name. A check that cries at numbers is a
+    # check people widen until it stops talking.
+    #
+    # Shape: <name><-|_><version><-|_><revision><-|_><arch>.<deb|pkg.tar.zst>
+    artifacts=$(grep -oE '[A-Za-z0-9._-]+[-_][0-9]+\.[0-9.]*[-_][0-9A-Za-z.~+-]+[-_](amd64|x86_64)\.(deb|pkg\.tar\.zst)' "$src/README.md" 2>/dev/null)
+    if [ -n "$artifacts" ]; then
+        for a in $artifacts; do
+            v=$(printf '%s\n' "$a" \
+                 | sed -E 's/^[A-Za-z0-9._-]+[-_]([0-9]+\.[0-9.]*[0-9])[-_].*$/\1/')
+            [ "$v" = "$cmake_ver" ] || fail "README.md pins artifact version $v (in $a) while the packages are $cmake_ver - the install command it prints names a file nothing builds"
+        done
+        # A row that mentions a package but yields no filename is the case the
+        # old grep was actually guarding: an install line that names a file with
+        # no version at all cannot be typed by a human.
+        printf '%s\n' "$artifacts" | grep -qE '\.(deb|pkg\.tar\.zst)$' \
+            || fail "README.md names a package file with no version"
+    fi
 fi
 
 echo ok

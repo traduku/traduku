@@ -16,12 +16,48 @@ Every row is a run, not an intention. The evidence column names the machine
 and the suite that produced it; `traduku --backend-info` on the machine in
 front of you prints the same decisions for your session.
 
-| session | package | gesture | clipboard | notifications | tray | autostart | evidence |
-|---|---|---|---|---|---|---|---|
-| **GNOME on Wayland** | `traduku-gnome` | evdev `/dev/input/event*` (uaccess ACL) | `wl-clipboard` | freedesktop D-Bus | Qt SNI client | packaged `/etc/xdg/autostart` | `ubuntu-gnome`, e2e **21 passed / 1 skipped**, 41.8 s |
-| **Plasma on Wayland** | `traduku` | X RECORD on XWayland + `Ctrl+Alt+C` pair via KGlobalAccel | `wl-clipboard` | KNotification | Qt SNI (Plasma hosts SNI) | `~/.config/autostart`, written when you answer the first-run question | `arch-kde`, e2e **18 passed / 4 skipped**, 92.4 s |
-| **Plasma on X11** | `traduku` | XI2 raw (RECORD fallback) | Qt | KNotification | Qt SNI | as above | *not yet run on a desktop*: the `debian-kde` profile is built but has not been booted. The code paths run in the Xvfb gate (37 tests, incl. `tst_x11clipboard`, `tst_x11hotkey`) |
-| **Bare X11 / other DE** | either | XI2 raw (RECORD fallback) | Qt | freedesktop D-Bus | Qt SNI | XDG autostart (XFCE, i3, … honour it) | unit/integration only (`make x11test` against a real X server) |
+### Which package is ready where
+
+A ✅ is a package built from this tree, installed into a **booted** guest of
+that distro and desktop, and passed the end-to-end suite there - the numbers
+are that run. A ⚠️ means the package builds and its own gates pass (the
+container ctest, the on-guest `--selftest`), but **no desktop of that
+combination has been booted here**, so nobody has watched a window appear on
+it. That is a weaker claim and is written as one.
+
+| distro | GNOME | Plasma |
+|---|---|---|
+| **Debian 13 (trixie)** | ✅ `traduku-gnome_0.3.0-1_amd64.deb` — 20 passed / 3 skipped, 40.6 s. GNOME on **Xorg**, and no GNOME extensions at all, so the tray test skips naming the missing appindicator host | ✅ `traduku_0.3.0-1_amd64.deb` — 17 passed / 6 skipped, 91.1 s. Plasma on **X11** (`kwin_x11`, Xorg on vt2) |
+| **Ubuntu 25.10** | ✅ `traduku-gnome_0.3.0-1_amd64.deb` — 21 passed / 2 skipped, 43.9 s. GNOME Shell 49 on Wayland, tray hosted | ✅ `traduku_0.3.0-1_amd64.deb` — 18 passed / 5 skipped, 103.0 s. Plasma on Wayland (`kwin_wayland` + Xwayland) |
+| **Arch** | ⚠️ `traduku-gnome-0.3.0-1-x86_64.pkg.tar.zst` is built and gated (37/37 in the GNOME tree, `--selftest` on the guest), but **no Arch GNOME session has been booted** - nobody has run the e2e suite on it | ✅ `traduku-0.3.0-1-x86_64.pkg.tar.zst` — 18 passed / 5 skipped, 154.3 s. Plasma on Wayland |
+
+Two cells are worth a sentence because they are the ones an assumption would
+have got wrong:
+
+- **Debian's GNOME is on Xorg, not Wayland** (`XDG_SESSION_TYPE=x11`, no
+  Xwayland), so that flavour reads the clipboard through the X11 selection and
+  still gets its gesture from evdev. Both are decisions the app makes per
+  session, printed in `--backend-info`; neither is compiled in.
+- **Debian's Plasma is on X11 too.** Getting it into the grid is what found
+  two real bugs - the X11 `TARGETS` reader truncating every list to its first
+  item, and the harness waiting for a Wayland socket that this desktop never
+  creates.
+
+### The seams, per session
+
+| session | package | gesture | clipboard | hotkey | notifications | tray | autostart | evidence |
+|---|---|---|---|---|---|---|---|---|
+| **GNOME on Wayland** | `traduku-gnome` | evdev `/dev/input/event*` (uaccess ACL) | `wl-clipboard` | evdev | freedesktop D-Bus | Qt SNI (Ubuntu hosts it) | packaged `/etc/xdg/autostart` | `ubuntu-gnome`, ready line `(gnome, wayland; clipboard=wl-clipboard hotkey=evdev tray=yes)`, e2e **21 passed / 2 skipped** |
+| **GNOME on X11** | `traduku-gnome` | evdev | **X11 selection** (`XConvertSelection`) | evdev | freedesktop D-Bus | none → runs tray-less and says so | packaged `/etc/xdg/autostart` | `debian-gnome`, ready line `(gnome, x11; clipboard=x11 hotkey=evdev tray=no)`, e2e **20 passed / 3 skipped** |
+| **Plasma on Wayland** | `traduku` | X RECORD on XWayland (helper process) | `wl-clipboard` | X RECORD | KNotification | Qt SNI (Plasma hosts SNI) | `~/.config/autostart`, written when you answer the first-run question | `arch-kde` and `ubuntu-kde`, ready line `(kde, wayland; clipboard=wl-clipboard hotkey=x11-record tray=yes)`, e2e **18 passed / 5 skipped** each |
+| **Plasma on X11** | `traduku` | XI2 raw on the X server | **X11 selection** | XI2 raw | KNotification | Qt SNI | as above | `debian-kde`, ready line `(kde, x11; clipboard=x11 hotkey=x11-xi2 tray=yes)`, e2e **17 passed / 6 skipped** |
+| **Bare X11 / other DE** | either | XI2 raw (RECORD fallback) | X11 selection, Qt last | XI2 raw | freedesktop D-Bus | Qt SNI if a host exists | XDG autostart (XFCE, i3, … honour it) | unit/integration only (`make x11test`, 37 tests against a real X server) |
+
+The hotkey column is a measurement, not a menu: on the same image the listener
+can be `x11-xi2` or the X RECORD helper, and the choice is printed by
+`--backend-info` and in the `traduku: ready (...)` journal line rather than
+guessed from the distro name (`hotkey chosen:` and `modeName()` report the
+listener that is actually running - they used to say `x11-xi2` in both cases).
 
 Two things this table deliberately does not hide:
 
