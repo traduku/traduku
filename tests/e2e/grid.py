@@ -158,6 +158,48 @@ print(s);
         time.sleep(1.5)
         return self.journal("--since -10s", grep=tag)[1]
 
+    # ---- window list: three desktops, three truths (ROADMAP.md §4.1) -----
+    def session_type(self):
+        """wayland | x11 | '' — what the *graphical session* is, read from the
+        env captured off the compositor, not from the app's QPA plugin."""
+        rc, out = self.ses("echo \"$XDG_SESSION_TYPE\"")
+        return out.strip().splitlines()[-1].strip().lower() if out.strip() else ""
+
+    def has_kwin(self):
+        return self.run("pgrep -x kwin_wayland || pgrep -x kwin_x11")[0] == 0
+
+    def x11_windows(self, name="Traduku"):
+        """The X server's own answer: `xdotool search --name` + geometry.
+
+        Only meaningful on an X11 session. On Wayland a native client's
+        window is not in the X server at all (an XWayland window list does not
+        contain it), so this must never be the Wayland branch - it would read
+        "no such window" while the window fills the screen.
+        """
+        return self.ses(
+            f"xdotool search --name '{name}' getwindowname getwindowgeometry 2>/dev/null"
+        )[1]
+
+    def window_evidence(self, name="Traduku", cursor=None):
+        """(how, text): how THIS desktop proves a window is on screen.
+
+        The old test knew only KWin, which is why it was red on GNOME for a
+        reason unrelated to the product. What each desktop can answer:
+        Plasma -> KWin's scripting window list (caption, frame size, mapped)
+        X11    -> the X server (xdotool)
+        Wayland (no KWin) -> neither exists: a client may not enumerate other
+                  clients' windows and gnome-shell has no scripting API, so
+                  the app's own `window shown WxH` journal line is the witness,
+                  paired with the QMP framebuffer diff the caller took.
+        """
+        if self.has_kwin():
+            return "kwin", self.kwin_windows()
+        if self.session_type() == "x11":
+            return "xdotool", self.x11_windows(name)
+        if cursor is None:
+            raise RuntimeError("wayland window evidence needs a journal cursor")
+        return "app journal", self.journal_after(cursor, grep="window shown")[1]
+
     def keyseq(self, seq):
         self.vmctl("keyseq", self.vm, seq)
 

@@ -11,8 +11,13 @@ stays mapped — so do not assert disappearing pixels):
 2. The framebuffer changes by a large fraction (QMP screendump = the
    compositor's scanout; the session fixture bakes a static color
    wallpaper, so the diff is the window, not fireworks animation).
-3. KWin's own window list (scripting D-Bus) shows a Traduku toplevel of
-   plausible size — the compositor agrees, independent of pixels.
+3. The desktop itself confirms a Traduku toplevel of plausible size.
+   Which desktop answers how (Grid.window_evidence): KWin's scripting
+   window list on Plasma, the X server (xdotool) on an X11 session, and on
+   GNOME/Wayland - where no client may enumerate another client's windows
+   and gnome-shell has no scripting API - the app's own `window shown WxH`
+   journal line, which is exactly why that line exists (and why it is
+   asserted in tests/integration/tst_appcontroller.cpp, not only here).
 
 Red-check A: don't fire the gesture -> assertion 1 must fail (verified:
 no fresh line -> FAIL -> restore -> PASS).
@@ -62,16 +67,18 @@ def test_window_appears_after_gesture(env):
             break
     assert frac > 0.10, f"screen changed by only {frac:.3f} after the gesture"
 
-    # Compositor-side truth: KWin lists the Traduku window, mapped and big.
-    wl = vm.kwin_windows()
-    assert "Traduku" in wl, f"KWin window list lacks the app window:\n{wl}"
+    # Compositor-side truth, desktop-aware: the compositor/X server where it
+    # can be asked, the app's own mapping line where it cannot (see
+    # Grid.window_evidence and the docstring above).
+    how, wl = vm.window_evidence("Traduku", cursor=cur)
+    assert "Traduku" in wl, f"{how} window evidence lacks the app window:\n{wl}"
     # frame size (resize(980,560) + server-side decoration titlebar).
     # KWin versions measure the frame differently (6.8: '980x588',
     # 6.3: '982x589' - decoration/border extents), so compare the width
     # numerically with a small tolerance instead of pinning one compositor's
     # string: the intent is 'the real window, roughly its designed size',
     # not a panel/1x1 placeholder (which is how a missing window shows up).
-    m = re.search(r"Traduku (\d+)x(\d+) @", wl)
+    m = re.search(r"(\d+)x(\d+)", wl[wl.index("Traduku"):])
     assert m, f"window present with unexpected size:\n{wl}"
     assert 970 <= int(m.group(1)) <= 992 and 550 <= int(m.group(2)) <= 610, \
         f"window size out of expected band: {m.group(0)}\n{wl}"
