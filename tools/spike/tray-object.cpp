@@ -14,10 +14,17 @@ void TrayItem::activated()
     // screen instead of only writing to a log nobody is watching.
     status = status == QLatin1String("Active") ? QStringLiteral("NeedsAttention")
                                               : QStringLiteral("Active");
-    say(QStringLiteral("SNI: status -> %1").arg(status));
     if (auto *adaptor = findChild<SniAdaptor *>()) {
+        // Both signals matter: hosts cache the properties and only re-read them
+        // when told. Status alone is invisible on GNOME (measured - this host
+        // does not paint NeedsAttention), so the icon changes too, which makes
+        // "did my click reach the app?" answerable from the panel alone.
         Q_EMIT adaptor->NewStatus(status);
+        Q_EMIT adaptor->NewIcon();
     }
+    say(QStringLiteral("SNI: status -> %1, icon should now be %2")
+            .arg(status, status == QLatin1String("NeedsAttention")
+                          ? QStringLiteral("green") : QStringLiteral("blue")));
 }
 
 void TrayItem::contextMenuRequested(int x, int y)

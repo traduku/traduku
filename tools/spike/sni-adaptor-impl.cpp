@@ -50,8 +50,8 @@ QString SniAdaptor::iconName() const
 
 SniPixmapVector SniAdaptor::iconPixmap() const
 {
-    return asItem(parent()) ? asItem(parent())->pixmaps
-                                  : SniPixmapVector();
+    const TrayItem *i = asItem(parent());
+    return i ? i->currentPixmaps() : SniPixmapVector();
 }
 
 QString SniAdaptor::iconThemePath() const
@@ -66,7 +66,8 @@ QString SniAdaptor::id() const
 
 bool SniAdaptor::itemIsMenu() const
 {
-    return false;
+    const TrayItem *i = asItem(parent());
+    return i ? i->itemIsMenu : true;
 }
 
 QDBusObjectPath SniAdaptor::menu() const

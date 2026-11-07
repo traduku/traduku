@@ -61,14 +61,14 @@ constexpr auto kMenuPath = "/MenuBar";
 constexpr auto kWatcher = "org.kde.StatusNotifierWatcher";
 constexpr auto kWatcherPath = "/StatusNotifierWatcher";
 
-QImage makeIcon(int size)
+QImage makeIcon(int size, const QColor &fill = QColor(0x2b, 0x6b, 0xcb))
 {
     QImage img(size, size, QImage::Format_ARGB32_Premultiplied);
     img.fill(Qt::transparent);
     QPainter p(&img);
     p.setRenderHint(QPainter::Antialiasing);
     const qreal m = size * 0.08;
-    p.setBrush(QColor(0x2b, 0x6b, 0xcb));
+    p.setBrush(fill);
     p.setPen(QPen(QColor(0xff, 0xff, 0xff), size * 0.06));
     p.drawEllipse(QRectF(m, m, size - 2 * m, size - 2 * m));
     QFont f = p.font();
@@ -81,10 +81,10 @@ QImage makeIcon(int size)
     return img;
 }
 
-QList<QImage> makeIconImages()
+QList<QImage> makeIconImages(const QColor &fill = QColor(0x2b, 0x6b, 0xcb))
 {
     // Panel size and its HiDPI twin; a host picks the one it needs.
-    return {makeIcon(22), makeIcon(44)};
+    return {makeIcon(22, fill), makeIcon(44, fill)};
 }
 
 SniPixmapVector toPixmaps(const QList<QImage> &images)
@@ -208,7 +208,8 @@ bool tryQtSystemTray(const QString &iconName, const QList<QImage> &images)
 
 // --------------------------------------------------------------- SNI client
 
-bool trySni(const QString &iconName, const QList<QImage> &images, QDBusConnection &bus)
+bool trySni(const QString &iconName, const QList<QImage> &images,
+            const QList<QImage> &attentionImages, bool itemIsMenu, QDBusConnection &bus)
 {
     say(QStringLiteral("--- our own StatusNotifierItem (what SniTray will do) ---"));
     registerSniMetaTypes();
@@ -226,6 +227,10 @@ bool trySni(const QString &iconName, const QList<QImage> &images, QDBusConnectio
     item->iconName = iconName;
     item->title = QStringLiteral("Traduku SNI spike");
     item->pixmaps = toPixmaps(images);
+    item->attentionPixmaps = toPixmaps(attentionImages);
+    item->itemIsMenu = itemIsMenu;
+    say(QStringLiteral("ItemIsMenu: %1  (false = this host never opened the menu)")
+            .arg(itemIsMenu ? QStringLiteral("true") : QStringLiteral("false")));
     new SniAdaptor(item);
     if (!bus.registerObject(QLatin1String(kItemPath), item,
                             QDBusConnection::ExportAdaptors)) {
@@ -311,12 +316,18 @@ int main(int argc, char *argv[])
         {QStringLiteral("s"), QStringLiteral("seconds")},
         QStringLiteral("Exit after N seconds; 0 = run until killed (default 90)."),
         QStringLiteral("n"), QStringLiteral("90"));
+    QCommandLineOption itemIsMenuOpt(
+        QStringLiteral("item-is-menu"),
+        QStringLiteral("SNI ItemIsMenu: 1 (default) or 0 - hosts differ in what "
+                       "they do with clicks; see the comment in tray-object.h."),
+        QStringLiteral("0|1"), QStringLiteral("1"));
     QCommandLineOption noPixmapOpt(
         QStringLiteral("no-pixmap"),
         QStringLiteral("Send only IconName (reproduces the '...' fallback icon)."));
     parser.addOption(iconOpt);
     parser.addOption(secondsOpt);
     parser.addOption(noPixmapOpt);
+    parser.addOption(itemIsMenuOpt);
     parser.addPositionalArgument(QStringLiteral("mode"),
                                  QStringLiteral("info | qtsys | sni | both (default both)"),
                                  QStringLiteral("[mode]"));
@@ -347,16 +358,20 @@ int main(int argc, char *argv[])
     }
 
     const QList<QImage> images = makeIconImages();
+    const QList<QImage> attentionImages = makeIconImages(QColor(0x2e, 0x8b, 0x3d));
+    const bool itemIsMenu = parser.value(itemIsMenuOpt) != QLatin1String("0");
 
     bool ok = false;
     if (mode == QLatin1String("qtsys")) {
         ok = tryQtSystemTray(iconName, images);
     } else if (mode == QLatin1String("sni")) {
-        ok = trySni(iconName, parser.isSet(noPixmapOpt) ? QList<QImage>() : images, bus);
+        ok = trySni(iconName, parser.isSet(noPixmapOpt) ? QList<QImage>() : images,
+                    attentionImages, itemIsMenu, bus);
     } else if (mode == QLatin1String("both")) {
         const bool qtOk = tryQtSystemTray(iconName, images);
         const bool sniOk = trySni(iconName,
-                                  parser.isSet(noPixmapOpt) ? QList<QImage>() : images, bus);
+                                  parser.isSet(noPixmapOpt) ? QList<QImage>() : images,
+                                  attentionImages, itemIsMenu, bus);
         say(QStringLiteral("summary: Qt tray %1, our SNI %2")
                 .arg(qtOk ? QStringLiteral("available") : QStringLiteral("unavailable"),
                      sniOk ? QStringLiteral("registered") : QStringLiteral("rejected")));
