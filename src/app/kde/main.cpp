@@ -4,6 +4,7 @@
 // autostart), the AppController and the tray. No business logic here.
 
 #include "app/AppController.h"
+#include "app/AppFlavour.h"
 #include "app/BackendInfo.h"
 #include "app/SelfTest.h"
 #include "app/TrayChoice.h"
@@ -93,6 +94,12 @@ BackendReport collectBackends(Settings *settings)
     if (r.sessionType.isEmpty()) {
         r.sessionType = QGuiApplication::platformName();
     }
+    if (qpaWasForcedByUs()) {
+        // We handed this process a QPA because the environment had none. Plain
+        // "offscreen" reads as "you have no session"; what is actually missing
+        // is our knowledge of it - ssh inherits no XDG_SESSION_TYPE.
+        r.sessionType = QStringLiteral("%1 (no display here)").arg(r.sessionType);
+    }
     r.desktop = qEnvironmentVariable("XDG_CURRENT_DESKTOP");
 
     auto cb = createClipboard(r.sessionType, {}, QGuiApplication::clipboard());
@@ -146,6 +153,18 @@ BackendReport collectBackends(Settings *settings)
 
 int main(int argc, char **argv)
 {
+    QStringList argvList;
+    argvList.reserve(argc);
+    for (int i = 0; i < argc; ++i) {
+        argvList << QString::fromLocal8Bit(argv[i]);
+    }
+    // Before the app object exists: on a headless box the platform plugin
+    // cannot be created at all and Qt aborts, so a CLI mode has to be given
+    // offscreen first. Shared with the GNOME shell (app/AppFlavour.cpp) -
+    // this rule written per shell is what left KDE aborting on --backend-info
+    // while GNOME answered it.
+    lt::prepareCliEnvironment(argvList);
+
     QApplication app(argc, argv);
     configureApplication(app, QStringLiteral("kde"), QStringLiteral(LT_VERSION));
     QApplication::setQuitOnLastWindowClosed(false);   // tray-only app
@@ -153,8 +172,7 @@ int main(int argc, char **argv)
     // One parser for both shells (app/cli.cpp). It used to live in this file
     // and be copied; the copy is what let `--version` print no version and
     // `--backend-info` be unknown here while the GNOME shell answered it.
-    const CliOptions cli = parseCommandLine(app, QApplication::arguments(),
-                                            QStringLiteral("kde"));
+    const CliOptions cli = parseCommandLine(app, argvList, QStringLiteral("kde"));
     QTextStream out(stdout);
     QTextStream err(stderr);
     if (cli.wantsHelp) {

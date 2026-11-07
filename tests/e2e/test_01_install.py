@@ -94,6 +94,49 @@ def _assert_flavour(vm):
         assert "shell: kde" in out, f"--backend-info on a kde guest: {out}"
 
 
+def test_backend_info_survives_a_plain_ssh_session(vm):
+    """`traduku --backend-info` is what a user types when the desktop broke.
+
+    That means: over ssh, with no DISPLAY, no WAYLAND_DISPLAY and no
+    QT_QPA_PLATFORM. Measured before this test existed, that exact call
+    aborted - Qt's platform selection qFatals with "no platform plugin could
+    be initialized" and the process dies printing nothing at all, because the
+    report is buffered and abort() never flushes it. The other assertions in
+    this file pass QT_QPA_PLATFORM=offscreen, which hides precisely that.
+    """
+    rc, out = vm.run("traduku --backend-info 2>&1; echo \"rc=$?\"")
+    assert "rc=0" in out, (
+        f"--backend-info died on a headless shell (rc line missing, exit {rc}): "
+        f"a support command that needs a desktop is no support command.\n{out}")
+    assert "shell:" in out, f"--backend-info answered without saying which shell: {out}"
+    assert "clipboard:" in out, (
+        f"--backend-info named every backend but the one users call broken: {out}")
+
+
+def test_clipboard_backend_is_the_one_the_session_needs(vm, session):
+    """Which clipboard reader the app picks, asked from inside the session.
+
+    On Arch there is no wl-clipboard at all (AUR only), so the choice is
+    X11-or-Qt, and Qt is not neutral there: its xcb backend reads a plain
+    TEXT offer as latin-1 and hands back mojibake for Cyrillic. On GNOME the
+    package hard-depends on wl-clipboard, so picking anything else means the
+    dependency is decorative.
+    """
+    rc, out = vm.ses("traduku --backend-info 2>&1")
+    lines = [l for l in out.splitlines() if l.startswith("clipboard:")]
+    assert lines, f"no clipboard line from --backend-info (rc={rc}):\n{out}"
+    got = lines[0].split(":", 1)[1].strip()
+    if vm.vm.endswith("-gnome"):
+        assert got == "wl-clipboard", (
+            f"{vm.vm}: wl-clipboard is a hard Depends, so the app should read the "
+            f"compositor's clipboard through it, not through {got!r}")
+    elif vm.vm.startswith("arch"):
+        assert got == "x11", (
+            f"{vm.vm}: no wl-clipboard in the repos, so the wayland clipboard is "
+            f"reachable through XWayland only - {got!r} is the reader that garbles "
+            f"a plain TEXT offer")
+
+
 def _install_arch(vm):
     pkg = _flavour(vm)
     art = f"{pkg}-{_PKGVER}-1-x86_64.pkg.tar.zst"

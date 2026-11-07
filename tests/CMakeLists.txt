@@ -13,6 +13,11 @@ endfunction()
 # Harness smoke test: proves QtTest + CTest + offscreen GUI work.
 lt_add_test(tst_harness SOURCES unit/tst_harness.cpp LIBS Qt6::Widgets)
 
+# Which QApplication flavour, and what QPA a console mode needs: shared by both
+# shells (src/app/AppFlavour.cpp). The shells used to keep their own copies and
+# only one grew the headless branch - --backend-info aborted without a display.
+lt_add_test(tst_appflavour SOURCES unit/tst_appflavour.cpp LIBS lt::app Qt6::Gui)
+
 # M1: core languages + settings
 lt_add_test(tst_languages SOURCES unit/tst_languages.cpp LIBS lt::core)
 lt_add_test(tst_settings  SOURCES unit/tst_settings.cpp  LIBS lt::core)
