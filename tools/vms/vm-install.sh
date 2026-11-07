@@ -113,7 +113,9 @@ case "$VM" in
     # a `git stash pop` that preserves timestamps hides a real change. Hash
     # the CONTENTS instead: tracked files plus untracked-but-not-ignored ones,
     # which is what the container copies into /work.
-    ART=$ROOT/release-out/deb
+    # Not under release-out: packaging/arch/mkrelease.sh rm -rf's that whole
+    # directory, and a cache a sibling build can delete is not a cache.
+    ART=$ROOT/.cache/vm-deb
     FP=$( { git -C "$ROOT" ls-files -co --exclude-standard -z \
             | xargs -0 -r sha256sum; } | sha256sum | cut -d' ' -f1 )
     T_BUILD=0
