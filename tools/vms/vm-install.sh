@@ -8,6 +8,8 @@ HERE="$(cd "$(dirname "$0")" && pwd)"
 ROOT="$(cd "$HERE/../.." && pwd)"
 VM=$1
 REBUILD=${2:-}
+T0=$SECONDS          # phase timings land in the last line: the grid cycle was
+                     # being optimised blind (ROADMAP.md §4.6 - measure first)
 VER=$(sed -n 's/^pkgver=\(.*\)$/\1/p' "$ROOT/packaging/arch/PKGBUILD")
 
 # Which flavour this guest must run. The two shells are different packages
@@ -60,7 +62,18 @@ case "$VM" in
         cmake -B "$ROOT/build" -G Ninja -DCMAKE_BUILD_TYPE=Release >/dev/null && cmake --build "$ROOT/build" >/dev/null
         QT_QPA_PLATFORM=offscreen ctest --test-dir "$ROOT/build" --output-on-failure
       }
+      # A build that dies quietly is worse than a slow one: without this check
+      # a red makepkg left the guest on whatever package it already had, and
+      # every gate below passed while testing code nobody built. Compare
+      # against a stamp taken now, so an old tarball in release-out cannot
+      # count as this run's output.
+      T_PKG=0; t0=$SECONDS
+      STAMP=$(mktemp)
       "$ROOT/packaging/arch/mkrelease.sh" "$ROOT/release-out" --nocheck
+      NEW=$(find "$ROOT/release-out" -name "traduku*.pkg.tar.zst" -newer "$STAMP" | head -1)
+      rm -f "$STAMP"
+      [ -n "$NEW" ] || { echo "FAIL: mkrelease produced no package in this run (build is red above), refusing to test a stale one" >&2; exit 1; }
+      T_PKG=$((SECONDS-t0))
     fi
     echo "== push + pacman -U on $VM"
     # QEMU user-net needs a resolver (baked images predate the resolved patch)
@@ -91,6 +104,25 @@ case "$VM" in
     IMG=traduku-deb-builder:trixie
     docker image inspect "$IMG" >/dev/null 2>&1 || \
       docker build -t "$IMG" "$HERE/deb-builder"
+    # ---- is the .deb that is already there still the right one? ----------
+    # The build costs minutes, the guest install seconds, and the suite gets
+    # run over and over against an unchanged tree - repeating the build is the
+    # whole wait. The Arch branch asks with `find -newer`; for the .deb that
+    # answer is wrong in both directions: `git checkout` of an older commit
+    # refreshes mtimes (a rebuild of a byte-identical tree), and an editor or
+    # a `git stash pop` that preserves timestamps hides a real change. Hash
+    # the CONTENTS instead: tracked files plus untracked-but-not-ignored ones,
+    # which is what the container copies into /work.
+    ART=$ROOT/release-out/deb
+    FP=$( { git -C "$ROOT" ls-files -co --exclude-standard -z \
+            | xargs -0 -r sha256sum; } | sha256sum | cut -d' ' -f1 )
+    T_BUILD=0
+    t0=$SECONDS
+    if [ "$REBUILD" != --rebuild ] && compgen -G "$ART/${PKGNAME}_*.deb" >/dev/null \
+        && [ "$(cat "$ART/.fingerprint" 2>/dev/null)" = "$FP" ]; then
+      echo "== .deb cache hit ($FP): the tree is identical to the one that built $PKGNAME"
+      echo "   (force one with: vm-install.sh $VM --rebuild)"
+    else
     STAGE=$(mktemp -d); trap 'rm -rf "$STAGE"' EXIT
     timeout 1200 docker run --rm -v "$ROOT:/src:ro" -v "$STAGE:/out" "$IMG" bash -c '
       set -e
@@ -103,27 +135,44 @@ case "$VM" in
       # CASE asserts (neighbor 7f82696) and the chunkedtranslator commit-
       # order race (neighbor 7d37663). A red here is a real regression.
       # NOTE: this block lives inside bash -c single quotes: no apostrophes.
-      DEB_BUILD_OPTIONS=nocheck dpkg-buildpackage -us -uc -b >/dev/null 2>&1 \
-        || DEB_BUILD_OPTIONS=nocheck dpkg-buildpackage -us -uc -b
+      # First attempt verbose: when a build takes minutes, silence is not a
+      # progress bar - the [n/m] lines from ninja are what a waiting developer reads.
+      # The retry stays quiet, its purpose is the transient failure, not a log.
+      DEB_BUILD_OPTIONS=nocheck dpkg-buildpackage -us -uc -b 2>&1 \
+        || DEB_BUILD_OPTIONS=nocheck dpkg-buildpackage -us -uc -b >/dev/null 2>&1
       # The suite is the gate, run here where the toolchain lives - the
       # guest only ever installs. Both shells: the GNOME one has tests the
       # KDE tree never compiles (evdev gesture, FdoNotifier, single instance).
-      for shell in kde gnome; do
-        cmake -B gate-$shell -G Ninja -DCMAKE_BUILD_TYPE=Release -DLT_SHELL=$shell >/dev/null
-        cmake --build gate-$shell >/dev/null
-        ( cd gate-$shell && QT_QPA_PLATFORM=offscreen ctest --output-on-failure ) \
-          || { echo "GATE RED: $shell suite" >&2; exit 1; }
+      # Run in the trees dpkg-buildpackage just built, not in a fresh pair of
+      # gate-* directories: four full builds made the gate the most expensive
+      # part of the VM cycle, and a second tree can pass while the packaged
+      # one differs from it. Same tree, same binaries, same ctest.
+      for tree in obj-*-kde obj-*-gnome; do
+        if [ ! -x "$tree/tests/tst_appcontroller" ]; then
+          echo "GATE: $tree carries no test binaries (dh built without BUILD_TESTING) - configuring it alone" >&2
+          cmake -B gate-$tree -G Ninja -DCMAKE_BUILD_TYPE=Release -DLT_SHELL=${tree##*-} >/dev/null
+          cmake --build gate-$tree >/dev/null
+          tree=gate-$tree
+        fi
+        ( cd $tree && QT_QPA_PLATFORM=offscreen ctest --output-on-failure ) \
+          || { echo "GATE RED: $tree suite" >&2; exit 1; }
       done
       cp /traduku*.deb /out/'
+      mkdir -p "$ART"; rm -f "$ART"/*.deb
+      cp "$STAGE"/traduku*.deb "$ART"/
+      echo "$FP" > "$ART/.fingerprint"
+    fi
+    T_BUILD=$((SECONDS-t0))
     if [ "$FLAVOUR" = gnome ]; then
-      DEB=$(ls "$STAGE"/traduku-gnome_*.deb | head -1)
+      DEB=$(ls "$ART"/traduku-gnome_*.deb | head -1)
     else
       # the underscore is load-bearing: traduku*.deb also matches the
       # traduku-gnome artefact and would install the other shell.
-      DEB=$(ls "$STAGE"/traduku_*.deb | head -1)
+      DEB=$(ls "$ART"/traduku_*.deb | head -1)
     fi
-    [ -f "$DEB" ] || { echo "FAIL: no $FLAVOUR .deb produced (got: $(ls "$STAGE"))" >&2; exit 1; }
+    [ -f "$DEB" ] || { echo "FAIL: no $FLAVOUR .deb produced (got: $(ls "$ART"))" >&2; exit 1; }
     echo "== push + apt install on $VM ($DEB)"
+    T_INSTALL=0; t0=$SECONDS
     Q "rm -f ~/traduku*.deb"
     SCP "$DEB" vm@127.0.0.1:~/
     # unattended-upgrades grabs the dpkg lock right after test_03's reboot;
@@ -132,11 +181,20 @@ case "$VM" in
     # VERIFY the package state afterwards - install is a gate, not a hint.
     Q "echo vm | sudo -S sh -c 'systemctl stop unattended-upgrades apt-daily.service apt-daily-upgrade.timer apt-daily-upgrade.service 2>/dev/null || true; i=0; while fuser /var/lib/dpkg/lock-frontend >/dev/null 2>&1 && [ \$i -lt 60 ]; do sleep 2; i=\$((i+1)); done; DEBIAN_FRONTEND=noninteractive apt-get install -y --reinstall /home/vm/${PKGNAME}_*.deb >/tmp/apt-install.log 2>&1' ; tail -3 /tmp/apt-install.log; grep -q '^Setting up ${PKGNAME}' /tmp/apt-install.log && dpkg -l ${PKGNAME} | grep -aq '^ii.*${PKGNAME}'"
     verify_flavour
+    T_INSTALL=$((SECONDS-t0))
     ;;
 esac
 
 echo "== gate: selftest on $VM"
 Q "QT_QPA_PLATFORM=offscreen traduku --selftest 2>&1 | tail -3"
 Q "QT_QPA_PLATFORM=offscreen traduku --help 2>&1 | head -3"
+# Only the numbers this branch actually measured: printing n/a for the .deb
+# cache on the Arch branch read like a broken cache and sent someone looking
+# for a bug that was not there.
+if [ -n "${T_BUILD+x}" ]; then
+  echo "== timing: deb build ${T_BUILD}s (0 = cache hit), guest install ${T_INSTALL}s, total $((SECONDS-T0))s"
+else
+  echo "== timing: package build+gates ${T_PKG:-n/a}s, guest install ${T_INSTALL:-n/a}s, total $((SECONDS-T0))s"
+fi
 [ "$REBUILD" = --shell ] && $SSH -t vm@127.0.0.1 bash
 exit 0

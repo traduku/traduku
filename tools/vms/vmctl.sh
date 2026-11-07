@@ -9,6 +9,12 @@
 # Debian/Ubuntu: official cloud image) + NoCloud seed ISO (cloud distros).
 # Access: ssh 127.0.0.1:2201..2205 (vm/vm + ~/vms/id_ed25519), VNC :5901..,
 # QMP sockets at ~/vms/run/<vm>/qmp.sock (screenshots + virtual keyboard).
+#
+# Two disk modes. `start <vm>` writes to disk.qcow2 - use it for vm-install.sh,
+# which is what makes the guest a machine with the package installed. `start
+# <vm> scratch` boots a throwaway overlay of that disk, so a test run may
+# trash anything it likes; `reset <vm>` (or starting again) is the way back,
+# and it costs one unlink instead of a package rebuild.
 set -euo pipefail
 HERE="$(cd "$(dirname "$0")" && pwd)"
 VMS_HOME="${VMS_HOME:-$HOME/vms}"
@@ -32,7 +38,7 @@ case "$cmd" in
   mkvm)
     [ $# -eq 3 ] || { echo "usage: vmctl.sh mkvm <vm> <distro:arch|debian|ubuntu> <de:kde|gnome>" >&2; exit 2; }
     ensure_ctr; dexec "VMS_HOME=/vms bash /tools/mkvm.sh $*";;
-  start|stop|logs|shot|key|keyseq|mouse)
+  start|stop|reset|logs|shot|key|keyseq|mouse)
     [ $# -ge 1 ] || { echo "usage: vmctl.sh $cmd <vm> [args]" >&2; exit 2; }
     ensure_ctr; dexec "VMS_HOME=/vms bash /tools/vmlife.sh $cmd $(printf '%q ' "$@")";;
   ssh)
@@ -60,5 +66,5 @@ case "$cmd" in
   all)
     shift
     for v in "${VMS[@]}"; do echo "== $v"; $0 "$@" "$v" 2>&1 | sed 's/^/   /' || true; done;;
-  *) echo "commands: up mkarchbase mkvm start stop logs shot key keyseq mouse ssh vnc status all" >&2; exit 2;;
+  *) echo "commands: up mkarchbase mkvm start[scratch] stop reset logs shot key keyseq mouse ssh vnc status all" >&2; exit 2;;
 esac
