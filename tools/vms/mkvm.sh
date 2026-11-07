@@ -116,6 +116,12 @@ write_files:
           fi
         fi
         systemctl enable sddm
+        # Started, not merely enabled: cloud-final runs after this boot has
+        # already walked graphical.target, so without this a freshly created
+        # KDE guest has no session until someone reboots it (same reason as
+        # the gdm restart in the GNOME branch).
+        systemctl restart sddm 2>/dev/null || systemctl start sddm 2>/dev/null || \
+          echo "grid-setup: WARNING sddm did not start; the session will appear after a reboot"
       else
         # GNOME boots on Wayland, which is the whole reason this shell exists:
         # the /dev/input gesture and wl-clipboard are the Wayland answers. On an
@@ -133,27 +139,74 @@ write_files:
         # gdm has to be *wanted* by graphical.target, not merely installed.
         # Ubuntu 25.10 ships gdm3.service with no [Install] section (the distro
         # starts it through the display-manager.service alias, which a cloud
-        # image does not pull in), so `systemctl enable gdm3` prints a lecture
+        # image does not pull in), so 'systemctl enable gdm3' prints a lecture
         # and enables nothing: the box boots to a dead tty, loginctl shows no
         # seat0 session, and the grid reports "DE shell not running" for a
         # package set that is otherwise complete. The wants symlink is what the
         # target actually reads, independent of unit metadata.
         systemctl enable gdm3 2>/dev/null || true
-        DMUNIT=$(systemctl show -p FragmentPath gdm3.service 2>/dev/null | cut -d= -f2)
-        [ -n "\$DMUNIT" ] && [ -f "\$DMUNIT" ] || DMUNIT=$(systemctl show -p FragmentPath gdm.service 2>/dev/null | cut -d= -f2)
-        if [ -n "\$DMUNIT" ] && [ -f "\$DMUNIT" ]; then
+        # The unit is found on DISK, not from 'systemctl show -p FragmentPath'.
+        # Measured on a freshly created ubuntu-gnome: the two calls ran right
+        # after apt's 'systemctl daemon-reload' and both came back EMPTY -
+        # systemd was mid-reload, the answer for an unknown unit is no output
+        # at all - so no symlink was made and the guest booted to a dead tty
+        # with a complete package set (check-grid.sh: "DE shell running" red).
+        # A unit file either exists or it does not; ask the filesystem. And
+        # '\$(basename ...)' has to be escaped: unescaped, the basename runs
+        # while the cloud-config is being written, with DMUNIT still empty.
+        DMUNIT=""
+        for u in gdm gdm3 lightdm sddm; do
+          for d in /etc/systemd/system /run/systemd/system /usr/lib/systemd/system /lib/systemd/system; do
+            [ -f "\$d/\$u.service" ] && { DMUNIT="\$d/\$u.service"; break 2; }
+          done
+        done
+        if [ -n "\$DMUNIT" ]; then
           mkdir -p /etc/systemd/system/graphical.target.wants
-          ln -sf "\$DMUNIT" "/etc/systemd/system/graphical.target.wants/$(basename "\$DMUNIT")"
+          ln -sf "\$DMUNIT" "/etc/systemd/system/graphical.target.wants/\$(basename "\$DMUNIT")"
           echo "grid-setup: enabled display manager \$DMUNIT"
         else
-          echo "grid-setup: WARNING no gdm unit found; graphical.target will have nothing to start"
+          echo "grid-setup: WARNING no display-manager unit on disk; graphical.target will have nothing to start"
         fi
         systemctl daemon-reload
+        # ... and start it NOW. cloud-final runs after this boot already walked
+        # graphical.target, so an enable alone means 'a session on the NEXT
+        # boot' - and a freshly created guest then fails check-grid.sh
+        # ('DE shell running') until someone reboots it. The harness must be
+        # able to go mkvm -> start -> run the suite with no manual step.
+        systemctl restart gdm 2>/dev/null || systemctl start gdm 2>/dev/null || \
+          echo "grid-setup: WARNING gdm did not start; the session will appear after a reboot"
         X11SESS=gnome
         [ "$DISTRO" = ubuntu ] && X11SESS=ubuntu
         mkdir -p /var/lib/AccountsService/users
         printf '[User]\nLanguage=en_US.UTF-8\nXSession=%s\nSystemAccount=false\n' "\$X11SESS" > /var/lib/AccountsService/users/vm
         systemctl enable gdm3
+        # A GNOME has no StatusNotifier host of its own: without the
+        # appindicator extension nothing ever draws a tray icon, and
+        # tests/e2e/test_04 would have nothing to assert (the app runs
+        # tray-less by design - ROADMAP.md §2). Enabling it has to happen
+        # HERE, not in the test: gnome-shell scans the extension directories
+        # at boot, so a package installed under a running shell is invisible
+        # to it - "gnome-extensions enable" then answers "Extension does not
+        # exist" (measured on ubuntu-gnome, GNOME 49) and the only way back is
+        # a reboot the harness cannot force before the first assertion.
+        # The uuid is distro-specific (Ubuntu: ubuntu-appindicators@ubuntu.com,
+        # Debian: appindicatorsupport@rgcjonas.gmail.com), so it is read from
+        # what the package actually installed instead of being guessed.
+        AIUUID=\$(ls /usr/share/gnome-shell/extensions 2>/dev/null | grep -i appindicator | head -1)
+        if [ -n "\$AIUUID" ]; then
+          mkdir -p /etc/dconf/db/local.d
+          # GVariant text, so the uuid is quoted inside the list. Written with
+          # echo, not with a single-quoted printf: a backslash-quote inside a
+          # single-quoted shell string does not produce a quote, it ends the
+          # string - which silently writes a list with a bare, invalid word in
+          # it instead of a string. (No backticks in this comment either: the
+          # cloud-config is generated by an unquoted heredoc.)
+          { echo '[org/gnome/shell]'; echo "enabled-extensions=['\$AIUUID']"; } > /etc/dconf/db/local.d/30-tray
+          dconf update
+          echo "grid-setup: enabled shell extension \$AIUUID"
+        else
+          echo "grid-setup: WARNING no appindicator extension installed - the panel has no SNI host and test_04 will SKIP"
+        fi
       fi
       mkdir -p /home/vm/.config
       printf '[Daemon]\nAutostart=false\n' > /home/vm/.config/kscreenlockerrc
