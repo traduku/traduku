@@ -35,16 +35,27 @@ def test_app_autostarts_after_reboot(session):
 
     vm.sudo("systemctl reboot")
     assert vm.wait_ssh(300), "VM did not come back after reboot"
-    # session + autostart need a moment; wait for the shell THIS profile promises
-    shell = "gnome-shell" if vm.vm.endswith("-gnome") else "kwin_wayland || pgrep -x kwin_x11"
-    for _ in range(30):
-        if vm.run(f"pgrep -x {shell}")[0] == 0:
+    # Wait for the two things this test is about, in order, instead of for a
+    # quarter of a minute: the session shell this profile promises, then the
+    # process the autostart entry exists to start. `sleep 15` after "the shell
+    # exists" stood in for both - paid in full on every fast boot, and still a
+    # guess on a slow one.
+    shells = ["gnome-shell"] if vm.vm.endswith("-gnome") else ["kwin_wayland", "kwin_x11"]
+    for shell in shells:
+        rc, _ = vm.wait_process(shell, timeout=180 if shell == shells[0] else 5, tick=1)
+        if rc == 0:
             break
-        time.sleep(3)
-    time.sleep(15)
-    rc, out = vm.run("pgrep -x traduku && echo RUNNING")
-    assert rc == 0 and "RUNNING" in out, (
-        f"traduku did not autostart after reboot (entries: {found})")
-    # prove it is a real session process, not a stray shell
-    rc, out = vm.run("tr '\\0' ' ' < /proc/$(pgrep -x traduku | head -1)/environ | grep -o 'XDG_SESSION_TYPE=\\w*'")
+    assert rc == 0, (
+        f"no session shell came back after the reboot (looked for {shells}); "
+        "the profile promises one of them before autostart can mean anything")
+    rc, _ = vm.wait_process("traduku", timeout=120, tick=0.5)
+    assert rc == 0, (
+        f"traduku did not autostart after reboot within 120 s (entries: {found}). "
+        "The journal of the session that started is the place to look.")
+    # prove it is a real session process, not a stray shell. By pid, and a
+    # live one: pgrep also lists an unreaped zombie, which has no /proc/environ
+    # worth reading and would have made this assertion about nothing.
+    pid = vm.app_pid()
+    assert pid, "the traduku that autostarted vanished between the two looks"
+    rc, out = vm.run(f"tr '\\0' ' ' < /proc/{pid}/environ | grep -o 'XDG_SESSION_TYPE=\\w*'")
     assert "XDG_SESSION_TYPE=wayland" in out, f"autostarted outside a wayland session: {out}"

@@ -109,6 +109,13 @@ def test_tray_item_registered_in_the_panel(env):
 
     # red-check mechanism: killing the app must remove the item
     vm.ses("pkill -x traduku")
-    time.sleep(3)
+    # Poll the watcher until it forgets us: three seconds of clock was the
+    # guess, "the bus no longer lists the item" is the claim. Bounded, and the
+    # message says which of the two failed - a dead app or a stale registry.
+    deadline = time.time() + 15
     _, after = _identities(vm)
-    assert not _ours(after), "dead app's tray item stayed registered"
+    while _ours(after) and time.time() < deadline:
+        time.sleep(0.2)
+        _, after = _identities(vm)
+    assert not _ours(after), ("the item is still registered 15 s after the app was "
+                              f"killed (SNI Close() ignored?): {after}")

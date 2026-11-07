@@ -36,31 +36,35 @@ SEED = "window probe 4242"
 
 def test_window_appears_after_gesture(env):
     vm = env
-    time.sleep(1)
+    # The two baseline frames exist to prove the session is quiescent before
+    # anything is measured (a lock screen appearing between the shots is the
+    # observed noise source). Ask for that state instead of taking two shots
+    # 1.5 s apart and hoping nothing animated in between: keep re-shooting
+    # until consecutive frames agree, and fail with the number if they never
+    # do - which is what the assertion always meant.
     vm.shot("06-a")
-    time.sleep(1.5)
-    vm.shot("06-b")
-    # Guard: the session must be quiescent before we measure. (A lock
-    # screen appearing between the shots is the observed noise source.)
-    idle = vm.diff_frac("06-a", "06-b")
+    idle = 1.0
+    deadline = time.time() + 10
+    while time.time() < deadline:
+        vm.shot("06-b")
+        idle = vm.diff_frac("06-a", "06-b")
+        if idle < 0.01:
+            break
+        vm.shot("06-a")
+        time.sleep(0.3)
     assert idle < 0.01, f"idle screen changes by {idle:.3f} (wallpaper/lock noise)"
 
     cur = vm.cursor()
     vm.clipset(SEED)
     vm.double_ctrl_alt_c()
-    fired = False
-    for _ in range(20):
-        time.sleep(1)
-        if vm.journal_after(cur, grep="translating")[1].strip():
-            fired = True
-            break
-    assert fired, "gesture produced no FRESH 'translating' journal line"
+    rc, _ = vm.wait_journal(cur, "translating", timeout=20, tick=0.2)
+    assert rc == 0, "gesture produced no FRESH 'translating' journal line"
 
     # The window animates in; poll the framebuffer, the change must be big
     # (980x560 on 1280x800 ≈ half the screen), not a taskbar blink.
     frac = 0.0
-    for _ in range(15):
-        time.sleep(1)
+    for _ in range(50):
+        time.sleep(0.3)
         vm.shot("06-open")
         frac = vm.diff_frac("06-a", "06-open")
         if frac > 0.10:

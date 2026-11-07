@@ -71,16 +71,28 @@ def test_first_run_asks_and_writes_xdg_autostart(session):
     vm.ses("pkill -x traduku; true")
     vm.run(f"rm -f {USER_AUTOSTART} ~/.config/traduku/config.ini")
 
+    cur = vm.cursor()
     vm.ses("setsid nohup traduku >/tmp/traduku.log 2>&1 &")
-    time.sleep(4)
-    assert vm.run("pgrep -x traduku")[0] == 0, "app did not start"
+    # The app's own startup line, not four seconds of hoping. Read from the
+    # JOURNAL, not from the log this launch redirects its output to: measured on
+    # arch-kde with fd 1 and fd 2 both pointing at /tmp/traduku.log, every
+    # qInfo() the KF6-linked shell emits still arrives in the user journal
+    # (journalctl shows "traduku: ready (kde, ...)" while the file holds only
+    # ALSA's own writes). Waiting on the file therefore timed out on a healthy
+    # app - the log is kept as the second witness in the failure message, since
+    # it is where a non-Qt writer (ALSA, a crashing subprocess) does speak.
+    rc, _ = vm.wait_journal(cur, "traduku: ready", timeout=20, tick=0.2)
+    assert rc == 0, "app did not start, journal said:\n" + vm.ses(
+        "journalctl --user --no-pager --after-cursor='%s' | tail -15" % cur)[1]
 
     # the welcome/autostart question is a modal dialog: something appeared
     vm.shot("e2-autostart-offer")
     vm.keyseq("ret")            # default button = Yes -> enable autostart
-    time.sleep(2)
+    # The answer's consequence is a file; wait for the file the test is about
+    # to read (2 s of clock used to stand in for that causality).
+    rc, _ = vm.wait_until(f"test -f {USER_AUTOSTART}", timeout=15, tick=0.2)
+    assert rc == 0, f"answering Yes wrote no {USER_AUTOSTART}"
     vm.keyseq("esc")            # close the first-run Settings dialog
-    time.sleep(1)
 
     rc, out = vm.run(f"cat {USER_AUTOSTART}")
     assert rc == 0, "no XDG autostart entry after answering Yes"

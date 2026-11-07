@@ -68,7 +68,14 @@ def test_first_run_tells_the_user_what_to_press(session):
     # `dbus-monitor ... &` over ssh holds the connection open until the
     # harness timeout, which is not the failure being looked for. The timeout
     # bounds the watcher so a red run cannot leak a monitor into the guest.
-    vm.ses(_NOTIFY_WATCH + "setsid nohup /tmp/notify-watch.sh >/dev/null 2>&1 </dev/null & sleep 1")
+    vm.ses(_NOTIFY_WATCH + "setsid nohup /tmp/notify-watch.sh >/dev/null 2>&1 </dev/null & true")
+    # The watcher has to be on the bus BEFORE the app starts, or the Notify
+    # being looked for is sent into an unmonitored session and this reads an
+    # empty file. Waiting for the process replaces `sleep 1`. (Its own stdout
+    # stays redirected: dbus-monitor noise is not the evidence, /tmp/notify.log
+    # is, and an unredirected watcher would hold the ssh channel open.)
+    rc, _ = vm.wait_until("pgrep -f notify-watch.sh >/dev/null 2>&1 || pgrep -f dbus-monitor >/dev/null 2>&1", timeout=10, tick=0.2)
+    assert rc == 0, "the dbus watcher never came up; the Notify would go unobserved"
 
     # An endpoint is configured, so the greeting must arrive without a modal
     # settings window: this app is autostarted unattended at login, and the
@@ -76,7 +83,12 @@ def test_first_run_tells_the_user_what_to_press(session):
     vm.run("mkdir -p ~/.config/traduku; printf '%s\\n' '[General]' "
            "'ApiUrl=http://127.0.0.1:9/null' 'Model=m' 'SourceLang=auto' "
            "'TargetLang=ru' 'FirstRunDone=false' > ~/.config/traduku/config.ini")
-    vm.ses("(setsid traduku > /tmp/first-run.out 2>&1 &) ; sleep 6")
+    vm.ses("(setsid traduku > /tmp/first-run.out 2>&1 &) ; true")
+    # ready, not six seconds: the greeting is sent before the app says it
+    # is up, so this line means the Notify has already been on the bus.
+    rc, _ = vm.wait_file("/tmp/first-run.out", "traduku: ready", timeout=20, tick=0.2)
+    assert rc == 0, ("traduku never finished starting; first-run.out says:\n"
+                    + vm.ses("cat /tmp/first-run.out")[1])
 
     rc, log = vm.ses("cat /tmp/notify.log")
     rc2, out = vm.ses("cat /tmp/first-run.out")
@@ -111,7 +123,12 @@ def test_first_run_does_not_grab_the_desktop_when_it_is_configured(session):
     vm.run("mkdir -p ~/.config/traduku; printf '%s\\n' '[General]' "
            "'ApiUrl=http://127.0.0.1:9/null' 'Model=m' 'SourceLang=auto' "
            "'TargetLang=ru' 'FirstRunDone=false' > ~/.config/traduku/config.ini")
-    vm.ses("(setsid traduku > /tmp/first-run2.out 2>&1 &) ; sleep 6")
+    vm.ses("(setsid traduku > /tmp/first-run2.out 2>&1 &) ; true")
+    # ready, not six seconds: the greeting is sent before the app says it
+    # is up, so this line means the Notify has already been on the bus.
+    rc, _ = vm.wait_file("/tmp/first-run2.out", "traduku: ready", timeout=20, tick=0.2)
+    assert rc == 0, ("traduku never finished starting; first-run2.out says:\n"
+                    + vm.ses("cat /tmp/first-run2.out")[1])
     # The settings dialog is a QWidget window; on this session XWayland lists
     # it (xdotool saw the translation window in test_06).
     rc, out = vm.ses("DISPLAY=:0 XAUTHORITY=$(ls -1 /run/user/1000/.mutter-Xwaylandauth.* "
@@ -239,8 +256,7 @@ def test_the_window_still_fits_the_screen_at_200_percent(session):
     assert sw >= 800, f"the display is {sw}x{sh}, too small to conclude anything"
 
     vm.run("pkill -x traduku; true")
-    vm.start_app(extra_env=["QT_SCALE_FACTOR=2"])
-    time.sleep(4)
+    vm.start_app(extra_env=["QT_SCALE_FACTOR=2"])   # returns at "traduku: ready"
     cur = vm.cursor()
     # Second launch asks the running instance to surface its window - the
     # same path a user reaches by clicking the (here: missing) icon twice.
@@ -281,11 +297,14 @@ def test_the_launcher_entry_and_the_window_are_the_same_app(session):
     # xcb gives an X11 window with a readable WM_CLASS; under pure Wayland
     # there is no such property to read, and the app_id path is covered by
     # QGuiApplication::setDesktopFileName (see tests/unit/tst_cli.cpp).
-    vm.start_app(extra_env=["QT_QPA_PLATFORM=xcb"])
-    time.sleep(4)
+    vm.start_app(extra_env=["QT_QPA_PLATFORM=xcb"])   # waits for "traduku: ready"
     # A second copy asks the running one to surface its window.
+    cur = vm.cursor()
     vm.ses("timeout 15 traduku >/dev/null 2>&1; true")
-    time.sleep(3)
+    # The window must be mapped before xprop can read its class; the show is
+    # what the app logs, so that is what is waited for (sleep 3 used to hope).
+    rc, _ = vm.wait_journal(cur, "window shown", timeout=20, unit="traduku-e2e.service")
+    assert rc == 0, "the second launch never surfaced a window to inspect"
     # Selected by pid, not by title: gnome-shell wraps every XWayland window
     # in a mutter frame that carries the same title, and the frame's WM_CLASS
     # is "mutter-x11-frames" - matching on the title would have measured the
@@ -443,11 +462,10 @@ def test_a_relogin_starts_it_again(session):
             return False
 
     def count_app():
-        rc, out = vm.run("pgrep -cx traduku 2>/dev/null || echo 0")
-        try:
-            return int(out.strip().splitlines()[-1])
-        except ValueError:
-            return 0
+        # A live process, not a pgrep hit: an unreaped traduku keeps the name,
+        # is counted by pgrep and has started nothing. "Did it come back after
+        # login?" is exactly the question a corpse could answer yes to.
+        return 0 if vm.app_alive()[0] != 0 else 1
 
     vm.run("pkill -x traduku; true")
     # Two attempts, and the distinction is the point. Measured on arch-kde:
@@ -461,17 +479,24 @@ def test_a_relogin_starts_it_again(session):
     back = 0
     for attempt in (1, 2):
         vm.sudo(f"systemctl restart {dm}")
-        deadline = time.time() + 90
+        # 25 s, not 90: when the display manager does bring a session back it
+        # does it in seconds (measured - kwin_wayland exists well inside 10 s of
+        # `systemctl restart sddm` succeeding). A session that has not appeared
+        # by then is not appearing at all, and the second attempt is the one
+        # this image sometimes needs. Sitting on the first attempt for a minute
+        # and a half was what made this test the slowest in the suite; the
+        # number that was actually waited for was never 90.
+        deadline = time.time() + 25
         while time.time() < deadline and not session_up():
-            time.sleep(5)
+            time.sleep(0.5)
         if not session_up():
             continue
-        deadline = time.time() + 90
+        deadline = time.time() + 60
         while time.time() < deadline:
             back = count_app()
             if back:
                 break
-            time.sleep(5)
+            time.sleep(0.5)
         if back:
             break
     # The display manager restart also drops the harness' view of the session,

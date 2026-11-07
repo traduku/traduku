@@ -33,6 +33,30 @@ SSH="$SSH -p 220${IDX: -1}"
 Q() { $SSH vm@127.0.0.1 "$@"; }
 SCP() { scp -i "$HOME/vms/id_ed25519" -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -P "220${IDX: -1}" "$@"; }
 
+# A VM that was just started - or reset and started, which is how a grid run
+# begins - has no sshd yet, and the first ssh of the install then died with
+# "Connection reset by peer", aborting the whole install before it built
+# anything. This waits, and it says so: a tool that stalls silently is
+# indistinguishable from one that hung, and the last thing the grid needs is a
+# step whose waiting is invisible.
+wait_for_ssh() {
+  local tries=${1:-90} i=0
+  until Q "echo up" | grep -q up; do
+    i=$((i + 1))
+    if [ "$i" -ge "$tries" ]; then
+      echo "FAIL: no ssh from $VM after $tries attempts (~$((tries * 2))s)" >&2
+      exit 1
+    fi
+    if [ "$i" -le 3 ] || [ $((i % 5)) -eq 0 ]; then
+      echo "== waiting for ssh on $VM (attempt $i)"
+    fi
+    sleep 2
+  done
+  [ "$i" -gt 0 ] && echo "== ssh up on $VM after ~$((i * 2))s"
+  return 0
+}
+wait_for_ssh
+
 # Assert that the binary in the guest is the flavour the profile promises.
 # `ldd` is the witness: the GNOME shell is configured with no KF6 in the
 # link line at all, so a KF6-dependent binary on a gnome guest means the wrong
