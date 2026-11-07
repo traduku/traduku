@@ -45,9 +45,12 @@ public:
     /// back to the global shortcut.
     bool start() override;
     void stop() override;
+    /// The listener this instance actually runs. A hard-coded name here once
+    /// told a user "x11-xi2" while the journal said "X RECORD key listener
+    /// active" - see modeName().
     QString backendName() const override
     {
-        return QStringLiteral("x11-xi2");
+        return modeName(m_mode);
     }
 
     void setIntervalMs(qint64 ms);
@@ -63,6 +66,15 @@ public:
     /// RECORD is used instead. Pure so it is unit-testable.
     enum class Mode { Disabled, Xi2Raw, Record };
     static Mode chooseMode(bool xi2Available, bool isXwayland);
+
+    /// The mode the *conditions on this machine* select, computed by the same
+    /// code path start() uses - so `--backend-info` cannot describe a listener
+    /// the app would not have started. Opens no listener and spawns no child:
+    /// one display connection and two extension queries.
+    static Mode probeMode();
+
+    /// The name a user sees for a mode (`hotkey chosen:`, the ready line).
+    static QString modeName(Mode m);
 
     /// XWayland advertises the XWAYLAND extension (modern Xwayland keeps
     /// GLX, so its presence proves nothing); WAYLAND_DISPLAY is the
@@ -93,6 +105,7 @@ private:
     Display *m_threadDisplay = nullptr;   // worker-thread connection
     QProcess *m_proc = nullptr;           // RECORD helper process
     QString m_recordBuffer;
+    Mode m_mode = Mode::Disabled;         // what start() actually chose
 
     Worker *m_worker = nullptr;
     Display *m_probeDisplay = nullptr;   // main-thread conn for XKB probe

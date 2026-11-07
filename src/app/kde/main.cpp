@@ -114,22 +114,40 @@ BackendReport collectBackends(Settings *settings)
 
 #ifdef LT_HAVE_X11
     // Conditions, not a probe: starting the X listener would spawn a child
-    // process just to answer a question.
+    // process just to answer a question. But the *decision* is the app's own
+    // (probeMode), not a paraphrase of it: this branch used to print
+    // "x11/xrecord (helper: ...)" whenever DISPLAY was set and the helper
+    // existed, which on a native X11 Plasma described RECORD while the app ran
+    // the XI2 worker - and the XI2 worker was itself the thing that did not
+    // work there, so the report hid the failure twice over.
     if (qEnvironmentVariableIsEmpty("DISPLAY")) {
-        r.hotkeyAttempts.append({QStringLiteral("x11/xrecord"),
+        r.hotkeyAttempts.append({QStringLiteral("x11"),
                                  QStringLiteral("skipped: no DISPLAY")});
-    } else if (X11HotkeyBackend::helperPath().isEmpty()) {
-        r.hotkeyAttempts.append({QStringLiteral("x11/xrecord"),
-                                 QStringLiteral("unavailable: traduku-record-keys "
-                                                "is not installed next to the app "
-                                                "(traduku-gnome does not ship it)")});
     } else {
-        r.hotkeyAttempts.append({QStringLiteral("x11/xrecord"),
-                                 QStringLiteral("chosen")});
-        r.hotkeyChosen = QStringLiteral("x11/xrecord (helper: %1)")
-                             .arg(X11HotkeyBackend::helperPath());
-        r.gestureSource = QStringLiteral("X RECORD on %1")
-                              .arg(qEnvironmentVariable("DISPLAY"));
+        const auto mode = X11HotkeyBackend::probeMode();
+        const QString name = X11HotkeyBackend::modeName(mode);
+        const QString helper = X11HotkeyBackend::helperPath();
+        if (mode == X11HotkeyBackend::Mode::Disabled) {
+            r.hotkeyAttempts.append({name,
+                                     QStringLiteral("unavailable: no X server "
+                                                    "reachable from this session")});
+        } else if (mode == X11HotkeyBackend::Mode::Record && helper.isEmpty()) {
+            r.hotkeyAttempts.append({name,
+                                     QStringLiteral("unavailable: traduku-record-keys "
+                                                    "is not installed next to the app "
+                                                    "(traduku-gnome does not ship it)")});
+        } else {
+            r.hotkeyAttempts.append({name, QStringLiteral("chosen")});
+            r.hotkeyChosen = name;
+            if (mode == X11HotkeyBackend::Mode::Record) {
+                r.hotkeyChosen += QStringLiteral(" (helper: %1)").arg(helper);
+                r.gestureSource = QStringLiteral("X RECORD on %1")
+                                      .arg(qEnvironmentVariable("DISPLAY"));
+            } else {
+                r.gestureSource = QStringLiteral("XI2 raw on %1 (slave devices)")
+                                      .arg(qEnvironmentVariable("DISPLAY"));
+            }
+        }
     }
 #endif
     if (r.hotkeyChosen.isEmpty()) {

@@ -133,7 +133,11 @@ bool X11HotkeyBackend::start()
         detectXwayland(XQueryExtension(probe, "XWAYLAND", &xwOp, &xwEv, &xwErr),
                        !qEnvironmentVariableIsEmpty("WAYLAND_DISPLAY"));
 
-    switch (chooseMode(xi2Ok, isXwayland)) {
+    // The mode is recorded, not just dispatched: backendName() has to answer
+    // with the listener that is running, and it did not - it returned
+    // "x11-xi2" while the journal printed "X RECORD key listener active".
+    m_mode = chooseMode(xi2Ok, isXwayland);
+    switch (m_mode) {
     case Mode::Xi2Raw:
         m_worker = new Worker(this);
         m_worker->start();
@@ -149,8 +153,47 @@ bool X11HotkeyBackend::start()
     case Mode::Disabled:
         break;
     }
+    m_mode = Mode::Disabled;
     stop();
     return false;
+}
+
+X11HotkeyBackend::Mode X11HotkeyBackend::probeMode()
+{
+    // Same three questions start() asks, in the same order, so a report and
+    // a start cannot disagree: is there a display, does it speak XInput2, is
+    // it an Xwayland. No listener, no child process.
+    if (qEnvironmentVariableIsEmpty("DISPLAY")) {
+        return Mode::Disabled;
+    }
+    Display *dpy = XOpenDisplay(nullptr);
+    if (!dpy) {
+        return Mode::Disabled;
+    }
+    int xiOp = 0, xiEv = 0, xiErr = 0;
+    int xiMajor = 2, xiMinor = 1;
+    const bool xi2Ok =
+        XQueryExtension(dpy, "XInputExtension", &xiOp, &xiEv, &xiErr)
+        && XIQueryVersion(dpy, &xiMajor, &xiMinor) == Success;
+    int xwOp = 0, xwEv = 0, xwErr = 0;
+    const bool isXwayland =
+        detectXwayland(XQueryExtension(dpy, "XWAYLAND", &xwOp, &xwEv, &xwErr),
+                       !qEnvironmentVariableIsEmpty("WAYLAND_DISPLAY"));
+    XCloseDisplay(dpy);
+    return chooseMode(xi2Ok, isXwayland);
+}
+
+QString X11HotkeyBackend::modeName(Mode m)
+{
+    switch (m) {
+    case Mode::Xi2Raw:
+        return QStringLiteral("x11-xi2");
+    case Mode::Record:
+        return QStringLiteral("x11-record");
+    case Mode::Disabled:
+        break;
+    }
+    return QStringLiteral("x11-none");
 }
 
 QString X11HotkeyBackend::helperPath()
@@ -211,7 +254,17 @@ void X11HotkeyBackend::onRecordOutput()
         m_recordBuffer.remove(0, nl + 1);
         int type = 0;
         quint32 sym = 0, code = 0;
-        if (parseRecordLine(line, &type, &sym, &code)) {
+        const bool parsed = parseRecordLine(line, &type, &sym, &code);
+        // "I pressed it and nothing happened" is the question this answers
+        // without a rebuild: was the event seen at all, and did we understand
+        // it? Gated on the environment because a key logger in the default log
+        // would be its own bug.
+        if (qEnvironmentVariableIsSet("TRADUKU_DEBUG_KEYS")) {
+            qInfo("traduku: record line \"%s\" parsed=%s type=%d keysym=%u code=%u",
+                  qPrintable(QString::fromLatin1(line)), parsed ? "yes" : "no",
+                  type, sym, code);
+        }
+        if (parsed) {
             feedKeyEvent(type, sym, code);
         }
     }
@@ -271,6 +324,33 @@ void X11HotkeyBackend::runWorker()
         Window root = RootWindow(dpy, DefaultScreen(dpy));
         XIEventMask mask;
         unsigned char bits[XIMaskLen(XI_LASTEVENT)] = {0};
+        // Masters only, on purpose - and this was measured, not assumed.
+        // Hypothesis on the table: on a real Xorg keys originate on a slave
+        // (AT Translated Set 2 keyboard), so a master-only selection would be
+        // deaf, which is what the debian-kde gesture failure looked like.
+        // `xinput test-xi2 --root` during a QMP Ctrl+C said otherwise:
+        //   EVENT type 13 (RawKeyPress) device: 3 (7) detail: 37
+        //   EVENT type 13 (RawKeyPress) device: 3 (7) detail: 54
+        // - the master does report the physical keyboard's raw events, and the
+        // listener fires with this mask (the mock's echo came back in the
+        // clipboard). Selecting XIAllDevices instead would add the slave's
+        // copy of every key and turn one Ctrl+C into a pair.
+        // Masters only - measured, not assumed. The hypothesis on the table
+        // was that on a real Xorg keys originate on a slave (AT Translated Set
+        // 2 keyboard) and a master-only selection is therefore deaf, which is
+        // what the debian-kde gesture failure looked like. `xinput test-xi2
+        // --root` during a QMP Ctrl+C said otherwise:
+        //   EVENT type 13 (RawKeyPress) device: 3 (7) detail: 37
+        //   EVENT type 13 (RawKeyPress) device: 3 (7) detail: 54
+        // - the master does report the physical keyboard's raw events, and the
+        // gesture fires with this mask (the mock's echo came back in the
+        // clipboard). XIAllDevices would add the slave's copy of every key and
+        // turn one Ctrl+C into a pair.
+        //
+        // The assignment must stay: an unset deviceid is stack garbage, and
+        // XISelectEvents answers `XI_BadDevice (invalid Device parameter,
+        // Device id 0x21f)` - which is how an editing slip once turned this
+        // listener into a segfault that only the `make x11test` gate sees.
         mask.deviceid = XIAllMasterDevices;
         mask.mask_len = sizeof(bits);
         mask.mask = bits;
@@ -278,6 +358,7 @@ void X11HotkeyBackend::runWorker()
         XISetMask(bits, XI_RawKeyRelease);
         XISelectEvents(dpy, root, &mask, 1);
         XSync(dpy, 0);
+
         qInfo("traduku: XI2 raw key listener active on %s - "
               "listening for double Ctrl+C",
               XDisplayString(dpy));
