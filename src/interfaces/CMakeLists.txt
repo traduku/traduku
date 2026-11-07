@@ -3,6 +3,7 @@
 add_library(lt_interfaces STATIC
     iclipboard.h
     ihotkeybackend.h
+    itray.h
     inotifier.h
     iautostart.h
     iglobalshortcut.h

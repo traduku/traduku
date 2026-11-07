@@ -76,7 +76,7 @@ private slots:
                                       QStringLiteral("Launch on Login"),
                                       QStringLiteral("Quit"),
                                       // the affordance hint, see menuCarriesTheClickHint()
-                                      QStringLiteral("Double-click or middle-click to translate")};
+                                      QStringLiteral("Click to translate (double-click if this menu opens instead)")};
         // QCOMPARE is a macro: the braces have to stay out of its arguments.
         QCOMPARE(menuTexts(tray.menu()), expected);
 

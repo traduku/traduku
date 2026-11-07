@@ -1,5 +1,7 @@
 #pragma once
 
+#include "interfaces/itray.h"
+
 #include <QHash>
 #include <QObject>
 #include <QString>
@@ -31,27 +33,36 @@ class Settings;
  * Menu: Translate Clipboard Now | Translate To ▸ | Settings… |
  *       Launch on Login | Quit.
  */
-class QtTray : public QObject
+class QtTray : public ITray
 {
     Q_OBJECT
 public:
     QtTray(Settings *settings, IAutostart *autostart, QObject *parent = nullptr);
     ~QtTray() override;
 
-    QMenu *menu() const { return m_menu; }
+    /// Without constructing a tray: does this session have a tray host at all?
+    /// Used by --backend-info, which must not create an icon to answer.
+    static bool hostSupportsTray() { return QSystemTrayIcon::isSystemTrayAvailable(); }
+
+    QMenu *menu() const override { return m_menu; }
+    QString backendName() const override
+    {
+        return QStringLiteral("qt (QSystemTrayIcon)");
+    }
+    /// The QSystemTrayIcon itself - for tests and for the tooltip assertions.
     QSystemTrayIcon *icon() const { return m_tray; }
 
     /// False when the platform has no tray at all. The app must keep working
     /// without one - on GNOME without an SNI extension nothing appears here,
     /// and that is a supported configuration, not an error.
-    bool isAvailable() const;
+    bool isAvailable() const override;
 
-    void show();
+    void show() override;
 
     /// QSystemTrayIcon has no overlay icons (KStatusNotifierItem does), so the
     /// busy state is surfaced in the tooltip instead.
-    void setBusy(bool busy);
-    void setToolTipSub(const QString &sub);
+    void setBusy(bool busy) override;
+    void setToolTipSub(const QString &sub) override;
 
 public slots:
     /// Split out of the signal connection so the click semantics are testable
@@ -60,11 +71,8 @@ public slots:
     /// to the menu.
     void activationRequested(QSystemTrayIcon::ActivationReason reason);
 
-Q_SIGNALS:
-    void translateRequested();
-    void targetLanguagePicked(const QString &code);
-    void settingsRequested();
-    void quitRequested();
+    // Signals come from ITray: translateRequested, targetLanguagePicked,
+    // settingsRequested, quitRequested.
 
 private:
     void buildMenu();

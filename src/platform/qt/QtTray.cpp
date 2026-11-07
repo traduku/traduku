@@ -8,6 +8,8 @@
 #include <QApplication>
 #include <QIcon>
 #include <QMenu>
+#include <cstdio>
+static void probe(const char*s){fprintf(stderr,"PROBE QtTray %s\n",s);fflush(stderr);}
 #include <QMetaEnum>
 #include <QPainter>
 #include <QPixmap>
@@ -55,7 +57,7 @@ const char *reasonName(QSystemTrayIcon::ActivationReason reason)
 } // namespace
 
 QtTray::QtTray(Settings *settings, IAutostart *autostart, QObject *parent)
-    : QObject(parent)
+    : ITray(parent)
     , m_settings(settings)
     , m_autostart(autostart)
 {
@@ -76,7 +78,16 @@ QtTray::QtTray(Settings *settings, IAutostart *autostart, QObject *parent)
 
 QtTray::~QtTray()
 {
-    delete m_menu;          // parented to nothing, as in KdeTray
+    // The icon holds a pointer to the menu: destroy it first, or the
+    // QSystemTrayIcon destructor dereferences freed memory (the same ordering
+    // bug KdeTray had, found by tests/unit/tst_trayparity.cpp).
+    probe("dtor enter");
+    delete m_tray;
+    m_tray = nullptr;
+    probe("tray deleted");
+    delete m_menu;
+    probe("menu deleted");
+    m_menu = nullptr;
 }
 
 bool QtTray::isAvailable() const
@@ -158,6 +169,8 @@ QIcon QtTray::createIcon()
 
 void QtTray::buildMenu()
 {
+    // Unparented (QMenu wants a QWidget*, the tray is a QObject); freed in
+    // ~QtTray after the icon, which keeps a pointer to it.
     m_menu = new QMenu;
 
     auto *translate = m_menu->addAction(QStringLiteral("Translate Clipboard Now"));
@@ -201,13 +214,15 @@ void QtTray::buildMenu()
     // intents and the shell decides what leaving means (unsaved dialog etc).
     connect(quit, &QAction::triggered, this, &QtTray::quitRequested);
 
-    // Discoverability, earned by measurement: this host ignores the SNI
-    // ToolTip property entirely, and a single left click - what everyone tries
-    // first - opens the menu instead of translating (indicatorStatusIcon.js:
-    // single/right -> menu.toggle(), Activate comes only from a double click
-    // or the middle button). Without this line the icon looks dead.
+    // Discoverability, earned by measurement. Ubuntu's appindicator host
+    // ignores the SNI ToolTip property entirely, and there a single left click
+    // - what everyone tries first - opens the menu instead of translating
+    // (indicatorStatusIcon.js: single/right -> menu.toggle(), Activate comes
+    // only from a double click or the middle button). In Plasma a plain left
+    // click does activate, so the wording covers both hosts instead of
+    // describing one of them wrongly.
     auto *hint = m_menu->addAction(
-        QStringLiteral("Double-click or middle-click to translate"));
+        QStringLiteral("Click to translate (double-click if this menu opens instead)"));
     hint->setEnabled(false);
 
     syncLanguageChecks();

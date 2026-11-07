@@ -14,7 +14,7 @@
 namespace lt {
 
 KdeTray::KdeTray(Settings *settings, IAutostart *autostart, QObject *parent)
-    : QObject(parent)
+    : ITray(parent)
     , m_settings(settings)
     , m_autostart(autostart)
 {
@@ -47,7 +47,48 @@ KdeTray::KdeTray(Settings *settings, IAutostart *autostart, QObject *parent)
 
 KdeTray::~KdeTray()
 {
-    delete m_menu;
+    // Measured on Plasma (KF6 6.31, Qt 6.12): destroying a KStatusNotifierItem
+    // with a session bus present segfaults in BOTH orders - `delete menu;
+    // delete tray` and `delete tray; delete menu` - while deleteLater() is
+    // safe. So nothing here is deleted synchronously.
+    //
+    // This is not theoretical: kde/main.cpp used to hold the tray on the
+    // stack, so quitting the KDE app ran this destructor, i.e. the app crashed
+    // on exit. Found by tests/unit/tst_trayparity.cpp, which destroys trays
+    // the way the shell does. The shell now also keeps the tray alive for the
+    // lifetime of the process; this destructor is what a library user gets.
+    if (m_tray) {
+        m_tray->deleteLater();
+        m_tray = nullptr;
+    }
+    if (m_menu) {
+        m_menu->deleteLater();
+        m_menu = nullptr;
+    }
+}
+
+QMenu *KdeTray::menu() const
+{
+    return m_menu;
+}
+
+QString KdeTray::backendName() const
+{
+    return QStringLiteral("kde (KStatusNotifierItem)");
+}
+
+void KdeTray::show()
+{
+    // No-op on purpose: KStatusNotifierItem registers with the watcher in its
+    // constructor and has no show()/hide() (it is a QObject, not a widget).
+    // The call exists so the shell drives both trays through ITray.
+}
+
+bool KdeTray::isAvailable() const
+{
+    // Plasma always owns the StatusNotifierWatcher; if it ever does not,
+    // KStatusNotifierItem simply stays unregistered - still not fatal.
+    return true;
 }
 
 void KdeTray::setBusy(bool busy)
@@ -96,7 +137,10 @@ void KdeTray::buildMenu()
 
     auto *quit = m_menu->addAction(QIcon::fromTheme(QStringLiteral("application-exit")),
                                    QStringLiteral("Quit"));
-    connect(quit, &QAction::triggered, qApp, &QApplication::quit);
+    // An intent, like QtTray's: the shell decides what leaving means. (It
+    // used to call QApplication::quit() here directly, which made the two
+    // trays impossible to test the same way.)
+    connect(quit, &QAction::triggered, this, &KdeTray::quitRequested);
 
     syncLanguageChecks();
 }
