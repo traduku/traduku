@@ -264,6 +264,121 @@ def test_the_window_still_fits_the_screen_at_200_percent(session):
         "not consulted on show")
 
 
+def test_the_launcher_entry_and_the_window_are_the_same_app(session):
+    """GNOME pairs a window with its launcher by WM_CLASS/StartupWMClass.
+
+    Measured on this guest: Qt gives WM_CLASS = "traduku", "traduku", and the
+    shipped .desktop named no class at all, so the dash showed the launcher
+    icon and a second nameless icon for the same app - the first complaint a
+    GNOME user files, and one no unit test can see. The assertion compares
+    the two files the compositor compares: what the window says and what the
+    .desktop claims.
+    """
+    import time
+
+    vm = session
+    vm.run("pkill -x traduku; true")
+    # xcb gives an X11 window with a readable WM_CLASS; under pure Wayland
+    # there is no such property to read, and the app_id path is covered by
+    # QGuiApplication::setDesktopFileName (see tests/unit/tst_cli.cpp).
+    vm.start_app(extra_env=["QT_QPA_PLATFORM=xcb"])
+    time.sleep(4)
+    # A second copy asks the running one to surface its window.
+    vm.ses("timeout 15 traduku >/dev/null 2>&1; true")
+    time.sleep(3)
+    # Selected by pid, not by title: gnome-shell wraps every XWayland window
+    # in a mutter frame that carries the same title, and the frame's WM_CLASS
+    # is "mutter-x11-frames" - matching on the title would have measured the
+    # compositor's decoration and called it the app. Every traduku pid is
+    # asked, because the autostart instance and the one this test started can
+    # coexist, and picking head -1 once selected the windowless one.
+    rc, out = vm.ses(
+        "for p in $(pgrep -x traduku); do xdotool search --pid $p 2>/dev/null; done "
+        "| while read id; do xprop -id $id WM_CLASS 2>/dev/null; done | head -1")
+    try:
+        vm.run("pkill -x traduku; true")
+    except Exception:
+        pass
+    classes = [l.split("=", 1)[1].strip().strip('"').split('"')[0]
+               for l in out.splitlines() if "WM_CLASS" in l]
+    classes = [c for c in classes if c]
+    assert classes, (
+        "no Traduku toplevel with a WM_CLASS under XWayland; xprop said:\n" + out)
+    wm_class = classes[0]
+
+    rc, desktop = vm.run("cat /usr/share/applications/traduku.desktop")
+    assert rc == 0, f"no launcher entry installed: {desktop}"
+    claimed = [l.split("=", 1)[1].strip() for l in desktop.splitlines()
+               if l.strip().startswith("StartupWMClass")]
+    assert claimed, (
+        f"{wm_class} is the window's class and the launcher names none: the "
+        "dash shows two icons for one app")
+    assert wm_class in claimed, (
+        f"window says WM_CLASS={wm_class}, launcher claims {claimed[0]}")
+
+
+def test_a_russian_session_defaults_to_russian(env):
+    """A user who never opens the settings dialog still gets their own language.
+
+    The default target language is the only place the session locale is read
+    (Settings falls back to QLocale::system()), and a UTF-8 locale is not the
+    interesting one: C.utf8 is what every earlier test ran under, so this is
+    the first time the value is anything but the built-in "en". The mock
+    echoes the language it was asked for, which is the app's answer rather
+    than the harness's.
+
+    ru_RU.UTF-8 is generated here because the image ships C, C.utf8 and
+    en_US.utf8 only; locale-gen is idempotent, so this costs nothing after
+    the first run.
+    """
+    import json
+    import time
+
+    vm = env
+    # Two separate sudo calls on purpose: vm.sudo prefixes the string with
+    # `echo vm | sudo -S`, so an `a || b` one-liner would run only `a` as root
+    # and swallow b's failure behind a redirect.
+    #
+    # The recipe is distro-specific and both are measured, not guessed: the
+    # Ubuntu guest takes `locale-gen <name>`, the Arch guest has no such
+    # argument form - it reads /etc/locale.gen, where the line ships commented
+    # out (measured: three commented ru_RU lines, locale-gen after uncommenting
+    # one printed "ru_RU.UTF-8... done").
+    rc, have = vm.run("locale -a | grep -ci '^ru_RU.utf8$'")
+    if have.strip() == "0":
+        if "ubuntu" in vm.vm or "debian" in vm.vm:
+            vm.sudo("apt-get install -y locales")
+            vm.sudo("locale-gen ru_RU.UTF-8")
+        else:
+            vm.sudo(r"sed -i 's/^#ru_RU.UTF-8 UTF-8/ru_RU.UTF-8 UTF-8/' /etc/locale.gen")
+            vm.sudo("locale-gen")
+        rc, have = vm.run("locale -a | grep -ci '^ru_RU.utf8$'")
+    assert have.strip() != "0", (
+        f"could not generate ru_RU.UTF-8 on {vm.vm}: neither the distro's "
+        "locale-gen argument form nor /etc/locale.gen produced it - the test "
+        "fails rather than skipping, because a skipped locale test is how "
+        "'works for English users only' ships")
+
+    def ask(locale):
+        cfg = f"/tmp/config-{locale}.ini"
+        vm.run(f"rm -f {cfg}; mkdir -p ~/.config/traduku; "
+               f"printf '%s\\n' '[General]' 'ApiUrl=http://127.0.0.1:8931/v1' "
+               f"'Model=mock' > {cfg}")
+        return vm.ses(f"env LC_ALL={locale} TRADUKU_CONFIG={cfg} "
+                      f"traduku --translate --text {json.dumps('hello world', ensure_ascii=False)} "
+                      f"2>&1; echo rc=$?")
+
+    rc, ru = ask("ru_RU.UTF-8")
+    assert "rc=0" in ru, f"translation under the Russian locale failed:\n{ru}"
+    assert "Russian" in ru, (
+        "a Russian session did not ask for Russian; the mock was told:\n" + ru)
+    rc, en = ask("C.utf8")
+    assert "English" in en, (
+        "the control: under C.utf8 the same build must ask for English - if it "
+        f"also says Russian, the language is hard-coded and the comparison "
+        f"above proved nothing:\n{en}")
+
+
 def test_non_latin_text_survives_the_whole_path(env):
     """Cyrillic in, Cyrillic out: clipboard -> window -> back to clipboard.
 

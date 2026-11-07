@@ -170,7 +170,7 @@ BackendReport collectBackends(Settings *settings)
     }
     // "Does it come back at login?" is answered by a file the package owns on
     // this desktop and by the user on Plasma; the report says which.
-    r.autostart = XdgAutostart(QStringLiteral("traduku"),
+    r.autostart = XdgAutostart(desktopBaseName(),
                                QCoreApplication::applicationFilePath())
                       .diagnostic();
     return r;
@@ -334,7 +334,7 @@ int main(int argc, char **argv)
     // one - "Launch on Login" then moved a file that was not the reason the
     // app started. dev.traduku.Traduku stays the D-Bus / single-instance name,
     // a different namespace that shadows nothing.
-    XdgAutostart autostart(QStringLiteral("traduku"),
+    XdgAutostart autostart(desktopBaseName(),
                            QCoreApplication::applicationFilePath());
     QtTray tray(&settings, &autostart);
     QObject::connect(&tray, &QtTray::translateRequested, &controller,

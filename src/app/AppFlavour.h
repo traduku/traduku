@@ -107,4 +107,16 @@ FirstRunPlan planFirstRun(const QString &shell, bool trayAvailable,
  */
 int runAutostartCommand(const QString &action);
 
+/*!
+ * The application's XDG base name - "traduku" - which is the autostart file
+ * name, the .desktop file name without suffix, the WM_CLASS Qt derives from
+ * applicationName, and the value StartupWMClass must carry. Four spellings of
+ * one identity in three places (code, packaging/gnome/traduku.desktop, the
+ * session's window matching); every one of them written out by hand is a
+ * mismatch waiting to happen - without StartupWMClass the launcher icon and
+ * the window are two entries in the dash, which is the complaint GNOME users
+ * file first.
+ */
+QString desktopBaseName();
+
 } // namespace lt

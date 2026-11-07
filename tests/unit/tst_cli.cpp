@@ -2,6 +2,7 @@
 #include <QCoreApplication>
 
 #include "app/cli.h"
+#include "app/AppFlavour.h"
 #include <QGuiApplication>
 
 using namespace lt;
@@ -30,6 +31,23 @@ private slots:
         m_app = new QCoreApplication(argc, argv);
     }
     void cleanupTestCase() { delete m_app; m_app = nullptr; }
+
+    void theLauncherAndTheAppAgreeOnOneName()
+    {
+        // QGuiApplication::setDesktopFileName is what Qt reports as the
+        // Wayland app_id, and StartupWMClass in the .desktop is what GNOME
+        // matches an X11 window against. Both come from lt::desktopBaseName()
+        // now; written by hand in three places they drifted apart once
+        // already (tests/cmake/test_versions_agree.sh guards the packaging
+        // side, tests/e2e/test_09 the window the compositor actually sees).
+        configureApplication(*m_app, QStringLiteral("gnome"),
+                             QStringLiteral("0.0.0-test"));
+        QCOMPARE(lt::desktopBaseName(), QString("traduku"));
+        // No ".desktop" suffix: Qt removes it and writes a warning to stderr
+        // when you pass one, and stderr here is the systemd journal of an
+        // autostarted process.
+        QCOMPARE(QGuiApplication::desktopFileName(), QString("traduku"));
+    }
 
     void noArgsMeansTrayMode()
     {

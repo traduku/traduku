@@ -1,4 +1,5 @@
 #include "cli.h"
+#include "AppFlavour.h"
 
 #include "core/settings.h"
 #include "core/translationengine.h"
@@ -95,6 +96,16 @@ void configureApplication(QCoreApplication &app, const QString &shell,
     // tests/e2e/test_04_tray.py::_identities. Machine-readable ids (config
     // path, D-Bus name, package name) stay the lowercase one on every Qt.
     QGuiApplication::setApplicationDisplayName(QStringLiteral("Traduku"));
+    // The .desktop this app is launched from. On Wayland it becomes the
+    // window's app_id, which is how gnome-shell pairs a window with its
+    // launcher icon; unset, Qt falls back to applicationName and the pairing
+    // works only while the two files happen to be named the same. Said out
+    // loud here because tests/cmake/test_versions_agree.sh keeps the
+    // packaging file and this string from drifting apart.
+    // Without the suffix, which Qt strips itself with a warning on stderr -
+    // and stderr of an autostarted app is the journal, where every start would
+    // leave a complaint nobody asked for.
+    QGuiApplication::setDesktopFileName(desktopBaseName());
 }
 
 CliOptions parseCommandLine(QCoreApplication &app, const QStringList &args,
