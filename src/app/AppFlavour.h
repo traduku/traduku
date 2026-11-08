@@ -147,6 +147,26 @@ QString platformPluginProblem(const QString &requestedQpa,
 /// terminal, or in front of a CI runner, would be worse than the silence.
 bool guiRefusalNeedsDialog(bool consoleAvailable);
 
+/// The tray's status line: the version, and which tray this is running as.
+///
+/// Built here rather than spelled out in each shell's main() because the
+/// separator is where the bug was: a UTF-8 byte sequence written inside
+/// QStringLiteral() arrives as one QChar per byte, so the middle dot became an
+/// "A with circumflex" plus an invisible control, and the tray menu advertised a
+/// broken build to every user who looked at it. One portable function, tested on
+/// every platform, and no main() able to get it wrong again.
+QString trayStatusLabel(const QString &version, const QString &trayKind);
+
+/// The tray's status line: version, and which tray this is running as.
+///
+/// Built here rather than spelled out in each shell's main() because the
+/// separator is where the bug was: a UTF-8 byte sequence inside
+/// QStringLiteral() arrives as one QChar per byte, so the middle dot became
+/// "Â" + an invisible control, and the tray menu advertised a broken build to
+/// every user. One portable function, tested on every platform, no main() able
+/// to get it wrong again.
+QString trayStatusLabel(const QString &version, const QString &trayKind);
+
 QString displayAdviceForMissingDisplay(const QStringList &argv,
                                        bool canPickPlatform, bool onWindows);
 
