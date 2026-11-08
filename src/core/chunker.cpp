@@ -12,7 +12,16 @@ QVector<QString> splitSentences(const QString &block, int maxChars)
 {
     QVector<QString> parts;
     static const QRegularExpression boundary(
-        QStringLiteral("(?<=[.!?\\x2026]) +"));   // ". " "! " "? " "… "
+        // Braces are not decoration. Written as [.!?\x2026], PCRE consumes two
+        // hex digits and reads it as \x20 (a space) followed by the literals '2'
+        // and '6' - so the boundary set became `. ! ? space 2 6`: a block was cut
+        // after "golf 2 " as if a digit ended a sentence, and the ellipsis, the
+        // one character the escape was written for, was not a boundary at all and
+        // got hard-split mid-word instead. Both measured in
+        // tst_chunker::{digitsAreNotSentenceBoundaries,anEllipsisIsASentenceBoundary}
+        // - which had to be written twice, because the first version put its
+        // false boundary before the cap, where nothing flushes, and passed.
+        QStringLiteral("(?<=[.!?\\x{2026}]) +"));   // ". " "! " "? " "… "
     int partStart = 0;
     int lastBoundaryEnd = -1;   // end index of the last completed sentence
     auto flushTo = [&](int end) {

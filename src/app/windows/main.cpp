@@ -418,9 +418,8 @@ int main(int argc, char **argv)
         // The kind the *user* asked for, not the one this build was compiled
         // with: an operator comparing TRADUKU_TRAY=none with =qt has to be able
         // to tell from the tooltip which one is running.
-        tray->setStatusLabel(QStringLiteral("Traduku %1 \xC2\xB7 tray %2")
-                                 .arg(QCoreApplication::applicationVersion(),
-                                      trayChoice.kind));
+        tray->setStatusLabel(lt::trayStatusLabel(
+            QCoreApplication::applicationVersion(), trayChoice.kind));
         tray->show();
     }
 

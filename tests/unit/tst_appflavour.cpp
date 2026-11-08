@@ -19,6 +19,8 @@ using lt::prepareCliEnvironment;
 using lt::planFirstRun;
 using lt::FirstRunPlan;
 using lt::guiRefusalNeedsDialog;
+using lt::trayStatusLabel;
+using lt::trayStatusLabel;
 
 class TestAppFlavour : public QObject
 {
@@ -38,6 +40,35 @@ private slots:
         // reading a console, or in front of a CI runner, is a worse bug than
         // the one being fixed here.
         QVERIFY(!guiRefusalNeedsDialog(/*consoleAvailable=*/true));
+    }
+
+    /// The tray's status line, spelled in characters rather than in bytes.
+    ///
+    /// It read `QStringLiteral("Traduku %1 \xC2\xB7 tray %2")` - UTF-8 bytes
+    /// pasted into a UTF-16 literal. QStringLiteral makes a QChar per *byte*, so
+    /// the separator arrived as U+00C2 U+00B7 and the tray menu showed "Traduku
+    /// 0.3.0 Â· tray qt": a mojibake the user reported from the live desktop,
+    /// and the kind of thing no amount of reading the source catches, because
+    /// the source looks correct.
+    void theTrayStatusLineIsTextNotBytes()
+    {
+        const QString line = trayStatusLabel(QStringLiteral("0.3.0"),
+                                             QStringLiteral("qt"));
+        QVERIFY2(!line.contains(QChar(0x00C2)),    // the "Â" of a double-encoded UTF-8
+                 qPrintable(QStringLiteral("mojibake in the tray line: [") + line
+                            + QStringLiteral("]")));
+        QVERIFY2(line.contains(QStringLiteral("0.3.0")),
+                 qPrintable(QStringLiteral("no version in: [") + line + QStringLiteral("]")));
+        QVERIFY2(line.contains(QStringLiteral("tray qt")),
+                 qPrintable(QStringLiteral("no tray kind in: [") + line
+                            + QStringLiteral("]")));
+        // The separator is one character, not a two-byte imitation of one.
+        QVERIFY2(line.contains(QChar(0x00B7)) || line.contains(QLatin1Char('-')),
+                 qPrintable(QStringLiteral("no separator in: [") + line
+                            + QStringLiteral("]")));
+        QVERIFY2(line.size() < QStringLiteral("Traduku 0.3.0 ").size() + 32,
+                 qPrintable(QStringLiteral("the line grew past its parts: [")
+                            + line + QStringLiteral("]")));
     }
 
     // First run is where a tray-less desktop is won or lost: the app is

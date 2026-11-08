@@ -105,6 +105,16 @@ bool qpaWasForcedByUs()
     return g_forcedOffscreen;
 }
 
+QString trayStatusLabel(const QString &version, const QString &trayKind)
+{
+    // Written as an escape in the source's own alphabet, not as UTF-8 bytes:
+    // QStringLiteral() builds UTF-16 from the *bytes* of the literal, so a
+    // hand-written "\xC2\xB7" arrives as two characters (U+00C2, U+00B7) and the
+    // tray shows the first of them. An escape Qt and the compiler agree on
+    // cannot rot that way.
+    return QStringLiteral("Traduku %1 \u00B7 tray %2").arg(version, trayKind);
+}
+
 bool guiRefusalNeedsDialog(bool consoleAvailable)
 {
     return !consoleAvailable;
