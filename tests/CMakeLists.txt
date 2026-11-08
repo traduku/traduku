@@ -185,6 +185,15 @@ else()
     set(_traduku_test_shell gnome)
 endif()
 get_filename_component(_bash_dir "${BASH_PROGRAM}" DIRECTORY)
+# The packaging gate asks git which ignore rule matched, so git has to be
+# findable by name - the same reason bash is named explicitly: a gate that
+# cannot launch its interpreter reports nothing at all.
+find_program(GIT_PROGRAM NAMES git)
+if(GIT_PROGRAM)
+    get_filename_component(_git_dir "${GIT_PROGRAM}" DIRECTORY)
+else()
+    set(_git_dir "")
+endif()
 # How a *fresh* configure of this tree finds Qt: the same prefix this build was
 # configured with. Without it the child cmake fails for a reason that has
 # nothing to do with what the gate is checking.
@@ -213,6 +222,13 @@ add_test(NAME cmake_lt_tray_option
 add_test(NAME versions_agree
          COMMAND ${BASH_PROGRAM} ${CMAKE_CURRENT_SOURCE_DIR}/cmake/test_versions_agree.sh
                  ${CMAKE_SOURCE_DIR})
+
+# Nothing under packaging/ may be invisible to git: .gitignore's build-* used to
+# have no anchor and swallowed build-portable.sh, which kept "the release script"
+# a file that existed on one machine. See the script's header.
+add_test(NAME packaging_tracked
+         COMMAND ${BASH_PROGRAM} ${CMAKE_CURRENT_SOURCE_DIR}/cmake/test_packaging_tracked.sh
+                 ${CMAKE_SOURCE_DIR})
 # The interpreter's own directory goes on PATH: these are shell scripts using
 # sed and head, and a Git bash whose coreutils are not on PATH fails in a way
 # that reads like a broken gate rather than a missing toolchain.
@@ -224,6 +240,8 @@ add_test(NAME versions_agree
 # either. Prepending leaves the rest of the environment alone.
 set_tests_properties(versions_agree PROPERTIES
     ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:${_bash_dir}")
+set_tests_properties(packaging_tracked PROPERTIES TIMEOUT 120
+    ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:${_bash_dir}:${_git_dir}")
 set_tests_properties(cmake_lt_tray_option PROPERTIES TIMEOUT 300
     ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:${_bash_dir}")
 

@@ -607,7 +607,7 @@ cmake --build build-win && ctest --test-dir build-win        # 38/38
 ```
 
 Qt 6.8.3 win64_mingw + MinGW 13.1.0 (через `aqt`), cmake 4.4.4 и ninja 1.13.2
-(pip). `ctest` — **38/38 зелёные**, из них 9 рядов существуют только под
+(pip). `ctest` — **39/39 зелёные**, из них 9 рядов существуют только под
 Windows; `tst_xdgautostart` на Windows не регистрируется — не «починили
 удалением», а потому что `XDG_CONFIG_HOME` Windows не читает, и тест мерил бы
 `%LOCALAPPDATA%`, которого никто не обещал (причина написана в
