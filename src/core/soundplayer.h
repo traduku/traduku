@@ -1,6 +1,7 @@
 #pragma once
 
 #include <QStringList>
+#include <QVector>
 #include <QObject>
 #include <functional>
 
@@ -37,6 +38,32 @@ public:
         QString problem;        // what to fix; empty when nothing is wrong
     };
 
+    /*
+     * Three things about sound are not the same on every OS: which files to
+     * look for, which programs may play them, and what to tell a user when
+     * either is missing. All three are *data*, so they travel as a profile
+     * rather than as an `#ifdef` inside core - core is not allowed to know
+     * which OS it is on (ROADMAP.md §7 W5 is the gate that enforces it).
+     *
+     * The advice strings are part of the profile for the same reason they are
+     * part of the product: "install wireplumber" on a machine that has no
+     * apt is not a hint, it is a reason to stop reading the hints.
+     */
+    struct Profile {
+        Profile();                                  ///< the freedesktop default
+        QString name;                               // "freedesktop" | "windows" | ...
+        std::function<QStringList(SoundEvent)> fileNames;  // candidates, first hit wins
+        QStringList players;                        // programs tried, in order
+        /// How to try them. Empty = the default chain, which detached-launches
+        /// each name through the ToolFinder - correct for paplay/pw-play/aplay,
+        /// wrong for anything that plays in-process. A profile that has a
+        /// player which is not a program supplies the chain here, so there is
+        /// no way to forget to install it.
+        std::function<QVector<Player>()> chain;
+        QString missingThemeAdvice;
+        QString missingPlayerAdvice;
+    };
+
     /// includeSystemThemeDirs=false restricts lookup to searchDirs only
     /// (used by tests; production keeps the full XDG theme chain).
     explicit SoundPlayer(Settings *settings,
@@ -44,7 +71,8 @@ public:
                          const QStringList &searchDirs = {},
                          bool includeSystemThemeDirs = true,
                          ToolFinder finder = {},
-                         QObject *parent = nullptr);
+                         QObject *parent = nullptr,
+                         Profile profile = {});
 
     static QString fileName(SoundEvent event);
     virtual ~SoundPlayer() = default;
@@ -54,6 +82,12 @@ public:
 
     /// First existing candidate path, empty when unresolvable.
     QString resolve(SoundEvent event) const;
+
+    /// The profile this player was built with ("freedesktop" by default).
+    /// --backend-info prints its name: "which sound system is this" is a
+    /// question about the machine, and the answer must come from the object
+    /// that plays, not from a guess beside it.
+    const Profile &profile() const { return m_profile; }
 
     /// Sound is the one feature whose failure is invisible: the translation
     /// finishes, nothing chirps, and "switched off", "no sound theme" and "no
@@ -68,12 +102,14 @@ public:
     virtual void play(SoundEvent event);
 
 private:
-    static QVector<Player> defaultChain(const ToolFinder &finder);
+    static QVector<Player> defaultChain(const ToolFinder &finder,
+                                       const QStringList &players);
 
     Settings *m_settings;
     QStringList m_dirs;
     QVector<Player> m_chain;
     ToolFinder m_find;
+    Profile m_profile;
 };
 
 } // namespace lt

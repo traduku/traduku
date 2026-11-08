@@ -52,6 +52,7 @@ have got wrong:
 | **Plasma on Wayland** | `traduku` | X RECORD on XWayland (helper process) | `wl-clipboard` | X RECORD | KNotification | Qt SNI (Plasma hosts SNI) | `~/.config/autostart`, written when you answer the first-run question | `arch-kde` and `ubuntu-kde`, ready line `(kde, wayland; clipboard=wl-clipboard hotkey=x11-record tray=yes)`, e2e **18 passed / 5 skipped** each |
 | **Plasma on X11** | `traduku` | XI2 raw on the X server | **X11 selection** | XI2 raw | KNotification | Qt SNI | as above | `debian-kde`, ready line `(kde, x11; clipboard=x11 hotkey=x11-xi2 tray=yes)`, e2e **17 passed / 6 skipped** |
 | **Bare X11 / other DE** | either | XI2 raw (RECORD fallback) | X11 selection, Qt last | XI2 raw | freedesktop D-Bus | Qt SNI if a host exists | XDG autostart (XFCE, i3, … honour it) | unit/integration only (`make x11test`, 37 tests against a real X server) |
+| **Windows 10/11 (win64)** | `traduku.exe` (MinGW, GUI subsystem) | `WH_KEYBOARD_LL` hook, passive | Qt (win32 clipboard) | — (the hook *is* the gesture; `RegisterHotKey` was rejected: it intercepts the copy) | tray balloon via `Shell_NotifyIcon` | `QSystemTrayIcon` | `HKCU\…\CurrentVersion\Run` | built 2026-11-08, Qt 6.8.3 + MinGW 13.1: **38/38** ctest rows (9 of them exist only here), `--translate`/`--selftest --live` measured against a mock SSE endpoint, the Run value verified by an independent reader. **Not yet walked: the live-desktop checklist** (ROADMAP.md §7.7) — no human has watched the icon appear |
 
 The hotkey column is a measurement, not a menu: on the same image the listener
 can be `x11-xi2` or the X RECORD helper, and the choice is printed by
@@ -308,6 +309,23 @@ compiler; KDE layer: KF6 (StatusNotifierItem, Notifications, GlobalAccel,
 DBusAddons); X11 layer: Xlib + XInput + XRecord (`x11`, `xtst`, `xi` dev
 packages). X11/KDE layers are optional at configure time
 (`-DLT_BUILD_X11=OFF`, `-DLT_BUILD_KDE=OFF`).
+
+### On Windows
+
+```
+cmake -B build-win -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_PREFIX_PATH=C:/Qt/6.8.3/mingw_64
+cmake --build build-win
+ctest --test-dir build-win
+```
+
+Qt 6.8.3 win64_mingw + MinGW 13.1 (either MSVC or MinGW works; the run above
+is the MinGW one), CMake and Ninja on `PATH`. No PkgConfig, no X11, no KF6:
+those layers are excluded by platform and CMake says so instead of pretending
+they were never asked for. The count differs per OS by design — 38 rows here,
+`tst_xdgautostart` is not registered because `XDG_CONFIG_HOME` is a variable
+Windows does not read, and 9 rows exist only on Windows (the real hook, the
+real registry hive). See ROADMAP.md §7 for what is measured and what still
+waits for a live desktop.
 
 Every module was written test-first (see ARCHITECTURE.md and the commit history):
 unit tests for each core piece, integration tests over an in-process

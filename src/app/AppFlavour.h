@@ -32,6 +32,14 @@ namespace lt {
 /// which screenshots itself). False for the console modes.
 bool needsWidgets(const QStringList &argv);
 
+/// True when this invocation was asked to print a report to the terminal:
+/// every console mode, and `--selftest` (which needs widgets *and* prints).
+/// The tray app is the one thing that is not, and the distinction is what
+/// decideConsoleAttach() needs: on Windows a GUI-subsystem binary has no
+/// console, and a user running `traduku --selftest` in cmd deserves more than
+/// an exit code.
+bool printsToTerminal(const QStringList &argv);
+
 /// True if Qt can choose a platform integration on its own, which means
 /// WAYLAND_DISPLAY or DISPLAY in this process's environment. Deliberately not
 /// "can we reach an X server at all": the clipboard finds XWayland through
@@ -63,6 +71,34 @@ void prepareCliEnvironment(const QStringList &argv);
 /// their session is gone, when what is gone is our knowledge of it.
 bool qpaWasForcedByUs();
 
+/*
+ * Whether a console mode has to go and get the console it does not have.
+ *
+ * On Windows the tray binary is a GUI-subsystem executable (no black window
+ * behind the tray), which also means it has no stdout: `traduku --translate`
+ * from cmd would stream a translation into nothing. The answer is
+ * AttachConsole(ATTACH_PARENT_PROCESS) - for the console modes only, and only
+ * when the process does not already have a console (a pipe, or a real
+ * terminal). Pure, so tests/unit/tst_appflavour.cpp pins the table; the call
+ * itself is platform/win/WinConsole.cpp.
+ */
+enum class ConsoleDecision { Attach, LeaveAsIs };
+ConsoleDecision decideConsoleAttach(bool onWindows, bool hasConsole,
+                                   bool trayApp);
+
+/*!
+ * The line a Qt diagnostic becomes on the terminal.
+ *
+ * A GUI-subsystem binary has no console, and Qt's default message handler on
+ * Windows notices that and routes qWarning() to OutputDebugString - invisible
+ * unless a debugger is attached. Measured: `traduku --selftest` with no usable
+ * desktop printed *nothing at all* and exited 2, because the advice it was
+ * supposed to print went to a debugger nobody had open. The handler in
+ * app/windows/main.cpp formats through this, and this is pure and tested
+ * (tests/unit/tst_appflavour.cpp).
+ */
+QString qtConsoleMessage(const QString &type, const QString &text);
+
 /// What to tell the user - and the exit code 2 to use - when the mode they
 /// asked for draws a window and this machine cannot give Qt a platform to do it
 /// in. Empty when the mode can run.
@@ -73,7 +109,11 @@ bool qpaWasForcedByUs();
 /// act on. A mode that needs a screen may refuse; it may not crash. The console
 /// modes are not refused - they are what a user reaches for when the desktop is
 /// broken - and a QT_QPA_PLATFORM of the user's own is treated as their answer.
-QString displayAdviceForMissingDisplay(const QStringList &argv, bool canPickPlatform);
+/// @param onWindows  which OS's missing variables to name: "no DISPLAY" is
+///                   correct on Linux and useless on Windows, where the
+///                   equivalent is "no interactive desktop session".
+QString displayAdviceForMissingDisplay(const QStringList &argv,
+                                       bool canPickPlatform, bool onWindows);
 
 } // namespace lt
 

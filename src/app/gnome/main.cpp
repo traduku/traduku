@@ -224,7 +224,7 @@ int main(int argc, char **argv)
     // says so in a sentence. `traduku --selftest` over ssh took a Qt fatal and
     // left a core dump instead, and a core dump is not an instruction.
     if (const QString noDisplay = lt::displayAdviceForMissingDisplay(
-            argvList, lt::qtCanPickAPlatform());
+            argvList, lt::qtCanPickAPlatform(), /*onWindows=*/false);
         !noDisplay.isEmpty()) {
         qWarning().noquote() << noDisplay;
         return 2;

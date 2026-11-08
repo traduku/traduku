@@ -5,12 +5,12 @@
 #include "core/settings.h"
 #include "core/sseparser.h"
 #include "core/unicodeescapes.h"
+#include "core/texttargets.h"
 #include "core/aligner.h"
 #include "core/chunker.h"
 #include "core/translationengine.h"
 #include "core/translationledger.h"
-#include "platform/qt/XdgAutostart.h"
-#include "platform/wl/WlClipboard.h"
+#include "app/PlatformBackends.h"
 #include "ui/TranslatorWindow.h"
 
 #include <QCoreApplication>
@@ -34,6 +34,15 @@ struct Runner
         if (!ok) {
             ++failures;
         }
+    }
+    /// A row that does not apply on this machine is said so, not deleted.
+    /// `--selftest` doubles as the document a user reads to learn what was
+    /// checked, and a line that is simply absent is indistinguishable from a
+    /// line that was never written (ROADMAP.md §4.5b: a skip carries its
+    /// reason, it does not carry silence).
+    void skip(const QString &what, const QString &why)
+    {
+        out << "SKIP  " << what << " - " << why << '\n';
     }
 };
 } // namespace
@@ -159,47 +168,48 @@ int runSelfTest(QTextStream &out, bool doLive, const QString &configPath)
                 "window: source|translation streaming");
     }
 
-    // 7. Clipboard backend selection logic (fake tool finder)
+    // 7. The clipboard of *this* platform. On Linux the row asks whether the
+    // wl-clipboard reader is chosen only when the tools are there; on Windows
+    // it asks whether the system clipboard round-trips text. What it may not do
+    // is ask a Linux question on Windows and come back green: a check that
+    // tests something the product does not do here is worse than no check,
+    // because it teaches the reader that green means nothing.
     {
-        auto finder = [](const QString &t) {
-            return QStringList{QStringLiteral("wl-paste"), QStringLiteral("wl-copy")}
-                           .contains(t)
-                ? QStringLiteral("/usr/bin/") + t
-                : QString();
-        };
-        // WlClipboard::isUsable pure-logic check (no spawning):
-        r.check(finder(QStringLiteral("wl-paste")).startsWith(QLatin1Char('/')),
-                "clipboard: tool finder logic (wayland backend available)");
+        const SelfTestRow row = probePlatformClipboard();
+        if (!row.skipReason.isEmpty()) {
+            r.skip(row.what, row.skipReason);
+        } else {
+            r.check(row.ok, qPrintable(row.what));
+        }
     }
 
-    // 7b. Unicode-escape safety net (BUG-1)
+    // 7b. Unicode-escape safety net (BUG-1). The MIME half of this row is the
+    // target negotiation both clipboard readers share, so it is a
+    // platform-free check even though its two callers are per-platform.
     {
         const QString esc = QStringLiteral(
-            "\\u0414\\u043b\\u044f \\u043d\\u0430\\u0447\\u0430\\u043b\\u0430");
+            "\u0414\u043b\u044f \u043d\u0430\u0447\u0430\u043b\u0430");
         r.check(decodeIfEscaped(esc).startsWith(QStringLiteral("Для начала"))
-                    && !looksEscaped(QStringLiteral("plain text with one \\u0410 code ref"))
-                    && WlClipboard::pickBestType(
+                    && !looksEscaped(QStringLiteral("plain text with one \u0410 code ref"))
+                    && TextTargets::pickBestMime(
                            {QStringLiteral("text/html"),
                             QStringLiteral("text/plain;charset=utf-8")})
                     == QLatin1String("text/plain;charset=utf-8"),
                 "unicode: escaped-clipboard safety net + MIME negotiation");
     }
 
-    // 8. XDG autostart enable/disable (isolated config home)
+    // 8. Autostart, through the same IAutostart the tray menu drives - the one
+    // this platform has, aimed at a scratch location of its own, and cleaned up
+    // afterwards. `traduku --selftest` may not decide for the user whether
+    // their app starts tomorrow morning.
     {
-        QTemporaryDir dir;
-        const QByteArray old = qgetenv("XDG_CONFIG_HOME");
-        qputenv("XDG_CONFIG_HOME", (dir.path() + "/config").toUtf8());
-        XdgAutostart a(QStringLiteral("traduku-selftest"),
-                       QStringLiteral("/bin/true"));
-        bool ok = !a.isEnabled() && a.setEnabled(true) && a.isEnabled()
-               && a.setEnabled(false) && !a.isEnabled();
-        if (!old.isEmpty()) {
-            qputenv("XDG_CONFIG_HOME", old);
+        const SelfTestRow row = probePlatformAutostart(
+            QCoreApplication::applicationFilePath());
+        if (!row.skipReason.isEmpty()) {
+            r.skip(row.what, row.skipReason);
         } else {
-            qunsetenv("XDG_CONFIG_HOME");
+            r.check(row.ok, qPrintable(row.what));
         }
-        r.check(ok, "autostart: xdg desktop entry write/remove");
     }
 
     // 9. Optional live end-to-end against the user's configured endpoint

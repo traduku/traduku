@@ -38,8 +38,9 @@ public:
     QString filePath() const;
     /// True when a package (or any system dir) installed the entry.
     bool isSystemInstalled() const;
-    /// What --backend-info and the menu report: is the app coming back.
-    QString diagnostic() const;
+    /// What --backend-info and the menu report: is the app coming back, and
+    /// which entry decided it (user, package, both).
+    QString diagnostic() const override;
 
 private:
     QStringList m_systemDirs;
