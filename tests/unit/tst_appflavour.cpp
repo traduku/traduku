@@ -18,11 +18,28 @@ using lt::needsWidgets;
 using lt::prepareCliEnvironment;
 using lt::planFirstRun;
 using lt::FirstRunPlan;
+using lt::guiRefusalNeedsDialog;
 
 class TestAppFlavour : public QObject
 {
     Q_OBJECT
 private slots:
+    /// A refusal nobody can read is not a refusal.
+    ///
+    /// The GUI mode used to print "there is no display" to stderr and exit 2
+    /// when double-clicked from Explorer - a terminal that does not exist. The
+    /// desktop bug itself is fixed (the question is now asked of the OS);
+    /// these rows keep the *symptom* from coming back as silence, because
+    /// silence is what made it survive.
+    void aRefusalWithoutATerminalGoesOnTheScreen()
+    {
+        QVERIFY(guiRefusalNeedsDialog(/*consoleAvailable=*/false));
+        // And with a terminal it stays text: a modal in front of someone
+        // reading a console, or in front of a CI runner, is a worse bug than
+        // the one being fixed here.
+        QVERIFY(!guiRefusalNeedsDialog(/*consoleAvailable=*/true));
+    }
+
     // First run is where a tray-less desktop is won or lost: the app is
     // installed, there is no icon (GNOME shows one only with the appindicator
     // extension), and nobody has told the user that Ctrl+C twice is the whole

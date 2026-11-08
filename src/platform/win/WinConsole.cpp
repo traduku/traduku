@@ -10,6 +10,9 @@
 #include <qt_windows.h>
 #include <io.h>
 #include <fcntl.h>
+#include <chrono>
+#include <cstdio>
+#include <thread>
 #endif
 
 namespace lt {
@@ -91,6 +94,31 @@ QString winModuleFilePath()
     return QString::fromWCharArray(buffer, static_cast<qsizetype>(n));
 #else
     return {};    // no PE image to ask; the caller falls back to Qt's own tree
+#endif
+}
+
+void winShowModalError(const QString &title, const QString &text, int timeoutMs)
+{
+#ifdef Q_OS_WIN
+    // Written as well as shown: whoever collects a log (the tests, a support
+    // ticket, OutputDebugString) should have the same sentence the screen did.
+    fputs(qPrintable(QStringLiteral("traduku: %1\n").arg(text)), stderr);
+    fflush(stderr);
+
+    if (timeoutMs > 0) {
+        // The watchdog is armed before the dialogue rather than after it
+        // returns, because the case it exists for is the one where the
+        // dialogue never returns.
+        std::thread([timeoutMs] {
+            std::this_thread::sleep_for(std::chrono::milliseconds(timeoutMs));
+            _exit(2);      // nobody is at this keyboard; leaving is the answer
+        }).detach();
+    }
+    MessageBoxW(nullptr,
+                reinterpret_cast<const wchar_t *>(text.utf16()),
+                title.isEmpty() ? L"Traduku"
+                                : reinterpret_cast<const wchar_t *>(title.utf16()),
+                MB_OK | MB_ICONWARNING | MB_TASKMODAL);
 #endif
 }
 

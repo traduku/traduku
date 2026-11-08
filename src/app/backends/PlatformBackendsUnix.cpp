@@ -9,6 +9,7 @@
 // XDG entry, and the sounds come from the freedesktop theme.
 
 #include "app/PlatformBackends.h"
+#include "app/AppFlavour.h"
 #include "app/SingleInstance.h"
 
 #include "core/settings.h"
@@ -154,6 +155,15 @@ InstanceTokenFactory defaultManagerTokenFactory()
     return [](const QString &name) -> std::unique_ptr<IInstanceToken> {
         return std::make_unique<SocketToken>(name + QStringLiteral(".token"));
     };
+}
+
+bool platformHasInteractiveDesktop()
+{
+    // Here the environment really is the fact: a compositor publishes the
+    // socket, and without one of these two Qt has nothing to connect to. The
+    // reading lives in AppFlavour so that the advice sentence and this answer
+    // cannot drift apart and disagree about whether a display exists.
+    return qtCanPickAPlatform();
 }
 
 } // namespace lt
