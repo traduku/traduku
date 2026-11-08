@@ -298,6 +298,15 @@ lt_add_test(tst_winbackends SOURCES unit/tst_winbackends.cpp
 target_include_directories(tst_winbackends PRIVATE ${CMAKE_SOURCE_DIR}/src)
 
 if(WIN32)
+    # A console mode that cannot get a screen must print and leave. Only a
+    # Windows row: on Unix the same failure is a message from Qt to stderr, and
+    # there is no modal dialog to hang a service session here.
+    lt_add_test(tst_consolefatal SOURCES integration/tst_consolefatal.cpp
+        LIBS Qt6::Core)
+    target_compile_definitions(tst_consolefatal PRIVATE
+        TRADUKU_EXE="$<TARGET_FILE:traduku>")
+    add_dependencies(tst_consolefatal traduku)
+
     # The real hook, the real SendInput, the real hive. These are the rows that
     # turn "the policy is right" into "the product works", and on a box with no
     # interactive desktop they skip with the reason rather than timing out.

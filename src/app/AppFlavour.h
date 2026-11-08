@@ -99,6 +99,21 @@ ConsoleDecision decideConsoleAttach(bool onWindows, bool hasConsole,
  */
 QString qtConsoleMessage(const QString &type, const QString &text);
 
+/*!
+ * Why a QT_QPA_PLATFORM that names an absent plugin must be refused, in words.
+ *
+ * The rule is not "the user asked for it, so honour it": Qt answers an unknown
+ * plugin name with a fatal message and, for a GUI-subsystem binary on Windows,
+ * a modal dialog - a process that waits for a hand that is not there (a
+ * scheduled task or an ssh session keeps one alive forever). So the refusal
+ * happens before Qt is asked, and it says what was asked, what is missing, and
+ * what this machine actually has.
+ *
+ * Pure: the caller collects the installed plugin names; this decides.
+ */
+QString platformPluginProblem(const QString &requestedQpa,
+                              const QStringList &installedBaseNames);
+
 /// What to tell the user - and the exit code 2 to use - when the mode they
 /// asked for draws a window and this machine cannot give Qt a platform to do it
 /// in. Empty when the mode can run.

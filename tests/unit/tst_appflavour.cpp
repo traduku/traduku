@@ -295,6 +295,45 @@ private slots:
                  QStringLiteral("traduku: no display here"));
     }
 
+    // A QPA the human named that is not installed is their mistake, but the
+    // app is the one that dies: Qt reaches qFatal/QMessageLogger and the GUI
+    // binary ends in a dialog that waits for a click (measured - a stray
+    // traduku.exe behind an invisible window, killed by hand). Refusing in
+    // words, before Qt is asked, is the product's job.
+    void aNamedButAbsentPlatformPluginIsRefusedInWords()
+    {
+        const QStringList installed = {QStringLiteral("windows"),
+                                       QStringLiteral("offscreen")};
+        // Nothing named: the platform picks its own default, not our business.
+        QVERIFY(lt::platformPluginProblem(QString(), installed).isEmpty());
+        // Named and present (including the "name:option" spelling Qt accepts).
+        QVERIFY(lt::platformPluginProblem(QStringLiteral("offscreen"), installed)
+                    .isEmpty());
+        QVERIFY(lt::platformPluginProblem(QStringLiteral("windows:darkmode=1"),
+                                          installed).isEmpty());
+        QVERIFY(lt::platformPluginProblem(QStringLiteral(" WINDOWS "), installed)
+                    .isEmpty());
+
+        const QString problem = lt::platformPluginProblem(
+            QStringLiteral("traduku-no-such-platform"), installed);
+        QVERIFY2(!problem.isEmpty(), "the typo was accepted");
+        QVERIFY2(problem.contains(QStringLiteral("traduku-no-such-platform")),
+                 qPrintable(QStringLiteral("the refused name is not echoed: ")
+                            + problem));
+        // ... and the fix has to be visible from here: an empty list would
+        // leave the reader guessing what this machine does have.
+        QVERIFY2(problem.contains(QStringLiteral("windows"))
+                     && problem.contains(QStringLiteral("offscreen")),
+                 qPrintable(QStringLiteral("the installed platforms are not "
+                                           "listed: ") + problem));
+        // A machine with no plugins at all is a different sentence: naming an
+        // empty choice list reads like a bug in the report.
+        const QString none = lt::platformPluginProblem(QStringLiteral("offscreen"), {});
+        QVERIFY2(!none.isEmpty(), "an empty install was accepted");
+        QVERIFY2(none.contains(QStringLiteral("no platform plugins")),
+                 qPrintable(none));
+    }
+
     void selftestIsATerminalReportNotTheTrayApp()
     {
         using lt::ConsoleDecision;

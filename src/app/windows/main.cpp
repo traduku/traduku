@@ -43,6 +43,9 @@
 #include "platform/win/WinSessionInfo.h"
 
 #include <QApplication>
+#include <QDir>
+#include <QFileInfo>
+#include <QLibraryInfo>
 #include <QElapsedTimer>
 #include <QGuiApplication>
 #include <QMessageBox>
@@ -51,6 +54,7 @@
 #include <QTextStream>
 #include <QTimer>
 
+#include <cstdlib>
 #include <memory>
 
 using namespace lt;
@@ -207,7 +211,55 @@ int main(int argc, char **argv)
         fputs(qPrintable(line), stderr);
         fputc('\n', stderr);
         fflush(stderr);
+        if (type == QtFatalMsg) {
+            // qFatal's contract is "print, then abort" - and for a
+            // GUI-subsystem binary, abort means a Windows error dialog and a
+            // process content to wait for a click that a service session never
+            // delivers (a stray traduku.exe behind an invisible window, killed
+            // by hand; tst_consolefatal catches it as a process that never
+            // returns). The line above already says what is missing and what to
+            // do about it, so leaving with the CLI's "this machine cannot do
+            // that" code is the honest ending - a crash code is an accident,
+            // not an answer.
+            _exit(2);
+        }
     });
+
+    // A QT_QPA_PLATFORM that names an absent plugin used to end the same way:
+    // Qt's fatal message, then the dialog. Asking the directory instead of Qt
+    // costs a readdir and buys a sentence.
+    {
+        QStringList installed;
+        const QString suffix = QStringLiteral(".dll");
+        QStringList dirs;
+        // Where plugins can be: beside this exe (a windeployqt package), and
+        // Qt's own tree when it is still installed - the development case.
+        // Asked of the OS and of QLibraryInfo, never of QCoreApplication:
+        // none of that exists yet, and asking prints "please instantiate the
+        // QApplication object first" and answers with the *current directory* -
+        // which once told a complete package that it had no plugins at all.
+        const QString self = lt::winModuleFilePath();
+        if (!self.isEmpty()) {
+            dirs << QFileInfo(self).absolutePath() + QStringLiteral("/platforms");
+        }
+        const QString qtPlugins = QLibraryInfo::path(QLibraryInfo::PluginsPath);
+        if (!qtPlugins.isEmpty() && QDir(qtPlugins).exists()) {
+            dirs << qtPlugins + QStringLiteral("/platforms");
+        }
+        for (const QString &d : dirs) {
+            for (const QString &f : QDir(d).entryList(
+                     QStringList{QStringLiteral("q*") + suffix}, QDir::Files)) {
+                installed << f.mid(1, f.size() - 1 - suffix.size());
+            }
+        }
+        installed.removeDuplicates();
+        if (const QString why = lt::platformPluginProblem(
+                qEnvironmentVariable("QT_QPA_PLATFORM"), installed);
+            !why.isEmpty()) {
+            QTextStream(stderr) << why << "\n";
+            return 2;
+        }
+    }
 
     if (const QString noDisplay = lt::displayAdviceForMissingDisplay(
             argvList, lt::qtCanPickAPlatform(), /*onWindows=*/true);
