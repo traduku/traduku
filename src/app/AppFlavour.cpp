@@ -193,6 +193,37 @@ void prepareCliEnvironment(const QStringList &argv)
 }
 
 
+QString platformPluginProblem(const QString &requestedQpa,
+                              const QStringList &installedBaseNames)
+{
+    // "windows:darkmode=1" is one platform with an option, so the name is what
+    // has to exist - comparing the whole string would refuse a valid setting.
+    const QString name = requestedQpa.section(QLatin1Char(':'), 0, 0).trimmed();
+    if (name.isEmpty()) {
+        return {};    // nobody named one; the platform picks its own default
+    }
+    for (const QString &p : installedBaseNames) {
+        if (p.compare(name, Qt::CaseInsensitive) == 0) {
+            return {};
+        }
+    }
+    if (installedBaseNames.isEmpty()) {
+        // A different sentence: "not among these" over an empty list reads like
+        // a bug in the report rather than a broken install.
+        return QStringLiteral(
+            "traduku: there are no platform plugins installed at all, so "
+            "QT_QPA_PLATFORM=%1 cannot be honoured and Qt would die asking. "
+            "This looks like an incomplete package (a stripped windeployqt "
+            "run, or the wrong directory was shipped)").arg(name);
+    }
+    return QStringLiteral(
+        "traduku: QT_QPA_PLATFORM=%1 names a platform that is not installed "
+        "here; this machine has: %2. Qt refuses to start without a platform "
+        "and a GUI binary would only put up a dialog nobody can click, so "
+        "nothing was attempted.").arg(name, installedBaseNames.join(
+                                            QStringLiteral(", ")));
+}
+
 QString qtConsoleMessage(const QString &type, const QString &text)
 {
     // "traduku: " in front, because these lines arrive interleaved with the

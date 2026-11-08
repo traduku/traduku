@@ -619,7 +619,7 @@ Windows; `tst_xdgautostart` на Windows не регистрируется — �
 | **W1** портативность | `SingleInstance` (никакого `getuid()`), `SoundPlayer::Profile` (файлы, плееры и советы приходят профилем, а не `#ifdef`), текст `--backend-info` про udev переписан |
 | **W2** `src/platform/win/` | `WinGesturePolicy` · `WinHotkeyBackend` + `WinKeyHook` · `WinNotifier` · `WinAutostart` + `WinRegistryStore` · `WinSessionInfo` · `WinSound`/`WinMediaPlayer` · `WinConsole` · `WinInstanceToken`. Портативная половина компилируется везде; `windows.h` — только в четырёх файлах под `if(WIN32)` |
 | **W3** `src/app/windows/main.cpp` | все режимы: `--translate` (проверено против живого mock-SSE: дельты дошли, `reasoning`-канал отброшен), `--selftest [--live]` (зелёный, включая live-строку), `--backend-info`, `--autostart=on/off`, `--notify-test`, трей-режим; `LT_TRAY`/`TRADUKU_TRAY` уважаются |
-| **W4** упаковка | **не сделано**: windeployqt-сборка, `.zip` + `SHA256SUMS` — впереди |
+| **W4** упаковка | `packaging/windows/build-portable.sh`: windeployqt + MinGW-рантайм поимённо + `qoffscreen`, zip (bsdtar) + `SHA256SUMS`, и проверка «запустили именно то, что собрали» в три sha256 + запуск распакованного пакета без Qt на PATH |
 | **W5** гейт | `grep -rn "Q_OS_\|_WIN32\|windows.h" src/core src/ui src/interfaces` пуст |
 
 Вердикты над гипотезами §7.3 — это и есть причина, по которой раздел был
@@ -673,6 +673,35 @@ Windows; `tst_xdgautostart` на Windows не регистрируется — �
 - Тесты реальных клавиш сначала падали по-тихому: `QTRY_VERIFY` без прокачки
   цикла событий — это гонка, а не проверка (`SendInput` low-уровневому хуку
   нужен работающий message loop).
+
+- **`AttachConsole` крал выведенный поток.** GUI-подсистема не имеет консоли,
+  поэтому консольные режимы подключаются к родительской - а подключение делало
+  `freopen("CONOUT$")`, то есть перенаправляло stdout на **экранный буфер**, а
+  не на канал, который попросил пользователь. `traduku --selftest > report.txt`
+  и `--translate | more` получали пустой поток; из терминала баг невидим (там
+  консоль уже есть и подключение не происходит), поэтому он и дожил до
+  прогона через трубу. `winHasConsole()` теперь спрашивает не «терминал ли
+  это» (`_isatty` на этом CRT возвращает значение *типа* устройства - 64, а не
+  0/1), а «есть ли у стандартных ручек куда писать»: pipe и файл - это тоже
+  ответ. Пин: `tst_consolefatal::redirectedStdoutStillGetsTheReport`.
+- **Qt-fatal у GUI-бинарника = диалог, а не строка.** Отказ был найден
+  packaging'ом: в пакет не попал `qoffscreen`, и `--selftest` с
+  `QT_QPA_PLATFORM=offscreen` показывал модальное окно и жил вечно (один
+  такой traduku.exe сняли только руками). Теперь отсутствующий плагин
+  отказывается словами до того, как Qt спросят (чистое
+  `platformPluginProblem()` + тест), а сам fatal-хэндлер после строки уходит
+  `_exit(2)`, а не `abort()`.
+- **W4 закрыт**: `packaging/windows/build-portable.sh` - windeployqt
+  (`--no-compiler-runtime`, поэтому MinGW-рантайм копируется поимённо), плюс
+  `qoffscreen` (иначе `--selftest` из пакета не запускается), zip через
+  **bsdtar из System32** (GNU tar из git bash на `-a` с суффиксом `.zip`
+  делает gzip-архив с именем .zip), `SHA256SUMS`, и три сверки sha256:
+  собранный exe = exe внутри архива = exe после распаковки, плюс запуск
+  распакованного пакета с PATH, в котором нет ни Qt, ни компилятора, плюс его
+  собственный `--selftest`.
+- Мелочь, которую видно только из пакета: `QFontDatabase: Cannot find font
+  directory <tmp>/lib/fonts` - Qt для mingw не возит шрифтов, Windows берёт их
+  системные. Строка остаётся: это сообщение Qt, а не наше «всё хорошо».
 
 **Чем этот прогон не является.** Linux-сборка в этот заход не пересобиралась:
 под рукой нет ни тулчейна, ни запущенного docker-демона, а правился общий код

@@ -15,6 +15,7 @@
 
 #include <QCoreApplication>
 #include <QLabel>
+#include <QDir>
 #include <QTemporaryDir>
 #include <QTextStream>
 #include <QTextEdit>
@@ -54,17 +55,34 @@ int runSelfTest(QTextStream &out, bool doLive, const QString &configPath)
     // 1. Settings: defaults + persistence
     {
         QTemporaryDir dir;
-        Settings s(dir.path() + QStringLiteral("/config.ini"));
-        r.check(s.apiUrl() == QLatin1String("http://localhost:11434/v1")
-                    && s.pressInterval() == 0.5 && s.copyResult(),
-                "settings: defaults");
-        s.setTargetLanguage(QStringLiteral("fr"));
-        s.setModel(QStringLiteral("selftest-model"));
-        s.save();
-        Settings s2(dir.path() + QStringLiteral("/config.ini"));
-        r.check(s2.targetLanguage() == QLatin1String("fr")
-                    && s2.model() == QLatin1String("selftest-model"),
-                "settings: save/reload round-trip");
+        // Defaults need no filesystem, so they stay a real row even here.
+        {
+            Settings s(dir.path() + QStringLiteral("/config.ini"));
+            r.check(s.apiUrl() == QLatin1String("http://localhost:11434/v1")
+                        && s.pressInterval() == 0.5 && s.copyResult(),
+                    "settings: defaults");
+        }
+        if (!dir.isValid()) {
+            // Not a settings failure: there is nowhere to write. Saying
+            // `FAIL  settings: save/reload round-trip` sends the reader into
+            // the persistence code to fix a machine that has no TMP/TEMP
+            // (measured in a portable package where exactly that happened).
+            r.skip(QStringLiteral("settings: save/reload round-trip"),
+                   QStringLiteral("no temporary directory to write a config "
+                                  "into (%1) - check TMP/TEMP/TMPDIR")
+                       .arg(dir.errorString().isEmpty()
+                                ? QDir::tempPath()
+                                : dir.errorString()));
+        } else {
+            Settings s(dir.path() + QStringLiteral("/config.ini"));
+            s.setTargetLanguage(QStringLiteral("fr"));
+            s.setModel(QStringLiteral("selftest-model"));
+            s.save();
+            Settings s2(dir.path() + QStringLiteral("/config.ini"));
+            r.check(s2.targetLanguage() == QLatin1String("fr")
+                        && s2.model() == QLatin1String("selftest-model"),
+                    "settings: save/reload round-trip");
+        }
     }
 
     // 2. Languages

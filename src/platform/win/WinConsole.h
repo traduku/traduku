@@ -6,6 +6,8 @@
 
 #pragma once
 
+#include <QString>
+
 namespace lt {
 
 /*!
@@ -29,6 +31,16 @@ bool winHasConsole();
 /// Attach to the parent's console and re-point stdout/stderr at it. A no-op
 /// when there is no parent console.
 void winAttachToParentConsole();
+
+/// The full path of this executable, from the OS.
+///
+/// QCoreApplication::applicationDirPath() is the usual answer and it is not
+/// available yet: the platform probe has to run *before* QApplication exists
+/// (that is the whole point of refusing instead of letting Qt abort), and
+/// asking Qt for it at that moment prints "please instantiate the QApplication
+/// object first" and answers with the current directory - which is how a
+/// deployed package was reported as having "no platform plugins at all".
+QString winModuleFilePath();
 
 
 } // namespace lt
