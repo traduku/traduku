@@ -176,7 +176,12 @@ int main(int argc, char **argv)
         argvList << QString::fromLocal8Bit(argv[i]);
     }
 
-    lt::prepareCliEnvironment(argvList);
+    // The platform answers, not the X11 variables: on a logged-in Windows
+    // desktop a console mode may use the real platform, and then
+    // --backend-info reports the tray that is actually there instead of
+    // "none (no tray host)" - which it said only because we had forced
+    // offscreen by asking a Unix question.
+    lt::prepareCliEnvironment(argvList, lt::platformHasInteractiveDesktop());
 
     // The console modes of a GUI binary. Decided by the same pure rule the unit
     // suite pins, carried out here (WinConsole.h).
@@ -261,10 +266,22 @@ int main(int argc, char **argv)
         }
     }
 
+    // The desktop question, of the OS that owns it. Asking
+    // AppFlavour::qtCanPickAPlatform() here (DISPLAY, WAYLAND_DISPLAY) made
+    // every Windows desktop answer "no display": the GUI mode printed advice
+    // into a terminal that a double-click does not have, and exited. tst_wingui
+    // runs the real exe with no arguments in both kinds of session.
     if (const QString noDisplay = lt::displayAdviceForMissingDisplay(
-            argvList, lt::qtCanPickAPlatform(), /*onWindows=*/true);
+            argvList, lt::platformHasInteractiveDesktop(), /*onWindows=*/true);
         !noDisplay.isEmpty()) {
-        qWarning().noquote() << noDisplay;
+        if (lt::guiRefusalNeedsDialog(winHasConsole())) {
+            // Started by double-click: there is no terminal for this sentence,
+            // so it goes on the screen - and leaves by itself if nobody is
+            // sitting at this machine.
+            winShowModalError(QStringLiteral("Traduku"), noDisplay, 30000);
+        } else {
+            qWarning().noquote() << noDisplay;
+        }
         return 2;
     }
 

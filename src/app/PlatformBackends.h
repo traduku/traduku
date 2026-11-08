@@ -58,4 +58,18 @@ struct SelfTestRow
 SelfTestRow probePlatformClipboard();
 SelfTestRow probePlatformAutostart(const QString &exePath);
 
+/// Can a window be opened here at all?
+///
+/// This is the question that decides whether the tray app starts or refuses, so
+/// it has to be asked of the OS that owns the answer. It used to be asked of
+/// `AppFlavour::qtCanPickAPlatform()`, which reads DISPLAY and WAYLAND_DISPLAY:
+/// on Windows those are never set, so the answer was "no display" on every
+/// Windows desktop in existence, the GUI mode printed its advice and exited 2 -
+/// and a double-click has no terminal to read the advice in, so the whole
+/// program looked like an icon that did nothing. The Unix half of the answer is
+/// still those variables, because there they really are the fact; the Windows
+/// half is the window station and the desktop object, which the platform layer
+/// already measures for --backend-info.
+bool platformHasInteractiveDesktop();
+
 } // namespace lt

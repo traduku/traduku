@@ -19,6 +19,7 @@
 #include "platform/win/WinInstanceToken.h"
 #include "platform/win/WinMediaPlayer.h"
 #include "platform/win/WinRegistryStore.h"
+#include "platform/win/WinSessionInfo.h"
 
 #include <QApplication>
 #include <QClipboard>
@@ -105,6 +106,15 @@ InstanceTokenFactory defaultManagerTokenFactory()
     return [](const QString &name) -> std::unique_ptr<IInstanceToken> {
         return std::make_unique<win::InstanceToken>(name);
     };
+}
+
+bool platformHasInteractiveDesktop()
+{
+    // The window station and the desktop object, which is what "is there a
+    // screen here" means on this OS - not DISPLAY, which Windows does not set
+    // and which once made every Windows desktop answer "no". See
+    // PlatformBackends.h and tst_wingui.
+    return queryWinSessionFacts().interactiveDesktop;
 }
 
 } // namespace lt

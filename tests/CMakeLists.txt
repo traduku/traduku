@@ -328,6 +328,15 @@ if(WIN32)
     # The real hook, the real SendInput, the real hive. These are the rows that
     # turn "the policy is right" into "the product works", and on a box with no
     # interactive desktop they skip with the reason rather than timing out.
+    # The double-click rows: does the GUI mode start on a desktop, and refuse in
+    # Windows terms when there is none. One of the two rows always skips, and
+    # that is the honest shape - a build box cannot see a logged-in desktop.
+    lt_add_test(tst_wingui SOURCES integration/tst_wingui.cpp
+        LIBS lt::platform_win lt::core Qt6::Core)
+    target_include_directories(tst_wingui PRIVATE ${CMAKE_SOURCE_DIR}/src)
+    target_compile_definitions(tst_wingui PRIVATE TRADUKU_EXE="$<TARGET_FILE:traduku>")
+    add_dependencies(tst_wingui traduku)
+
     lt_add_test(tst_winhook_real SOURCES integration/tst_winhook_real.cpp
         LIBS lt::platform_win lt::core lt::interfaces Qt6::Widgets)
     target_include_directories(tst_winhook_real PRIVATE ${CMAKE_SOURCE_DIR}/src)

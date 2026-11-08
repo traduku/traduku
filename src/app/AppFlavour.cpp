@@ -105,6 +105,11 @@ bool qpaWasForcedByUs()
     return g_forcedOffscreen;
 }
 
+bool guiRefusalNeedsDialog(bool consoleAvailable)
+{
+    return !consoleAvailable;
+}
+
 QString displayAdviceForMissingDisplay(const QStringList &argv, bool canPickPlatform,
                                       bool onWindows)
 {
@@ -172,10 +177,10 @@ FirstRunPlan planFirstRun(const QString &shell, bool trayAvailable,
     return plan;
 }
 
-void prepareCliEnvironment(const QStringList &argv)
+void prepareCliEnvironment(const QStringList &argv, bool qtCanPickPlatform)
 {
     const QpaDecision decision = decideQpa(argv, qEnvironmentVariableIsSet("QT_QPA_PLATFORM"),
-                                            qtCanPickAPlatform());
+                                            qtCanPickPlatform);
     if (decision != QpaDecision::ForceOffscreen) {
         return;
     }

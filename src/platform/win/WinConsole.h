@@ -42,5 +42,15 @@ void winAttachToParentConsole();
 /// deployed package was reported as having "no platform plugins at all".
 QString winModuleFilePath();
 
+/// Put a sentence on the screen, for a refusal that has no terminal to be read
+/// in. Called only when guiRefusalNeedsDialog() said so.
+///
+/// `timeoutMs` is not a courtesy: a modal on a machine nobody is sitting at - a
+/// session that disconnected, an unattended autostart - is a process waiting
+/// for a click that will never come, so several Trauku's would accumulate
+/// behind invisible windows, which is the same failure as the silent exit with
+/// its opposite symptom. The watchdog leaves with the CLI's code instead.
+void winShowModalError(const QString &title, const QString &text, int timeoutMs);
+
 
 } // namespace lt

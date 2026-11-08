@@ -63,7 +63,15 @@ QpaDecision decideQpa(const QStringList &argv, bool qpaSetByHuman, bool qtCanPic
 /// modes - the tray app with no desktop is a broken desktop, not a headless
 /// tool, and must fail visibly rather than run invisibly. Does nothing when
 /// QT_QPA_PLATFORM is already set: a human's choice outranks our guess.
-void prepareCliEnvironment(const QStringList &argv);
+///
+/// `qtCanPickPlatform` is the platform's answer, not a variable reading: the
+/// default is the Unix one (DISPLAY/WAYLAND_DISPLAY), and the Windows main
+/// passes its window-station fact instead. Passing the Unix reading on Windows
+/// made every console mode force offscreen even on a logged-in desktop, which
+/// then made `--backend-info` report `tray: none (no tray host)` on a machine
+/// with a tray - a diagnostic that contradicts the product it describes.
+void prepareCliEnvironment(const QStringList &argv,
+                           bool qtCanPickPlatform = qtCanPickAPlatform());
 
 /// True when the call above is what put QT_QPA_PLATFORM=offscreen there. The
 /// backend report says so on its session line: "session: offscreen" read on
@@ -127,6 +135,18 @@ QString platformPluginProblem(const QString &requestedQpa,
 /// @param onWindows  which OS's missing variables to name: "no DISPLAY" is
 ///                   correct on Linux and useless on Windows, where the
 ///                   equivalent is "no interactive desktop session".
+/// Where a refusal of the GUI mode has to be put: the screen or the terminal.
+///
+/// A program started by double-click has no terminal, so writing a sentence to
+/// stderr is writing it nowhere: the process exits 2 and the desktop shows
+/// nothing at all - indistinguishable from a shortcut that was never clicked,
+/// which is how the "double-click does nothing" bug survived long enough to
+/// reach a person instead of a test log. A refusal is only a refusal if the
+/// user can read it, so with no console it becomes a dialogue. With a console
+/// it stays a line of text: putting a modal in front of someone reading a
+/// terminal, or in front of a CI runner, would be worse than the silence.
+bool guiRefusalNeedsDialog(bool consoleAvailable);
+
 QString displayAdviceForMissingDisplay(const QStringList &argv,
                                        bool canPickPlatform, bool onWindows);
 
