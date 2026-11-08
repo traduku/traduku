@@ -187,6 +187,9 @@ private slots:
         QCOMPARE(QCoreApplication::applicationName(), QStringLiteral("traduku"));
         QCOMPARE(prettyShellName(QStringLiteral("gnome")), QStringLiteral("GNOME"));
         QCOMPARE(prettyShellName(QStringLiteral("kde")), QStringLiteral("KDE Plasma"));
+        // The Windows shell must introduce itself as Windows: a report whose
+        // own header is wrong is a report nobody trusts afterwards.
+        QCOMPARE(prettyShellName(QStringLiteral("windows")), QStringLiteral("Windows"));
     }
 
     void panelNameIsTheSameOnBothShells()

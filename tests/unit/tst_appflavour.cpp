@@ -149,23 +149,40 @@ private slots:
         qunsetenv("DISPLAY");
         qunsetenv("WAYLAND_DISPLAY");
         QVERIFY(lt::displayAdviceForMissingDisplay(
-                    {QStringLiteral("traduku"), QStringLiteral("--selftest")}, false)
+                    {QStringLiteral("traduku"), QStringLiteral("--selftest")}, false, false)
                 .contains(QStringLiteral("QT_QPA_PLATFORM")));
         QVERIFY(!lt::displayAdviceForMissingDisplay(
-                     {QStringLiteral("traduku")}, false).isEmpty());
+                     {QStringLiteral("traduku")}, false, false).isEmpty());
         // The console modes are rescued by decideQpa() and must not be refused:
         // they are the commands a user runs precisely when the desktop is broken.
         QVERIFY(lt::displayAdviceForMissingDisplay(
-                    {QStringLiteral("traduku"), QStringLiteral("--backend-info")}, false).isEmpty());
+                    {QStringLiteral("traduku"), QStringLiteral("--backend-info")}, false, false).isEmpty());
         QVERIFY(lt::displayAdviceForMissingDisplay(
-                    {QStringLiteral("traduku"), QStringLiteral("--autostart=off")}, false).isEmpty());
+                    {QStringLiteral("traduku"), QStringLiteral("--autostart=off")}, false, false).isEmpty());
         // With a display - or with a QPA of the user's own - there is nothing to
         // advise, and the modes run as they always did.
         QVERIFY(lt::displayAdviceForMissingDisplay(
-                    {QStringLiteral("traduku"), QStringLiteral("--selftest")}, true).isEmpty());
+                    {QStringLiteral("traduku"), QStringLiteral("--selftest")}, true, false).isEmpty());
         qputenv("QT_QPA_PLATFORM", "offscreen");   // the user answered already
         QVERIFY(lt::displayAdviceForMissingDisplay(
-                    {QStringLiteral("traduku"), QStringLiteral("--selftest")}, false).isEmpty());
+                    {QStringLiteral("traduku"), QStringLiteral("--selftest")}, false, false).isEmpty());
+    }
+
+    // The same refusal on Windows must not send the user to export DISPLAY.
+    void theMissingDisplayAdviceNamesTheOperatingSystemItIsSpeakingOn()
+    {
+        QProcessEnvironmentGuard g;
+        qunsetenv("QT_QPA_PLATFORM");
+        const QStringList selftest = {QStringLiteral("traduku"),
+                                      QStringLiteral("--selftest")};
+        const QString win = lt::displayAdviceForMissingDisplay(selftest, false, true);
+        QVERIFY(!win.isEmpty());
+        QVERIFY2(win.contains(QStringLiteral("desktop session")), qPrintable(win));
+        QVERIFY2(!win.contains(QStringLiteral("WAYLAND_DISPLAY")),
+                 "a Windows refusal that tells the user to export DISPLAY is "
+                 "advice nobody can follow");
+        const QString unix = lt::displayAdviceForMissingDisplay(selftest, false, false);
+        QVERIFY2(unix.contains(QStringLiteral("DISPLAY")), qPrintable(unix));
     }
 
     void aHumanChosenQpaIsNeverOverwritten()
@@ -225,6 +242,99 @@ private slots:
         // The report says "(no display here)" only when it was our doing, and
         // this is the case where it was.
         QVERIFY(qpaWasForcedByUs());
+    }
+
+    // ---- Windows: the console a GUI-subsystem binary does not have -------
+    //
+    // `traduku --translate` from cmd on Windows is a GUI executable with no
+    // console of its own: without attaching to the parent's, the streamed
+    // translation and every error go nowhere and only the exit code comes
+    // back. The tray app must NOT do it - it has no parent console, and
+    // "attach to whoever launched me" from Explorer is a bug waiting for a
+    // shell that has one.
+    void consoleAttachOnlyForConsoleModesOnWindows()
+    {
+        using lt::ConsoleDecision;
+        QCOMPARE(lt::decideConsoleAttach(true, false, false), ConsoleDecision::Attach);
+        QCOMPARE(lt::decideConsoleAttach(true, true, false), ConsoleDecision::LeaveAsIs);
+        QCOMPARE(lt::decideConsoleAttach(true, false, true), ConsoleDecision::LeaveAsIs);
+        // Not Windows: the process already has the terminal it was started
+        // from, and attaching to a parent is nonsense there.
+        QCOMPARE(lt::decideConsoleAttach(false, false, false), ConsoleDecision::LeaveAsIs);
+        QCOMPARE(lt::decideConsoleAttach(false, false, true), ConsoleDecision::LeaveAsIs);
+    }
+
+    // --selftest needs widgets *and* prints, so it must not be classified as
+    // the tray app: on Windows that classification is the difference between a
+    // report and a silent exit code.
+    // A GUI binary has no console, and Qt's default handler on Windows notices
+    // and sends qWarning() to the debugger. These rows pin the replacement:
+    // every diagnostic that matters reaches the terminal, and says who said it.
+    void qtDiagnosticsBecomeAttributableTerminalLines()
+    {
+        QCOMPARE(lt::qtConsoleMessage(QStringLiteral("warning"),
+                                       QStringLiteral("no display")),
+                 QStringLiteral("traduku: no display"));
+        QCOMPARE(lt::qtConsoleMessage(QStringLiteral("fatal"),
+                                       QStringLiteral("boom")),
+                 QStringLiteral("traduku: boom"));
+        // Debug chatter keeps its text but does not get the product prefix:
+        // it is not a message to the user, and dressing it as one makes the
+        // report unreadable.
+        QCOMPARE(lt::qtConsoleMessage(QStringLiteral("debug"),
+                                      QStringLiteral("hook installed")),
+                 QStringLiteral("hook installed"));
+        // An empty diagnostic must produce no line at all, or the handler
+        // prints blank rows between the selftest's PASS lines.
+        QVERIFY(lt::qtConsoleMessage(QStringLiteral("warning"), QString()).isEmpty());
+        // Advice strings are also printed directly and already carry the
+        // prefix; adding it again gives "traduku: traduku: ...".
+        QCOMPARE(lt::qtConsoleMessage(
+                     QStringLiteral("warning"),
+                     QStringLiteral("traduku: no display here")),
+                 QStringLiteral("traduku: no display here"));
+    }
+
+    void selftestIsATerminalReportNotTheTrayApp()
+    {
+        using lt::ConsoleDecision;
+        QVERIFY(lt::printsToTerminal({QStringLiteral("traduku"),
+                                      QStringLiteral("--selftest")}));
+        QVERIFY(lt::printsToTerminal({QStringLiteral("traduku"),
+                                      QStringLiteral("--selftest"),
+                                      QStringLiteral("--live")}));
+        QVERIFY(lt::printsToTerminal({QStringLiteral("traduku"),
+                                      QStringLiteral("--backend-info")}));
+        QVERIFY(!lt::printsToTerminal({QStringLiteral("traduku")}));
+        QVERIFY(lt::needsWidgets({QStringLiteral("traduku"),
+                                  QStringLiteral("--selftest")}));
+        // ... and the two rules still disagree in exactly the way they should.
+        QCOMPARE(lt::decideConsoleAttach(true, false,
+                                         !lt::printsToTerminal({QStringLiteral("traduku"),
+                                                                QStringLiteral("--selftest")})),
+                 ConsoleDecision::Attach);
+        QCOMPARE(lt::decideConsoleAttach(true, false,
+                                         !lt::printsToTerminal({QStringLiteral("traduku")})),
+                 ConsoleDecision::LeaveAsIs);
+    }
+
+    // ---- Windows: what the first launch asks ----------------------------
+    //
+    // Windows ships no package and installs no autostart entry, so the app
+    // must ASK (the Plasma rule), and it must not be told the tray is missing
+    // unless the tray really is: on this OS a shell is always there.
+    void windowsFirstRunAsksAboutAutostart()
+    {
+        const FirstRunPlan win = lt::planFirstRun(QStringLiteral("windows"), true, false);
+        QVERIFY(win.greet);
+        QVERIFY(win.askAboutAutostart);
+        QVERIFY(win.openSettings);        // nothing to translate with yet
+        QVERIFY(!win.explainMissingIcon); // tray available -> nothing to explain
+
+        const FirstRunPlan winTrayless = lt::planFirstRun(QStringLiteral("windows"),
+                                                         false, true);
+        QVERIFY(winTrayless.explainMissingIcon);
+        QVERIFY(!winTrayless.openSettings);   // endpoint set: do not block them
     }
 
 private:

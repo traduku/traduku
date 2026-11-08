@@ -4,8 +4,8 @@
 #include "core/settings.h"
 #include "core/translationengine.h"
 
-#include "platform/qt/SessionInfo.h"
-#include "platform/wl/ClipboardFactory.h"
+#include "app/PlatformBackends.h"
+#include "interfaces/iclipboard.h"
 
 #include <QCommandLineOption>
 #include <QCommandLineParser>
@@ -20,8 +20,16 @@ namespace lt {
 
 QString prettyShellName(const QString &shell)
 {
-    return shell == QLatin1String("gnome") ? QStringLiteral("GNOME")
-                                           : QStringLiteral("KDE Plasma");
+    // A name the user reads in --help and `--version`. "windows" falling
+    // through to "KDE Plasma" would be the sort of small lie that makes every
+    // other line of the report suspect.
+    if (shell == QLatin1String("gnome")) {
+        return QStringLiteral("GNOME");
+    }
+    if (shell == QLatin1String("windows")) {
+        return QStringLiteral("Windows");
+    }
+    return QStringLiteral("KDE Plasma");
 }
 
 namespace {
@@ -63,9 +71,11 @@ void addOptions(QCommandLineParser &parser, const QString &shell)
                         "Support-friendly: no clipboard, no model call.")},
         {QStringLiteral("autostart"),
          QStringLiteral("on | off | status: whether Traduku starts at login. "
-                        "The tray menu is the only other way to reach this, "
-                        "and on GNOME the panel icon needs a shell extension "
-                        "to be visible at all."),
+                        "The tray menu is the only other way to reach this%1.")
+             .arg(shell == QLatin1String("gnome")
+                      ? QStringLiteral(", and on GNOME the panel icon needs a "
+                                       "shell extension to be visible at all")
+                      : QString()),
          QStringLiteral("on|off|status")},
         {QStringLiteral("backend-info"),
          QStringLiteral("Print which backend was chosen for clipboard, "
@@ -241,9 +251,10 @@ void runOneShotTranslation(Settings *settings, const QString &text,
 
 int runOneShotMode(QCoreApplication &app, Settings &settings, const CliOptions &cli)
 {
-    // Chosen by session, not by QPA plugin: under a forced offscreen platform
-    // the Qt clipboard reads nothing on Wayland while wl-paste works.
-    auto clipboard = createClipboard(sessionType(), {}, QGuiApplication::clipboard());
+    // Chosen by session, not by QPA plugin - and chosen in exactly one place
+    // per OS (app/PlatformBackends): the tray app and this one-shot mode must
+    // not be two opinions about which reader the machine has.
+    auto clipboard = createDefaultClipboard(QGuiApplication::clipboard());
     const QString text =
         (cli.text.isNull() ? clipboard->text() : cli.text).trimmed();
     if (text.isEmpty()) {

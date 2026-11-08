@@ -214,7 +214,7 @@ int main(int argc, char **argv)
     // sentence instead of taking a Qt fatal and a core dump (measured over ssh:
     // `traduku --selftest` gave "Aborted (core dumped)", rc 134).
     if (const QString noDisplay = lt::displayAdviceForMissingDisplay(
-            argvList, lt::qtCanPickAPlatform());
+            argvList, lt::qtCanPickAPlatform(), /*onWindows=*/false);
         !noDisplay.isEmpty()) {
         qWarning().noquote() << noDisplay;
         return 2;
