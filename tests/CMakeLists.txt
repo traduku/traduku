@@ -229,6 +229,19 @@ add_test(NAME versions_agree
 add_test(NAME packaging_tracked
          COMMAND ${BASH_PROGRAM} ${CMAKE_CURRENT_SOURCE_DIR}/cmake/test_packaging_tracked.sh
                  ${CMAKE_SOURCE_DIR})
+
+# The tray label reached a user as "Traduku 0.3.0 ? tray qt" because a UTF-8
+# byte sequence was pasted into a QStringLiteral() - which builds UTF-16, one
+# QChar per byte. Every unit test that reads that string agrees with the bug, so
+# the only gate that works is one that reads the source. Comments are exempt: a
+# comment that quotes the mojibake it is describing is the only way to name that
+# character, and a gate that punishes the incident report teaches people to
+# delete incident reports.
+add_test(NAME string_literals
+         COMMAND ${BASH_PROGRAM} ${CMAKE_CURRENT_SOURCE_DIR}/cmake/test_string_literals.sh
+                 ${CMAKE_SOURCE_DIR})
+set_tests_properties(string_literals PROPERTIES TIMEOUT 120
+    ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:${_bash_dir}")
 # The interpreter's own directory goes on PATH: these are shell scripts using
 # sed and head, and a Git bash whose coreutils are not on PATH fails in a way
 # that reads like a broken gate rather than a missing toolchain.
@@ -305,6 +318,16 @@ target_include_directories(tst_winnotifier PRIVATE ${CMAKE_SOURCE_DIR}/src)
 lt_add_test(tst_winsound SOURCES unit/tst_winsound.cpp
     LIBS lt::platform_win lt::core lt::interfaces)
 target_include_directories(tst_winsound PRIVATE ${CMAKE_SOURCE_DIR}/src)
+
+# The sound path AT STARTUP, in a process of its own: the row asks whether the
+# shell created the player, and every other sound row in this suite plays a
+# cue, which creates it. A row that runs after one is not a row about startup.
+# Windows-only because WinMediaPlayer.cpp is Windows-only.
+if(WIN32)
+    lt_add_test(tst_winsoundstart SOURCES unit/tst_winsoundstart.cpp
+        LIBS lt::platform_win lt::core lt::interfaces)
+    target_include_directories(tst_winsoundstart PRIVATE ${CMAKE_SOURCE_DIR}/src)
+endif()
 
 lt_add_test(tst_winsessioninfo SOURCES unit/tst_winsessioninfo.cpp
     LIBS lt::platform_win lt::core)

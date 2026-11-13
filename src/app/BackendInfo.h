@@ -32,6 +32,11 @@ struct BackendReport
     QString notifier;
     QString tray;
     QString audio;
+    /// One line per cue of the sound profile - "started: <file>", or the
+    /// advice for the cue that cannot resolve. A profile of three cues that
+    /// prints one line cannot tell "the start cue is silent" from "the finish
+    /// cue is silent", and the report is what a user with no sound reads.
+    QStringList audioCues;
     /// Whether the app comes back at login, and who decided: the package
     /// (/etc/xdg/autostart) or the user (~/.config/autostart).
     QString autostart;

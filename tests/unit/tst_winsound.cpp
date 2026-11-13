@@ -10,7 +10,21 @@
 
 #include <QDir>
 #include <QFile>
+#include <QFileInfo>
 #include <QTemporaryDir>
+#include <memory>
+
+#ifdef Q_OS_WIN
+// The rows at the end of this file ask the machine it runs on, and the media
+// player exists only here. WinMediaPlayer.cpp is the one file in the port that
+// links Qt Multimedia, so this include is the one place a sound test may ask
+// what the player is wired to.
+#include "platform/win/WinMediaPlayer.h"
+#include "core/settings.h"
+#include <QAudioDevice>
+#include <QMediaDevices>
+#include <QMediaPlayer>
+#endif
 
 using namespace lt;
 
@@ -130,6 +144,90 @@ private slots:
                                         "players: ") + st.problem));
     }
 
+    // ---- the rows that ask THIS machine --------------------------------
+    //
+    // Everything above writes its own machine: a temporary directory holding
+    // the files a machine *could* have. Such a row stays green on a machine
+    // whose %WINDIR%\Media is empty - and an empty sound folder is precisely
+    // the machine of the user who reports "there is no sound". The hand walk
+    // of ROADMAP.md §7.8 found the start cue silent with every one of the rows
+    // above green, so a row that asks the real folder is not a duplicate of
+    // them, it is the one they cannot be.
+    void everyCueOfTheProfileResolvesOnThisMachine()
+    {
+        const QString media = windowsMediaDir();
+        if (media.isEmpty() || !QFileInfo::exists(media)) {
+            QSKIP("no %WINDIR%\\Media on this machine - there is no theme to resolve");
+        }
+        QTemporaryDir dir;
+        QVERIFY(dir.isValid());
+        Settings s(dir.path() + QStringLiteral("/config.ini"));
+        SoundPlayer player(&s, {}, {media}, false,
+                           [](const QString &prog) { return prog; },
+                           nullptr, windowsSoundProfile());
+        for (SoundEvent e : {SoundEvent::Started, SoundEvent::Finished,
+                             SoundEvent::Failed}) {
+            const QString file = player.resolve(e);
+            QVERIFY2(!file.isEmpty(),
+                     qPrintable(QStringLiteral("no candidate of this profile exists in ")
+                                + media));
+            QVERIFY2(QFile::exists(file), qPrintable(file));
+            // "Resolves" is not the same as "the report is clean": status()
+            // is the sentence --backend-info prints, and a cue that resolves
+            // must not come back with a problem attached to it.
+            const auto st = player.status(e);
+            QVERIFY2(st.problem.isEmpty(), qPrintable(st.problem));
+        }
+    }
+
+#ifdef Q_OS_WIN
+    /// A QMediaPlayer with no QAudioOutput is the most convincing silent bug
+    /// in Qt 6: it loads the file, decodes it, sits in PlayingState, reports
+    /// NoError - and puts nothing on the speaker, because Qt 6 removed the
+    /// implicit audio output the player used to own.
+    ///
+    /// The product's own contract makes that observable: play() returns true
+    /// only for a player that can reach a speaker, because the return value is
+    /// what stops the chain from trying powershell. So the assertion is not
+    /// "did a sound come out of the laptop" (only a person can answer that, and
+    /// one did, in §7.8) - it is "the player that claims success is wired to an
+    /// output at all".
+    void theInProcessPlayerIsWiredToASpeaker()
+    {
+        const QString cue = firstCueOnThisMachine();
+        if (cue.isEmpty()) {
+            QSKIP("no %WINDIR%\\Media cue on this machine to play");
+        }
+        const bool played = windowsMediaPlayerPlayer()(cue);
+        QMediaPlayer *player = windowsSharedMediaPlayer();
+        QVERIFY2(player, "playing a cue did not create the player the app reuses");
+        QVERIFY2(played,
+                 qPrintable(QStringLiteral("the in-process player refused ") + cue
+                            + QStringLiteral("; the chain would fall through to "
+                                            "powershell, and the report below is "
+                                            "about a player nobody uses")));
+        QVERIFY2(player->audioOutput() != nullptr,
+                 "QMediaPlayer played a cue and reported success with no "
+                 "QAudioOutput attached: Qt 6 decodes and plays to nobody in "
+                 "that state, which is the silent start cue of ROADMAP.md "
+                 "\u00a77.8 item 2");
+    }
+
+    /// The failure half of the same contract: a machine with no speaker must
+    /// hear "nothing can be played here", not silence dressed as success.
+    void aCueWithNoSpeakerIsRefusedSoTheChainFallsThrough()
+    {
+        if (!QMediaDevices::audioOutputs().isEmpty()) {
+            QSKIP("this machine has a speaker; the mute path cannot be measured here");
+        }
+        const QString cue = firstCueOnThisMachine();
+        if (cue.isEmpty()) {
+            QSKIP("no cue file to hand a player that has nowhere to play it");
+        }
+        QVERIFY(!windowsMediaPlayerPlayer()(cue));
+    }
+#endif
+
     void theFreedesktopDefaultIsStillTheDefault()
     {
         // The Windows profile must not become the profile: a Linux shell that
@@ -145,6 +243,30 @@ private slots:
         QVERIFY(withFile.resolve(SoundEvent::Finished).endsWith(
             QStringLiteral("complete.oga")));
     }
+
+private:
+#ifdef Q_OS_WIN
+    /// The first candidate of the first cue that this machine really has. The
+    /// rows above invent a media dir; these two ask for a file the OS ships,
+    /// because "the start cue is silent" is a claim about one.
+    QString firstCueOnThisMachine() const
+    {
+        const QString media = windowsMediaDir();
+        if (media.isEmpty()) {
+            return {};
+        }
+        for (SoundEvent e : {SoundEvent::Started, SoundEvent::Finished,
+                             SoundEvent::Failed}) {
+            for (const QString &name : windowsSoundCandidates(e)) {
+                const QString path = QDir(media).filePath(name);
+                if (QFile::exists(path)) {
+                    return path;
+                }
+            }
+        }
+        return {};
+    }
+#endif
 };
 
 QTEST_GUILESS_MAIN(TestWinSound)

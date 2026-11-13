@@ -6,8 +6,14 @@
 
 #include "app/AppFlavour.h"
 
+#include "core/settings.h"
+#include "core/soundplayer.h"
+
 #include <QCoreApplication>
+#include <QDir>
+#include <QFile>
 #include <QObject>
+#include <QTemporaryDir>
 #include <QtTest>
 
 using lt::qpaWasForcedByUs;
@@ -20,7 +26,10 @@ using lt::planFirstRun;
 using lt::FirstRunPlan;
 using lt::guiRefusalNeedsDialog;
 using lt::trayStatusLabel;
-using lt::trayStatusLabel;
+using lt::soundReport;
+using lt::SoundReport;
+using lt::Settings;
+using lt::SoundPlayer;
 
 class TestAppFlavour : public QObject
 {
@@ -403,6 +412,92 @@ private slots:
         QCOMPARE(lt::decideConsoleAttach(true, false,
                                          !lt::printsToTerminal({QStringLiteral("traduku")})),
                  ConsoleDecision::LeaveAsIs);
+    }
+
+    // ---- the sound report names every cue, on every shell --------------
+    //
+    // Three copies of this block lived in the three main()s, each printing the
+    // status of SoundEvent::Finished alone. The Windows hand walk (ROADMAP.md
+    // \u00a77.8 item 2) then read "the profile has three cues, the report names
+    // one" - and a report that names one cue cannot tell you which of the other
+    // two is the silent one. Same rule that moved the tray line here: one
+    // portable function, tested on every platform, no main() able to get it
+    // wrong again.
+    void everyCueIsNamedInTheSoundReport()
+    {
+        QTemporaryDir dir;
+        QVERIFY(dir.isValid());
+        for (const char *n : {"bell.oga", "complete.oga", "dialog-error.oga"}) {
+            QFile f(QDir(dir.path()).filePath(QLatin1String(n)));
+            QVERIFY(f.open(QIODevice::WriteOnly));
+            f.write("x");
+            f.close();
+        }
+        Settings s(QDir(dir.path()).filePath(QStringLiteral("config.ini")));
+        SoundPlayer player(&s, {}, {dir.path()}, false,
+                           [](const QString &prog) { return prog; });
+
+        const SoundReport r = soundReport(player);
+        QVERIFY2(r.summary.contains(QStringLiteral("freedesktop")),
+                 qPrintable(QStringLiteral("the report does not name the profile: ")
+                            + r.summary));
+        QVERIFY2(r.cues.size() == 3,
+                 qPrintable(QStringLiteral("a profile with three cues, a report with ")
+                            + QString::number(r.cues.size())));
+        const QStringList events{QStringLiteral("started"), QStringLiteral("finished"),
+                                 QStringLiteral("failed")};
+        for (int i = 0; i < r.cues.size(); ++i) {
+            QVERIFY2(r.cues.at(i).startsWith(events.at(i) + QLatin1Char(':')),
+                     qPrintable(QStringLiteral("cue ") + QString::number(i)
+                                + QStringLiteral(" is not the event it should be: ")
+                                + r.cues.at(i)));
+            // Resolved: the line carries a path, and that file exists.
+            const QString path = r.cues.at(i).section(QLatin1Char(':'), 1).trimmed();
+            QVERIFY2(QFile::exists(path),
+                     qPrintable(QStringLiteral("a clean cue names a file that is "
+                                               "not there: ") + path));
+        }
+    }
+
+    /// A cue that cannot resolve has to say why, per cue: "no sound" from one
+    /// user is "nothing is wrong" from the report when the report only looked
+    /// at the event that happens to work.
+    void anUnresolvableCueIsReportedWithItsProblem()
+    {
+        QTemporaryDir dir;
+        QVERIFY(dir.isValid());
+        Settings s(QDir(dir.path()).filePath(QStringLiteral("config.ini")));
+        // No files at all; every player "installed", so the only complaint
+        // left is the missing theme - and it must be attached to each cue.
+        SoundPlayer player(&s, {}, {dir.path()}, false,
+                           [](const QString &prog) { return prog; });
+        const SoundReport r = soundReport(player);
+        QCOMPARE(r.cues.size(), 3);
+        for (const QString &line : r.cues) {
+            // A cue that resolves to nothing must not report a file: the part
+            // after the colon is the advice, and the advice has to be readable
+            // as advice.
+            QVERIFY2(line.contains(QStringLiteral("no sound theme")),
+                     qPrintable(QStringLiteral("the problem is not the sentence "
+                                               "the profile wrote: ") + line));
+        }
+    }
+
+    /// The user's own switch is one sentence, not three complaints: advice
+    /// about a feature somebody turned off is what teaches a user to skip the
+    /// advice that is true.
+    void aSwitchedOffSoundIsOneLineAndNoCueComplaints()
+    {
+        QTemporaryDir dir;
+        QVERIFY(dir.isValid());
+        Settings s(QDir(dir.path()).filePath(QStringLiteral("config.ini")));
+        s.setSoundsEnabled(false);
+        SoundPlayer player(&s, {}, {dir.path()}, false,
+                           [](const QString &prog) { return prog; });
+        const SoundReport r = soundReport(player);
+        QVERIFY2(r.summary.startsWith(QStringLiteral("off")), qPrintable(r.summary));
+        QVERIFY2(r.cues.isEmpty(),
+                 "a switched-off sound produced per-cue problems to read");
     }
 
     // ---- Windows: what the first launch asks ----------------------------

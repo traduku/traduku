@@ -173,14 +173,9 @@ BackendReport collectBackends(Settings *settings)
     // e2e greps this line on both desktops.
     if (settings) {
         SoundPlayer probe(settings);
-        const auto st = probe.status(SoundEvent::Finished);
-        if (!st.enabled) {
-            r.audio = QStringLiteral("off (Sounds.Enabled=false)");
-        } else if (!st.problem.isEmpty()) {
-            r.audio = st.problem;
-        } else {
-            r.audio = QStringLiteral("%1 - %2").arg(st.player, st.file);
-        }
+        const SoundReport rep = soundReport(probe);   // one function, every shell
+        r.audio = rep.summary;
+        r.audioCues = rep.cues;
     }
     // Plasma has no packaged entry (the first-run dialog asks instead), so this
     // line normally names a file in ~/.config - or says there is none, which is

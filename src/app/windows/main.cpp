@@ -132,14 +132,9 @@ BackendReport collectBackends(Settings *settings)
 
     if (settings) {
         std::unique_ptr<SoundPlayer> sound(createDefaultSoundPlayer(settings));
-        const auto st = sound->status(SoundEvent::Finished);
-        if (!st.enabled) {
-            r.audio = QStringLiteral("off (Sounds.Enabled=false)");
-        } else if (!st.problem.isEmpty()) {
-            r.audio = st.problem;
-        } else {
-            r.audio = QStringLiteral("%1 - %2").arg(st.player, st.file);
-        }
+        const SoundReport rep = soundReport(*sound);   // one function, every shell
+        r.audio = rep.summary;
+        r.audioCues = rep.cues;
     }
 
     r.autostart = createDefaultAutostart(QCoreApplication::applicationFilePath())
