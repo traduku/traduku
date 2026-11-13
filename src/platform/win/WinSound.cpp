@@ -24,35 +24,50 @@ namespace {
 // enforces the floor those numbers produced.
 //
 // The list this replaces was written by reading folder names, and it produced
-// the cue a person described as "a mosquito squeak": the start cue was
-// Windows Menu Command.wav, 0.15 s at rms 0.0012, against a finish cue of
-// 1.29 s at rms 0.058 - a fifth of the length and a fiftieth of the energy.
+// the cue a person described as "a mosquito squeak": Windows Menu Command.wav,
+// 0.11 s audible at a loudness of 0.0013, against a finish cue of 1.16 s at
+// 0.1155 - a tenth of the length and a hundredth of the loudness.
 //
-// A start cue also has to be the shorter of the pair, or the two do not read as
-// "begun" and "arrived".
+// Loudness here is the rms of the loudest 100 ms, not of the whole file: the
+// first version of the gate averaged the file, which scores a bell with a
+// decay as if its decay were silence. On the user's own numbers it called the
+// cue the ear chose "three times too quiet" (Windows Notify.wav: 0.0117
+// averaged, 0.0262 at its loudest) while agreeing with the ear about the squeak
+// (0.0011 averaged, 0.0013 at its loudest). The row
+// `theLoudnessMetricIsAnchoredOnTheEarVerdicts` pins that ordering, so the
+// floors cannot be tuned by taste.
+//
+// The head of kStarted is not a measurement: four candidates were played on a
+// live desktop and the user chose Windows Notify.wav (2026-11-09). It is the
+// quietest of the candidates that pass the floors, and the trade-off is taken
+// knowingly: it is the same length as the finish cue and from the same family
+// of chimes, and the two stay apart by loudness (0.0262 against 0.1155) and by
+// the order they arrive in.
 const char *const kStarted[] = {
-    "Windows Default.wav",          // 0.41 s, rms 0.032 - one clean ding
-    "Windows Hardware Insert.wav",  // 0.65 s, rms 0.031
-    "Windows Message Nudge.wav",    // 1.25 s, rms 0.041
-    "Windows Background.wav",       // 1.29 s, rms 0.068
-    "Windows Ding.wav",             // 1.09 s, rms 0.009 - present everywhere, quiet
+    "Windows Notify.wav",           // 0.94 s audible, 0.0262 - chosen by ear
+    "Windows Default.wav",          // 0.30 s, 0.0572
+    "Windows Hardware Insert.wav",  // 0.46 s, 0.0618
+    "Windows Message Nudge.wav",    // 1.17 s, 0.1131
+    "Windows Background.wav",       // 1.15 s, 0.1647
+    "Windows Ding.wav",             // 0.76 s, 0.0162 - below the floor, kept last
+                                    // as the one name every Windows has
 };
 const char *const kFinished[] = {
-    "Windows Notify System Generic.wav",  // 1.29 s, rms 0.058 - the loudest of the family
-    "Windows Notify Calendar.wav",        // 1.99 s, rms 0.044
-    "Windows Unlock.wav",                 // 2.74 s, rms 0.030
-    "Windows Print complete.wav",         // 2.01 s, rms 0.016
+    "Windows Notify System Generic.wav",  // 1.16 s audible, 0.1155 - the loudest of the family
+    "Windows Notify Calendar.wav",        // 1.31 s, 0.1156
+    "Windows Unlock.wav",                 // 1.82 s, 0.1005
+    "Windows Print complete.wav",         // 1.45 s, 0.0269
 };
 const char *const kFailed[] = {
-    "Windows Hardware Fail.wav",    // 0.67 s, rms 0.031
-    "Windows Exclamation.wav",      // 1.36 s, rms 0.021
-    "Windows Error.wav",            // 0.97 s, rms 0.013
-    "Windows Critical Stop.wav",    // 0.90 s, rms 0.013
+    "Windows Hardware Fail.wav",    // 0.49 s, 0.0585
+    "Windows Exclamation.wav",      // 1.22 s, 0.0374
+    "Windows Error.wav",            // 0.72 s, 0.0305
+    "Windows Critical Stop.wav",    // 0.71 s, 0.0204
 };
-// Deliberately absent: Windows Balloon.wav (1.01 s, rms 0.037) is the sound
-// Windows itself plays when OUR WinNotifier calls Shell_NotifyIcon. Using it as
-// an app cue puts two copies of one sound in the same second, on the one
-// platform where the notification channel has a voice of its own.
+// Deliberately absent: Windows Balloon.wav (0.0370) is the sound Windows itself
+// plays when OUR WinNotifier calls Shell_NotifyIcon. Using it as an app cue puts
+// two copies of one sound in the same second, on the one platform where the
+// notification channel has a voice of its own.
 
 QStringList namesOf(const char *const *names, int count)
 {
@@ -66,7 +81,7 @@ QStringList namesOf(const char *const *names, int count)
 QStringList candidatesFor(SoundEvent event)
 {
     switch (event) {
-    case SoundEvent::Started:  return namesOf(kStarted, 5);
+    case SoundEvent::Started:  return namesOf(kStarted, 6);
     case SoundEvent::Finished: return namesOf(kFinished, 4);
     case SoundEvent::Failed:   return namesOf(kFailed, 4);
     }
