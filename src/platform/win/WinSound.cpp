@@ -18,18 +18,41 @@ namespace lt {
 namespace {
 
 // The names are the ones a stock Windows 10/11 keeps its system sounds under,
-// chosen for what they sound like rather than for what the theme calls them:
-// a short tick for "started", a two-note chime for "ready", and the error
-// sound the rest of the OS uses for "that did not work". Each event gets
-// several because the folder is skinable, and an install that lacks one name
-// must not be a silent install.
+// and the ORDER is a measurement, not a preference: every file below was read
+// off this machine's %WINDIR%\Media (RIFF/PCM16, 2026-11-09) for its length and
+// its energy, and the row `theChosenCuesAreFilesAPersonCanHear` in tst_winsound
+// enforces the floor those numbers produced.
+//
+// The list this replaces was written by reading folder names, and it produced
+// the cue a person described as "a mosquito squeak": the start cue was
+// Windows Menu Command.wav, 0.15 s at rms 0.0012, against a finish cue of
+// 1.29 s at rms 0.058 - a fifth of the length and a fiftieth of the energy.
+//
+// A start cue also has to be the shorter of the pair, or the two do not read as
+// "begun" and "arrived".
 const char *const kStarted[] = {
-    "Windows Menu Command.wav", "Windows Feed Discovered.wav", "Windows Ding.wav"};
+    "Windows Default.wav",          // 0.41 s, rms 0.032 - one clean ding
+    "Windows Hardware Insert.wav",  // 0.65 s, rms 0.031
+    "Windows Message Nudge.wav",    // 1.25 s, rms 0.041
+    "Windows Background.wav",       // 1.29 s, rms 0.068
+    "Windows Ding.wav",             // 1.09 s, rms 0.009 - present everywhere, quiet
+};
 const char *const kFinished[] = {
-    "Windows Notify System Generic.wav", "Windows Print complete.wav",
-    "Windows Ding.wav"};
+    "Windows Notify System Generic.wav",  // 1.29 s, rms 0.058 - the loudest of the family
+    "Windows Notify Calendar.wav",        // 1.99 s, rms 0.044
+    "Windows Unlock.wav",                 // 2.74 s, rms 0.030
+    "Windows Print complete.wav",         // 2.01 s, rms 0.016
+};
 const char *const kFailed[] = {
-    "Windows Error.wav", "Windows Critical Stop.wav", "Windows Hardware Fail.wav"};
+    "Windows Hardware Fail.wav",    // 0.67 s, rms 0.031
+    "Windows Exclamation.wav",      // 1.36 s, rms 0.021
+    "Windows Error.wav",            // 0.97 s, rms 0.013
+    "Windows Critical Stop.wav",    // 0.90 s, rms 0.013
+};
+// Deliberately absent: Windows Balloon.wav (1.01 s, rms 0.037) is the sound
+// Windows itself plays when OUR WinNotifier calls Shell_NotifyIcon. Using it as
+// an app cue puts two copies of one sound in the same second, on the one
+// platform where the notification channel has a voice of its own.
 
 QStringList namesOf(const char *const *names, int count)
 {
@@ -43,9 +66,9 @@ QStringList namesOf(const char *const *names, int count)
 QStringList candidatesFor(SoundEvent event)
 {
     switch (event) {
-    case SoundEvent::Started:  return namesOf(kStarted, 3);
-    case SoundEvent::Finished: return namesOf(kFinished, 3);
-    case SoundEvent::Failed:   return namesOf(kFailed, 3);
+    case SoundEvent::Started:  return namesOf(kStarted, 5);
+    case SoundEvent::Finished: return namesOf(kFinished, 4);
+    case SoundEvent::Failed:   return namesOf(kFailed, 4);
     }
     return {};
 }
