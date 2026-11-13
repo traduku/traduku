@@ -7,6 +7,7 @@
 #include "AppFlavour.h"
 
 #include "app/PlatformBackends.h"
+#include "core/soundplayer.h"
 #include "interfaces/iautostart.h"
 
 
@@ -118,6 +119,44 @@ QString trayStatusLabel(const QString &version, const QString &trayKind)
 bool guiRefusalNeedsDialog(bool consoleAvailable)
 {
     return !consoleAvailable;
+}
+
+SoundReport soundReport(const SoundPlayer &player)
+{
+    SoundReport r;
+    const SoundPlayer::Profile &profile = player.profile();
+
+    // The user's switch first: it is one sentence, and three lines of advice
+    // about a feature somebody turned off is how the advice that is true gets
+    // skipped.
+    const SoundPlayer::Status start = player.status(SoundEvent::Started);
+    if (!start.enabled) {
+        r.summary = QStringLiteral("off (Sounds.Enabled=false)");
+        return r;
+    }
+
+    // The summary names the profile and the player that would run: "which
+    // sound system is this" is a question about the machine, and the answer
+    // comes from the object that plays.
+    r.summary = QStringLiteral("%1: %2").arg(
+        profile.name,
+        start.player.isEmpty() ? QStringLiteral("no player") : start.player);
+
+    // One line per cue. A report that prints one cue for a three-cue profile
+    // cannot answer "which of the two is the silent one", and that is the
+    // question a user with no sound came here to ask.
+    const struct { SoundEvent event; const char *name; } cues[] = {
+        {SoundEvent::Started, "started"},
+        {SoundEvent::Finished, "finished"},
+        {SoundEvent::Failed, "failed"},
+    };
+    for (const auto &cue : cues) {
+        const SoundPlayer::Status st = player.status(cue.event);
+        r.cues << QStringLiteral("%1: %2").arg(
+            QString::fromUtf8(cue.name),
+            st.problem.isEmpty() ? st.file : st.problem);
+    }
+    return r;
 }
 
 QString displayAdviceForMissingDisplay(const QStringList &argv, bool canPickPlatform,

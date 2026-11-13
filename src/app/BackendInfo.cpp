@@ -54,6 +54,14 @@ QString formatBackendInfo(const BackendReport &r)
     if (!r.audio.isEmpty()) {
         add(QStringLiteral("audio"), r.audio);
     }
+    for (const QString &cue : r.audioCues) {
+        // "audio started: <file>" - the event goes into the key so the line
+        // stays one greppable pair, and the value keeps its path whole (a
+        // Windows cue path has a colon in it, so the split is on the first one).
+        const int colon = cue.indexOf(QLatin1Char(':'));
+        add(QStringLiteral("audio %1").arg(cue.left(colon)),
+            cue.mid(colon + 1).trimmed());
+    }
     if (!r.reasoning.isEmpty()) {
         add(QStringLiteral("reasoning"), r.reasoning);
     }

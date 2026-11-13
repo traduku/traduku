@@ -159,14 +159,9 @@ BackendReport collectBackends(Settings *settings)
     // aplay), which is exactly the answer a guess would get wrong.
     if (settings) {
         SoundPlayer probe(settings);
-        const auto st = probe.status(SoundEvent::Finished);
-        if (!st.enabled) {
-            r.audio = QStringLiteral("off (Sounds.Enabled=false)");
-        } else if (!st.problem.isEmpty()) {
-            r.audio = st.problem;
-        } else {
-            r.audio = QStringLiteral("%1 - %2").arg(st.player, st.file);
-        }
+        const SoundReport rep = soundReport(probe);   // one function, every shell
+        r.audio = rep.summary;
+        r.audioCues = rep.cues;
     }
     // "Does it come back at login?" is answered by a file the package owns on
     // this desktop and by the user on Plasma; the report says which.

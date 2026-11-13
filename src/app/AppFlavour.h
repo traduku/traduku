@@ -6,9 +6,12 @@
 
 #pragma once
 
+#include <QString>
 #include <QStringList>
 
 namespace lt {
+
+class SoundPlayer;
 
 /*!
  * Which QApplication flavour an invocation needs, and what the environment
@@ -157,15 +160,23 @@ bool guiRefusalNeedsDialog(bool consoleAvailable);
 /// every platform, and no main() able to get it wrong again.
 QString trayStatusLabel(const QString &version, const QString &trayKind);
 
-/// The tray's status line: version, and which tray this is running as.
+/// What `--backend-info` says about sound, built for every shell at once.
 ///
-/// Built here rather than spelled out in each shell's main() because the
-/// separator is where the bug was: a UTF-8 byte sequence inside
-/// QStringLiteral() arrives as one QChar per byte, so the middle dot became
-/// "Â" + an invisible control, and the tray menu advertised a broken build to
-/// every user. One portable function, tested on every platform, no main() able
-/// to get it wrong again.
-QString trayStatusLabel(const QString &version, const QString &trayKind);
+/// Three copies of this block sat in three main()s, each asking about
+/// SoundEvent::Finished alone. A profile whose three cues are answered by one
+/// line cannot tell "the start cue is silent" apart from "the finish cue is
+/// silent" - the pair the Windows hand walk of ROADMAP.md section 7.8 item 2
+/// had to separate by ear. One function, the report on every shell, and no
+/// main() able to print one cue and stay quiet about the other two.
+struct SoundReport {
+    QString summary;   ///< the "audio:" line: profile + the player that would run
+    QStringList cues;  ///< one line per cue: "started: <file>", or the advice
+};
+
+/// The report for one player, asked - it resolves nothing new and plays
+/// nothing, which is what makes it safe to call on the app's own player.
+SoundReport soundReport(const SoundPlayer &player);
+
 
 QString displayAdviceForMissingDisplay(const QStringList &argv,
                                        bool canPickPlatform, bool onWindows);

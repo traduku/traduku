@@ -9,6 +9,9 @@
 #include "WinSound.h"
 
 class QObject;
+class QMediaPlayer;   // forward-declared for windowsSharedMediaPlayer(), which
+                      // returns it without dragging Qt Multimedia into every
+                      // file that asks the shell what it wired
 
 namespace lt { class Settings; class SoundPlayer; }
 
@@ -29,6 +32,17 @@ namespace lt {
  * to spawn a shell.
  */
 SoundPlayer::Player windowsMediaPlayerPlayer();
+
+/*! The player the in-process backend reuses, or null when no cue has been
+ * played yet.
+ *
+ * Named for the test that asks it. "The cue played" is a claim about an object
+ * the rest of the program cannot see: the product's own success condition is
+ * the lambda's bool, and a bool cannot be inspected for the one thing that
+ * makes a Qt 6 cue audible - an audio output attached to the player. So the
+ * instance is readable, the same way windowsPlayerChain() is, and for the same
+ * reason: what the shell wires must be inspectable from outside the shell. */
+QMediaPlayer *windowsSharedMediaPlayer();
 
 /// WMF first, powershell second - the order a user would prefer, and the one
 /// that keeps working on a Windows without the media feature pack.

@@ -212,6 +212,13 @@ def test_backend_info_reports_the_sound_path(session):
     ubuntu-gnome has PipeWire and exactly one player: pw-play (measured:
     paplay and aplay are not installed). So the report has to name the player
     it found here rather than the one the developer's machine happens to have.
+
+    It also has to name every cue the profile can play. The Windows hand walk
+    (ROADMAP.md 7.8 item 2) found the report naming one file for a three-cue
+    profile, which cannot answer "which cue is the silent one" - the one
+    question a user with no sound asks. So: `audio: <profile>: <player>` plus
+    one `audio <event>: <file>` per cue, and every file named must be readable
+    on this machine.
     """
     vm = session
     rc, out = vm.ses("traduku --backend-info 2>&1; echo rc=$?")
@@ -230,13 +237,20 @@ def test_backend_info_reports_the_sound_path(session):
             f"{chk}\nreport: {value}")
         return
 
-    player = value.split(" - ")[0].strip()
+    # "<profile>: <player>" - the last field is the program this app would run.
+    player = value.split(":")[-1].strip()
     rc, found = vm.ses(f"command -v {player}")
     assert found.strip(), f"the report names a player that is not installed: {value}"
-    if " - " in value:
-        path = value.split(" - ", 1)[1].strip()
+
+    cues = [l for l in out.splitlines() if l.startswith("audio ")]
+    assert len(cues) == 3, (
+        f"the sound profile has three cues; the report named {len(cues)}: {cues}")
+    for cue in cues:
+        path = cue.split(":", 1)[1].strip()
+        if "not found" in path or "none of" in path:
+            continue                # the advice for that cue, checked above
         rc, ok = vm.ses(f"test -r {path} && echo readable")
-        assert "readable" in ok, f"the report names a sound file that is not there: {value}"
+        assert "readable" in ok, f"the report names a sound file that is not there: {cue}"
 
 
 def test_backend_info_reports_autostart(session):
