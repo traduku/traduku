@@ -173,14 +173,9 @@ BackendReport collectBackends(Settings *settings)
     // e2e greps this line on both desktops.
     if (settings) {
         SoundPlayer probe(settings);
-        const auto st = probe.status(SoundEvent::Finished);
-        if (!st.enabled) {
-            r.audio = QStringLiteral("off (Sounds.Enabled=false)");
-        } else if (!st.problem.isEmpty()) {
-            r.audio = st.problem;
-        } else {
-            r.audio = QStringLiteral("%1 - %2").arg(st.player, st.file);
-        }
+        const SoundReport rep = soundReport(probe);   // one function, every shell
+        r.audio = rep.summary;
+        r.audioCues = rep.cues;
     }
     // Plasma has no packaged entry (the first-run dialog asks instead), so this
     // line normally names a file in ~/.config - or says there is none, which is
@@ -214,7 +209,7 @@ int main(int argc, char **argv)
     // sentence instead of taking a Qt fatal and a core dump (measured over ssh:
     // `traduku --selftest` gave "Aborted (core dumped)", rc 134).
     if (const QString noDisplay = lt::displayAdviceForMissingDisplay(
-            argvList, lt::qtCanPickAPlatform());
+            argvList, lt::qtCanPickAPlatform(), /*onWindows=*/false);
         !noDisplay.isEmpty()) {
         qWarning().noquote() << noDisplay;
         return 2;
@@ -351,6 +346,12 @@ int main(int argc, char **argv)
                      &AppController::surfaceWindow);
     QObject::connect(tray, &ITray::translateRequested,
                      &controller, &AppController::translateNow);
+    // The tray's language menu is a control over a setting the whole app
+    // reads; the consequence of a pick lives in the controller, and a shell
+    // that forgets this connect ships a menu row that leads nowhere (gate:
+    // tests/cmake/test_tray_language_wiring.sh).
+    QObject::connect(tray, &ITray::targetLanguagePicked,
+                     &controller, &AppController::pickTargetLanguage);
     QObject::connect(tray, &ITray::quitRequested, &app,
                      [&]() { app.quit(); });   // trays only ask, the shell leaves
     QObject::connect(&controller, &AppController::settingsRequested, &app,

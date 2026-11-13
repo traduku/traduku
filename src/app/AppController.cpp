@@ -95,10 +95,7 @@ AppController::AppController(const Backends &b, QObject *parent)
                                                     "clipboard."));
             });
     connect(m_b.window, &TranslatorWindow::targetLanguagePicked, this,
-            [this](const QString &code) {
-                m_b.settings->setTargetLanguage(code);
-                m_b.settings->save();
-            });
+            &AppController::pickTargetLanguage);
     connect(m_b.window, &TranslatorWindow::settingsRequested,
             this, &AppController::settingsRequested);
 
@@ -130,6 +127,16 @@ void AppController::surfaceWindow()
     // a second "show me" path that skips the witness would make the e2e's
     // window line lie about exactly the case it exists to catch.
     m_b.window->showForeground();
+}
+
+void AppController::pickTargetLanguage(const QString &code)
+{
+    m_b.settings->setTargetLanguage(code);
+    m_b.settings->save();
+    const QString text = m_b.window->sourceText().trimmed();
+    if (!text.isEmpty()) {
+        m_b.pipeline->setSource(text);
+    }
 }
 
 void AppController::translateNow()

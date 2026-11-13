@@ -1,5 +1,8 @@
 build*/
-build-*
+# Anchored: without the leading slash this matched at any depth and swallowed
+# packaging/windows/build-portable.sh, so the release script existed only on the
+# machine that wrote it (tests/cmake/test_packaging_tracked.sh now fails on that).
+/build-*
 *.user
 .cache/
 compile_commands.json
@@ -9,3 +12,4 @@ __pycache__/
 .pytest_cache/
 .venv
 release-assets/
+dist/

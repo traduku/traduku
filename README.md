@@ -27,9 +27,16 @@ it. That is a weaker claim and is written as one.
 
 | distro | GNOME | Plasma |
 |---|---|---|
-| **Debian 13 (trixie)** | ✅ `traduku-gnome_0.3.0-1_amd64.deb` — 20 passed / 3 skipped, 40.6 s. GNOME on **Xorg**, and no GNOME extensions at all, so the tray test skips naming the missing appindicator host | ✅ `traduku_0.3.0-1_amd64.deb` — 17 passed / 6 skipped, 91.1 s. Plasma on **X11** (`kwin_x11`, Xorg on vt2) |
-| **Ubuntu 25.10** | ✅ `traduku-gnome_0.3.0-1_amd64.deb` — 21 passed / 2 skipped, 43.9 s. GNOME Shell 49 on Wayland, tray hosted | ✅ `traduku_0.3.0-1_amd64.deb` — 18 passed / 5 skipped, 103.0 s. Plasma on Wayland (`kwin_wayland` + Xwayland) |
-| **Arch** | ⚠️ `traduku-gnome-0.3.0-1-x86_64.pkg.tar.zst` is built and gated (37/37 in the GNOME tree, `--selftest` on the guest), but **no Arch GNOME session has been booted** - nobody has run the e2e suite on it | ✅ `traduku-0.3.0-1-x86_64.pkg.tar.zst` — 18 passed / 5 skipped, 154.3 s. Plasma on Wayland |
+| **Debian 13 (trixie)** | ✅ the GNOME `.deb` — 20 passed / 3 skipped, 40.6 s. GNOME on **Xorg**, and no GNOME extensions at all, so the tray test skips naming the missing appindicator host | ✅ the Plasma `.deb` — 17 passed / 6 skipped, 91.1 s. Plasma on **X11** (`kwin_x11`, Xorg on vt2) |
+| **Ubuntu 25.10** | ✅ the GNOME `.deb` — 21 passed / 2 skipped, 43.9 s. GNOME Shell 49 on Wayland, tray hosted | ✅ the Plasma `.deb` — 18 passed / 5 skipped, 103.0 s. Plasma on Wayland (`kwin_wayland` + Xwayland) |
+| **Arch** | ⚠️ the GNOME Arch package is built and gated (37/37 in the GNOME tree, `--selftest` on the guest), but **no Arch GNOME session has been booted** - nobody has run the e2e suite on it | ✅ the Plasma Arch package — 18 passed / 5 skipped, 154.3 s. Plasma on Wayland |
+
+Every run in this table was made on the **0.3.0** packages, and that is
+what the numbers describe: 0.4.0 adds the Windows port, the sound switches and
+the language pick, and its packages have been built and container-gated
+(`--selftest`, ctest over live Xvfb) on a machine with no QEMU - so no 0.4.0 run
+has been booted on a guest desktop, and no 0.4.0 Arch package exists yet. A
+version bump is not a re-measurement.
 
 Two cells are worth a sentence because they are the ones an assumption would
 have got wrong:
@@ -52,6 +59,7 @@ have got wrong:
 | **Plasma on Wayland** | `traduku` | X RECORD on XWayland (helper process) | `wl-clipboard` | X RECORD | KNotification | Qt SNI (Plasma hosts SNI) | `~/.config/autostart`, written when you answer the first-run question | `arch-kde` and `ubuntu-kde`, ready line `(kde, wayland; clipboard=wl-clipboard hotkey=x11-record tray=yes)`, e2e **18 passed / 5 skipped** each |
 | **Plasma on X11** | `traduku` | XI2 raw on the X server | **X11 selection** | XI2 raw | KNotification | Qt SNI | as above | `debian-kde`, ready line `(kde, x11; clipboard=x11 hotkey=x11-xi2 tray=yes)`, e2e **17 passed / 6 skipped** |
 | **Bare X11 / other DE** | either | XI2 raw (RECORD fallback) | X11 selection, Qt last | XI2 raw | freedesktop D-Bus | Qt SNI if a host exists | XDG autostart (XFCE, i3, … honour it) | unit/integration only (`make x11test`, 37 tests against a real X server) |
+| **Windows 10/11 (win64)** | `traduku.exe` (MinGW, GUI subsystem) | `WH_KEYBOARD_LL` hook, passive | Qt (win32 clipboard) | — (the hook *is* the gesture; `RegisterHotKey` was rejected: it intercepts the copy) | tray balloon via `Shell_NotifyIcon` | `QSystemTrayIcon` | `HKCU\…\CurrentVersion\Run` | built 2026-11-08, Qt 6.8.3 + MinGW 13.1: **44/44** ctest rows (9 of them exist only here), `--translate`/`--selftest --live` measured against a mock SSE endpoint, the Run value verified by an independent reader. **Walked by hand on a live Windows 11 desktop twice (2026-11-08, 2026-11-09)**: tray icon at start, left-click translates the clipboard, right-click menu, balloon, `Ctrl+C`+`Ctrl+C`, second copy surfaces the first window, `TRADUKU_TRAY=none`, screen lock and RDP disconnect. Six findings came out of the two walks, none visible to any test: a mojibake tray label, the cues silent (Qt 6 plays to nobody without a QAudioOutput) with the one sound people hearing being Windows' own balloon, a start cue too short and quiet to notice, one sound checkbox promising two moments, a destination-language list that changed nothing, and a translation window whose scroll jumps to the top on every chunk. The first five are fixed with pins; the sixth is recorded as skipped, with the reason. See ROADMAP.md §7.7–§7.8 |
 
 The hotkey column is a measurement, not a menu: on the same image the listener
 can be `x11-xi2` or the X RECORD helper, and the choice is printed by
@@ -78,8 +86,8 @@ sounds and (GNOME) the uaccess rule:
 
 | platform | download | install it |
 |---|---|---|
-| Arch / CachyOS | `traduku-0.3.0-1-x86_64.pkg.tar.zst` (Plasma) or `traduku-gnome-0.3.0-1-x86_64.pkg.tar.zst` (GNOME) | `sudo pacman -U ./traduku-0.3.0-1-x86_64.pkg.tar.zst` |
-| Debian / Ubuntu | `traduku_0.3.0-1_amd64.deb` (Plasma) or `traduku-gnome_0.3.0-1_amd64.deb` (GNOME) | `sudo apt install ./traduku_0.3.0-1_amd64.deb` |
+| Arch / CachyOS | `traduku-0.4.0-1-x86_64.pkg.tar.zst` (Plasma) or `traduku-gnome-0.4.0-1-x86_64.pkg.tar.zst` (GNOME) | `sudo pacman -U ./traduku-0.4.0-1-x86_64.pkg.tar.zst` |
+| Debian / Ubuntu | `traduku_0.4.0-1_amd64.deb` (Plasma) or `traduku-gnome_0.4.0-1_amd64.deb` (GNOME) | `sudo apt install ./traduku_0.4.0-1_amd64.deb` |
 
 The Arch packages are signed, and on Arch that is not decoration: with the
 default `SigLevel = Required`, `pacman -U` of a package whose signature the
@@ -92,7 +100,7 @@ it once:
 gpg --show-keys traduku-release.asc   # fingerprint 6412BB09BC5E27F2D0FE2EE7DE28065CC5A065AC
 sudo pacman-key --add traduku-release.asc
 sudo pacman-key --lsign-key DE28065CC5A065AC
-sudo pacman -U ./traduku-0.3.0-1-x86_64.pkg.tar.zst
+sudo pacman -U ./traduku-0.4.0-1-x86_64.pkg.tar.zst
 ```
 
 That is trust-on-first-use: the key is published by the same repository as the
@@ -101,7 +109,7 @@ that matters to you. To check a download without trusting anything:
 
 ```sh
 sha256sum -c SHA256SUMS                              # names every package + the source tarball
-gpg --verify traduku-0.3.0-1-x86_64.pkg.tar.zst.sig
+gpg --verify traduku-0.4.0-1-x86_64.pkg.tar.zst.sig
 ```
 
 Building it yourself (`packaging/arch/mkrelease.sh` for Arch, `dpkg-buildpackage`
@@ -228,10 +236,13 @@ instead of silently omitting an icon.
 - **Audio progress cues**: a start chime when the gesture fires, a
   completion sound when the translation is ready, an error sound on failure
   (freedesktop theme; toggleable in Settings). You can follow the process
-  without watching the screen. `--backend-info` names the player it found
-  (`audio: pw-play - /usr/share/sounds/freedesktop/stereo/complete.oga`) or
+  without watching the screen. `--backend-info` names the player it found and
+  one line per cue
+  (`audio: freedesktop: pw-play`, `audio started: .../bell.oga`,
+  `audio finished: .../complete.oga`, `audio failed: .../dialog-error.oga`) or
   the precise reason there is none — it does not guess `paplay` on a PipeWire
-  box that has only `pw-play`.
+  box that has only `pw-play`, and a three-cue profile that reports one file
+  cannot answer "which cue is the silent one".
 - **Configurable endpoint** (address / API key / model), destination
   language, double-press window, clipboard behaviour — stored as a plain
   INI in `~/.config/traduku/config.ini`, editable from any DE.
@@ -309,6 +320,40 @@ DBusAddons); X11 layer: Xlib + XInput + XRecord (`x11`, `xtst`, `xi` dev
 packages). X11/KDE layers are optional at configure time
 (`-DLT_BUILD_X11=OFF`, `-DLT_BUILD_KDE=OFF`).
 
+### On Windows
+
+```
+cmake -B build-win -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_PREFIX_PATH=C:/Qt/6.8.3/mingw_64
+cmake --build build-win
+ctest --test-dir build-win
+```
+
+Qt 6.8.3 win64_mingw + MinGW 13.1 (either MSVC or MinGW works; the run above
+is the MinGW one), CMake and Ninja on `PATH`. No PkgConfig, no X11, no KF6:
+those layers are excluded by platform and CMake says so instead of pretending
+they were never asked for. The count differs per OS by design — 41 rows here,
+`tst_xdgautostart` is not registered because `XDG_CONFIG_HOME` is a variable
+Windows does not read, and 9 rows exist only on Windows (the real hook, the
+real registry hive). See ROADMAP.md §7 for what is measured and what still
+waits for a live desktop.
+
+**To double-click the exe, deploy the runtime once.** `build-win/bin/traduku.exe`
+imports `Qt6Core.dll` and friends, which the loader finds through `PATH` — so it
+starts in a shell where Qt is on `PATH`, and from Explorer it gets "the code
+execution cannot proceed because Qt6Core.dll was not found" (`0xc0000135`) before
+a single line of our code runs; no message of ours can make that dialog kinder:
+
+```
+packaging/windows/deploy-runtime.sh build-win/bin
+```
+
+That is `windeployqt` plus the three MinGW DLLs by name plus `qoffscreen` —
+without it `--selftest`, the command for proving an install and the only one a
+session with no desktop can run, dies on Qt's own "could not find the Qt platform
+plugin offscreen". The portable zip deploys through this same script; run it by
+hand only if you want the build directory clickable. Double-clicking then starts
+the tray app: by design no window appears, the icon goes to the tray.
+
 Every module was written test-first (see ARCHITECTURE.md and the commit history):
 unit tests for each core piece, integration tests over an in-process
 fragmented mock SSE server, offscreen UI tests, a real-X gate
@@ -328,7 +373,12 @@ verify an install.
    and streams the translation; start/finish sounds mark the boundaries.
    When enabled, the finished translation also replaces the clipboard.
 4. Tray: translate now, destination language, autostart, settings, quit.
-   Window: pick destination language (persisted), copy, settings.
+   Window: pick destination language (persisted), copy, settings. Picking a
+   destination language — in the window's list or in the tray's *Translate To*
+   — saves it and translates the text that is open, the same way the gesture
+   does; with nothing in the source pane it only saves. The list in the
+   Settings dialog is a form field: it takes effect on OK, and cancels with the
+   rest of the form.
 
 The tray is not the only way in — these work headless, over ssh, with no
 display:
@@ -362,7 +412,9 @@ Keys beyond address / key / model that are worth knowing:
 | `DisableReasoning` | `true` | asks the model to skip its hidden reasoning channel |
 | `ReasoningOffOptions` | vLLM+OpenAI preset | the JSON merged when the switch is on |
 | `ExtraOptions` | *(empty)* | any JSON object merged into the request body |
-| `SoundsEnabled` | `true` | the three progress sounds |
+| `SoundsEnabled` | `true` | master switch for the three progress sounds |
+| `SoundsOnStart` | `true` | the cue played when a translation begins |
+| `SoundsOnFinish` | `true` | the cue played when it ends, success or failure |
 
 Reasoning models (`delta.reasoning` in the stream) answer the same prompt
 3× slower because they first emit a private chain of thought we discard.
@@ -415,9 +467,16 @@ traduku --translate --text "Hello"
   automatically and its shortcut appears in the tooltip. For the evdev path,
   check the ACL: `getfacl /dev/input/eventN` must list `user:<you>:rw-`.
 - **No sounds**: a freedesktop sound theme and *some* player (`pw-play`,
-  `paplay`, `aplay`) must exist; `--backend-info` prints
-  `audio: <player> - <file>` or the reason it has none, and says nothing
-  alarming if you switched sounds off. Sounds are best-effort.
+  `paplay`, `aplay`) must exist; `--backend-info` prints `audio: <profile>:
+  <player>` plus one `audio <cue>: <file>` line per cue — a cue you switched
+  off in the settings dialog answers `audio <cue>: off (SoundsOnStart=false)`
+  instead of a path, and a fully muted app answers with one
+  `audio: off (Sounds.Enabled=false)` line and no per-cue complaints. Sounds
+  are best-effort. The two dialog switches are per cue: `SoundsOnStart` for the
+  beginning, `SoundsOnFinish` for the end (it also covers the failure cue,
+  because "the translation is over" arrives as a success or as a failure).
+  `SoundsEnabled` remains the master: turning it off mutes both cues, turning it
+  on gives both back.
 - **Non-Latin layouts**: supported (keycode-based matching); a `ru_RU.UTF-8`
   session also defaults the destination language to Russian.
 - **kf.i18n warnings**: the app ships plain-English source strings and no

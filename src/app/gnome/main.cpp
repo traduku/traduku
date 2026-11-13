@@ -159,14 +159,9 @@ BackendReport collectBackends(Settings *settings)
     // aplay), which is exactly the answer a guess would get wrong.
     if (settings) {
         SoundPlayer probe(settings);
-        const auto st = probe.status(SoundEvent::Finished);
-        if (!st.enabled) {
-            r.audio = QStringLiteral("off (Sounds.Enabled=false)");
-        } else if (!st.problem.isEmpty()) {
-            r.audio = st.problem;
-        } else {
-            r.audio = QStringLiteral("%1 - %2").arg(st.player, st.file);
-        }
+        const SoundReport rep = soundReport(probe);   // one function, every shell
+        r.audio = rep.summary;
+        r.audioCues = rep.cues;
     }
     // "Does it come back at login?" is answered by a file the package owns on
     // this desktop and by the user on Plasma; the report says which.
@@ -224,7 +219,7 @@ int main(int argc, char **argv)
     // says so in a sentence. `traduku --selftest` over ssh took a Qt fatal and
     // left a core dump instead, and a core dump is not an instruction.
     if (const QString noDisplay = lt::displayAdviceForMissingDisplay(
-            argvList, lt::qtCanPickAPlatform());
+            argvList, lt::qtCanPickAPlatform(), /*onWindows=*/false);
         !noDisplay.isEmpty()) {
         qWarning().noquote() << noDisplay;
         return 2;
@@ -355,6 +350,12 @@ int main(int argc, char **argv)
     QtTray tray(&settings, &autostart);
     QObject::connect(&tray, &QtTray::translateRequested, &controller,
                      &AppController::translateNow);
+    // The tray's language menu is a control over a setting the whole app
+    // reads; the consequence of a pick lives in the controller, and a shell
+    // that forgets this connect ships a menu row that leads nowhere (gate:
+    // tests/cmake/test_tray_language_wiring.sh).
+    QObject::connect(&tray, &QtTray::targetLanguagePicked, &controller,
+                     &AppController::pickTargetLanguage);
     QObject::connect(&tray, &QtTray::settingsRequested, app.get(), openSettings);
     QObject::connect(&tray, &QtTray::quitRequested, app.get(), &QCoreApplication::quit);
     if (gesture.chosen) {

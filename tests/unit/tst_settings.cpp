@@ -97,6 +97,113 @@ private slots:
         QCOMPARE(s.configFileExists(), true);
     }
 
+    // The two cues of a translation are two decisions. One checkbox for both
+    // is what the Windows hand walk asked to split (ROADMAP.md §7.8,
+    // 2026-11-09): a user who wants to hear the answer arrive and not hear
+    // every keypress has no way to say that with one switch. The old
+    // Sounds.Enabled stays the master - existing configs, --selftest and the
+    // CLI all speak it - and the two new keys are effective only under it.
+    void soundSwitchesArePerCue()
+    {
+        Settings s(path());
+        QCOMPARE(s.soundOnStart(), true);
+        QCOMPARE(s.soundOnFinish(), true);
+
+        s.setSoundOnStart(false);
+        QCOMPARE(s.soundOnStart(), false);
+        QVERIFY2(s.soundOnFinish(),
+                 "switching the start cue off silenced the finish cue too");
+        QVERIFY2(s.soundsEnabled(),
+                 "one cue off is not a muted app: the master has to stay on, "
+                 "because --backend-info answers with it");
+
+        s.setSoundOnFinish(false);
+        QVERIFY2(!s.soundsEnabled(),
+                 "both cues off IS a muted app - the master must agree, so the "
+                 "report says off once instead of listing three broken cues");
+        s.setSoundOnStart(true);
+        QVERIFY2(s.soundsEnabled(),
+                 "a cue turned back on must un-mute the app by itself");
+    }
+
+    void soundSwitchesSurviveReload()
+    {
+        {
+            Settings s(path());
+            s.setSoundOnStart(false);
+            QVERIFY(s.save());
+        }
+        Settings s2(path());
+        QCOMPARE(s2.soundOnStart(), false);
+        QCOMPARE(s2.soundOnFinish(), true);
+    }
+
+    /// The master is not a hidden third switch. Muting the app mutes both
+    /// cues (that is the only thing the old single box could mean), and a cue
+    /// the user then checks is the user's word - what must NOT happen is the
+    /// other cue waking up on the way, which is what an `Enabled && raw` getter
+    /// does the moment the master flips to true.
+    void mutingTheAppMutesBothCuesAndCheckingOneWakesOnlyThatOne()
+    {
+        Settings s(path());
+        s.setSoundsEnabled(false);
+        QVERIFY(!s.soundOnStart());
+        QVERIFY(!s.soundOnFinish());
+
+        s.setSoundOnStart(true);
+        QVERIFY2(s.soundOnStart(), "the user checked the box, the cue is off");
+        QVERIFY2(!s.soundOnFinish(),
+                 "checking the start box brought the finish cue back to life");
+        QVERIFY2(s.soundsEnabled(),
+                 "one cue on is not a muted app: the master has to follow the pair");
+    }
+
+    /// The master's OFF mutes both cues; its ON has to give them back, or the
+    /// switch can only be turned off. This is the property the first version of
+    /// the split lost (it muted on the way down and restored nothing on the way
+    /// up), and the row that caught it is disabledSettingStopsPlayback - a test
+    /// that predates the feature and describes the single switch the CLI, the
+    /// old dialog and --selftest still speak.
+    void theMasterSoundSwitchIsReversible()
+    {
+        Settings s(path());
+        s.setSoundsEnabled(false);
+        QVERIFY(!s.soundOnStart());
+        QVERIFY(!s.soundOnFinish());
+        s.setSoundsEnabled(true);
+        QVERIFY2(s.soundOnStart(), "the master muted the start cue and cannot give it back");
+        QVERIFY2(s.soundOnFinish(), "the master muted the finish cue and cannot give it back");
+    }
+
+    /// A config written by the old dialog has one bit for two cues, and the
+    /// upgrade must not hand sound back to the person who muted it.
+    void aConfigFromTheSingleSwitchEraCarriesItsMeaning()
+    {
+        QFile f(path());
+        QVERIFY(f.open(QIODevice::WriteOnly | QIODevice::Truncate));
+        f.write("[General]\nSoundsEnabled=false\nModel=llama3.1\n");
+        f.close();
+
+        Settings s(path());
+        QVERIFY2(!s.soundOnStart(),
+                 "a user who muted the app got the start cue back after the upgrade");
+        QVERIFY2(!s.soundOnFinish(),
+                 "a user who muted the app got the finish cue back after the upgrade");
+        QCOMPARE(s.model(), QStringLiteral("llama3.1"));   // the rest of the file is intact
+    }
+
+    /// The same file with the switch on is not a migration: both cues stay on.
+    void anUnmuttedLegacyConfigLeavesBothCuesOn()
+    {
+        QFile f(path());
+        QVERIFY(f.open(QIODevice::WriteOnly | QIODevice::Truncate));
+        f.write("[General]\nSoundsEnabled=true\n");
+        f.close();
+        Settings s(path());
+        QVERIFY(s.soundOnStart());
+        QVERIFY(s.soundOnFinish());
+    }
+
     void defaultsWhenNoFile()
     {
         Settings s(path());

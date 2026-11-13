@@ -17,6 +17,58 @@ class TestChunker : public QObject
     }
 
 private slots:
+    /// A sentence boundary is `. ! ? …` - and not the digits that look like them.
+    ///
+    /// The class was written `[.!?\x2026]`, and PCRE reads that without braces as
+    /// `\x20` (a space) followed by the literal characters `2` and `6`. So the
+    /// boundary set was `. ! ? space 2 6`: a long block was cut after "Chapter 2 "
+    /// or "1945 " as if a digit ended a sentence, and the ellipsis - the one
+    /// character the escape was written for - was not a boundary at all.
+    /// Measured, not inferred: both rows below fail on the old pattern.
+    void digitsAreNotSentenceBoundaries()
+    {
+        // The false boundary has to sit *past* the cap, or nothing exercises it:
+        // the sentence pass only flushes when a candidate is already over the
+        // limit, and a candidate before it is merely remembered. Text with no
+        // real sentence end until the full stop, and a " 2 " at index 55.
+        const QString text = QStringLiteral(
+            "Alpha bravo charlie delta echo foxtrot golf 2 hotel india india "
+            "india bravo charlie.");
+        const auto chunks = splitChunks(text, 40);
+        QVERIFY(chunks.size() >= 2);
+        for (const Chunk &c : chunks) {
+            QVERIFY2(!c.text.trimmed().endsWith(QLatin1Char('2')),
+                     qPrintable(QStringLiteral("a chunk was cut after a digit, "
+                                               "because \"2 \" counted as a "
+                                               "sentence end: [")
+                                + c.text + QStringLiteral("]")));
+        }
+    }
+
+    void anEllipsisIsASentenceBoundary()
+    {
+        // Same shape, past the cap: the ellipsis at index 33 is the only
+        // boundary, so a correct splitter ends the first chunk there. The old
+        // pattern did not know U+2026 (\x2026 without braces is a space plus
+        // "26"), so it hard-split at the cap instead and the first chunk ended
+        // mid-word.
+        // The ellipsis is written \u2026, not \xE2\x80\xA6: QStringLiteral()
+        // turns each byte of the source literal into its own QChar, so the
+        // UTF-8 spelling would have tested a three-character mojibake - the very
+        // bug the tray label had, caught here by the output not changing at all
+        // while the code under test was demonstrably fixed.
+        const QString text = QStringLiteral(
+            "alpha beta gamma delta epsilon zeta\u2026 eta theta iota kappa.");
+        const auto chunks = splitChunks(text, 20);
+        QVERIFY2(chunks.size() >= 2,
+                 qPrintable(QStringLiteral("the ellipsis did not end a chunk: ")
+                            + QString::number(chunks.size()) + QStringLiteral(" chunk(s)")));
+        QVERIFY2(chunks.first().text.trimmed().endsWith(QChar(0x2026)),
+                 qPrintable(QStringLiteral("the first chunk did not end at the "
+                                           "ellipsis: [")
+                            + chunks.first().text + QStringLiteral("]")));
+    }
+
     void joinIsIdentity_data()
     {
         QTest::addColumn<QString>("s");

@@ -2,6 +2,7 @@
 #include <functional>
 #include <QSignalSpy>
 #include <QDir>
+#include <QComboBox>
 #include <QLabel>
 #include <QRegularExpression>
 #include <QTextEdit>
@@ -89,6 +90,7 @@ class TestAppController : public QObject
     FakeHotkey *m_hotkey;
     AppController *m_app;
     int m_n = 0;
+    QString m_cfgPath;   // the file the assembled Settings writes, for "did it persist?"
     QtMessageHandler m_prevHandler = nullptr;
 
     // qInfo capture: the app's own journal lines are an observable product
@@ -113,7 +115,8 @@ class TestAppController : public QObject
     void assemble()
     {
         m_server.setEchoMode(true);
-        m_settings = new Settings(m_dir.filePath(QStringLiteral("c%1.ini").arg(m_n++)), this);
+        m_cfgPath = m_dir.filePath(QStringLiteral("c%1.ini").arg(m_n++));
+        m_settings = new Settings(m_cfgPath, this);
         m_settings->setApiUrl(m_server.baseUrl());
         m_settings->setModel(QStringLiteral("m"));
         m_settings->setTargetLanguage(QStringLiteral("ru"));
@@ -157,6 +160,13 @@ private slots:
     {
         m_sounds.clear();
         s_log.clear();
+        // The server is one object for the whole class and it counts requests
+        // for the rows below; reset() exists because of that (its own comment:
+        // slots must not inherit each other's behaviour). Rows written as
+        // deltas over a running baseline cannot tell "one request" from "the
+        // eleven the previous rows left behind", so the baseline goes to zero
+        // here and a count can be read as a count.
+        m_server.reset();
         m_prevHandler = qInstallMessageHandler(&TestAppController::capture);
         m_clip = MemClipboard{};
         assemble();
@@ -317,6 +327,102 @@ private slots:
         Q_EMIT m_hotkey->activated();
         QTRY_VERIFY_WITH_TIMEOUT(status().contains(QStringLiteral("Done")), 10000);
         QCOMPARE(target(), QString("HELLO WORLD\n\nSECOND PARAGRAPH"));
+    }
+
+    // --- §7.8 item 4: the destination-language dropdown.
+    //
+    // Picking a language in the window's dropdown stored the code and waited
+    // for the next gesture. A reader with a pane full of Russian who picks
+    // German has asked a question about the text on screen, and "in the next
+    // translation" is not an answer to it: the pick now translates the source
+    // pane, the way the double-Ctrl+C gesture does.
+
+    QComboBox *langCombo() const
+    {
+        return m_window->findChild<QComboBox *>(QStringLiteral("m_language"));
+    }
+
+    /// The tray's "Translate To" and the window's dropdown are the same
+    /// function: QtTray fires the very same signal, ITrayBackend::
+    /// targetLanguagePicked, and no shell had anything connected to it - a menu
+    /// row that changes a setting behind the app's back, with no owner of the
+    /// consequence. Picking a language in the tray now runs the same slot as
+    /// picking it in the window.
+    void trayPicksALanguageRunsTheSameSlotAsTheWindowDropdown()
+    {
+        m_window->setSourceText(QStringLiteral("hello world"));
+        QCoreApplication::processEvents();
+        QCOMPARE(m_server.requestCount(), 0);
+
+        m_app->pickTargetLanguage(QStringLiteral("de"));   // what the tray emits into
+
+        QCOMPARE(m_settings->targetLanguage(), QStringLiteral("de"));
+        QCOMPARE(Settings(m_cfgPath).targetLanguage(), QStringLiteral("de"));  // persisted
+        QTRY_COMPARE_WITH_TIMEOUT(m_server.requestCount(), 1, 10000);
+        QVERIFY2(m_server.m_requests.at(0).contains("Deutsch"),
+                 "the tray's language did not reach the request");
+        QTRY_VERIFY_WITH_TIMEOUT(target().contains(QStringLiteral("HELLO WORLD")), 10000);
+    }
+
+    void pickingALanguageTranslatesTheSourcePane()
+    {
+        // setSourceText is the clipboard path: programmatic, no sourceEdited,
+        // so the auto-translate timer is not part of what this row measures.
+        m_window->setSourceText(QStringLiteral("hello world"));
+        QCoreApplication::processEvents();
+        QCOMPARE(m_server.requestCount(), 0);
+
+        const int de = langCombo()->findData(QStringLiteral("de"));
+        QVERIFY(de >= 0);
+        langCombo()->setCurrentIndex(de);
+
+        QTRY_COMPARE_WITH_TIMEOUT(m_server.requestCount(), 1, 10000);
+        QVERIFY2(m_server.m_requests.at(0).contains("Deutsch"),
+                 "the request was built for a language other than the one just picked");
+        QTRY_VERIFY_WITH_TIMEOUT(target().contains(QStringLiteral("HELLO WORLD")), 10000);
+        QCOMPARE(m_settings->targetLanguage(), QStringLiteral("de"));   // persisted, as before
+    }
+
+    /// applyEdit() keeps the translations of unchanged chunks - that is what
+    /// makes editing one sentence cheap. Using it for a language change is a
+    /// silent no-op, because no chunk changed, and the fix for "the dropdown
+    /// does nothing" becomes a dropdown that does nothing. A re-translation has
+    /// to be a new document.
+    void aLanguageChangeAfterATranslationStartsANewOne()
+    {
+        m_window->setSourceText(QStringLiteral("hello world"));
+        m_pipeline->setSource(QStringLiteral("hello world"));
+        QTRY_COMPARE_WITH_TIMEOUT(m_server.requestCount(), 1, 10000);
+        QTRY_VERIFY_WITH_TIMEOUT(target().contains(QStringLiteral("HELLO WORLD")), 10000);
+
+        langCombo()->setCurrentIndex(langCombo()->findData(QStringLiteral("de")));
+        QTRY_COMPARE_WITH_TIMEOUT(m_server.requestCount(), 2, 10000);
+        QVERIFY2(m_server.m_requests.at(1).contains("Deutsch"),
+                 "the second request did not ask for the newly picked language");
+    }
+
+    /// No text to translate: saving the code is the whole job. A request here
+    /// would be an API call nobody asked for, and a notification would blame the
+    /// user for an empty clipboard they never touched.
+    void pickingALanguageOnAnEmptySourcePaneAsksNothing()
+    {
+        langCombo()->setCurrentIndex(langCombo()->findData(QStringLiteral("en")));
+        QTest::qWait(400);
+        QCOMPARE(m_server.requestCount(), 0);
+        QCOMPARE(m_settings->targetLanguage(), QStringLiteral("en"));
+        QVERIFY(m_notifier->messages.isEmpty());
+    }
+
+    /// The language the app sets from outside the dropdown - tray menu, a config
+    /// file edited elsewhere, the watcher - is a choice about the next gesture,
+    /// not a command to redo the last one. The window guards its programmatic
+    /// writes for exactly this; the row keeps the guard load-bearing.
+    void aLanguageSetFromOutsideTheDropdownTranslatesNothing()
+    {
+        m_window->setSourceText(QStringLiteral("hello world"));
+        m_window->setTargetLanguage(QStringLiteral("de"));
+        QTest::qWait(400);
+        QCOMPARE(m_server.requestCount(), 0);
     }
 
     void emptyClipboardWarns()

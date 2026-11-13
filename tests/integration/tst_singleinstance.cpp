@@ -1,8 +1,12 @@
 #include <QtTest>
 #include <QDBusConnection>
+#include <QLocalServer>
 #include <QSignalSpy>
 
 #include "app/SingleInstance.h"
+
+#include <QSet>
+#include <memory>
 #include "app/AppFlavour.h"
 #include "fakebus.h"
 
@@ -12,13 +16,16 @@ class TestSingleInstance : public QObject
 {
     Q_OBJECT
     test::PrivateBus m_bus;
+    bool m_busOk = false;
 
 private slots:
     void initTestCase()
     {
-        if (!m_bus.start()) {
-            QSKIP("dbus-daemon not available");
-        }
+        // Started, but not fatal: a box without dbus-daemon must skip the
+        // bus-backed rows and still run the portable ones below. Skipping the
+        // whole binary because one platform's token is missing is how a
+        // Windows build ends up shipping an untested single-instance path.
+        m_busOk = m_bus.start();
     }
 
     void advertisedBusName()
@@ -31,6 +38,9 @@ private slots:
 
     void firstInstanceTakesOwnership()
     {
+        if (!m_busOk) {
+            QSKIP("dbus-daemon not available");
+        }
         SingleInstance s;
         QVERIFY2(s.start(m_bus.bus()), qPrintable(s.errorText()));
         QVERIFY(s.errorText().isEmpty());
@@ -38,6 +48,9 @@ private slots:
 
     void secondInstanceIsRefusedAndWakesTheFirst()
     {
+        if (!m_busOk) {
+            QSKIP("dbus-daemon not available");
+        }
         SingleInstance first;
         QVERIFY(first.start(m_bus.bus()));
 
@@ -55,6 +68,9 @@ private slots:
 
     void releasingOwnershipLetsAnotherInstanceStart()
     {
+        if (!m_busOk) {
+            QSKIP("dbus-daemon not available");
+        }
         {
             SingleInstance holding;
             QVERIFY(holding.start(m_bus.bus()));
@@ -65,6 +81,9 @@ private slots:
 
     void noBusIsReportedNotIgnored()
     {
+        if (!m_busOk) {
+            QSKIP("dbus-daemon not available");
+        }
         SingleInstance s;
         QDBusConnection dead = QDBusConnection::connectToBus(
             QStringLiteral("unix:path=/nonexistent-traduku-socket"),
@@ -113,6 +132,56 @@ private slots:
         QVERIFY2(!otherV.duplicate, "an unknown failure is not a duplicate");
         QVERIFY2(other.contains(QStringLiteral("some other reason")),
                  qPrintable(QStringLiteral("dropped the reason: ") + other));
+    }
+
+    // ---- Windows: the token is a named pipe, not a bus name --------------
+
+    void tokenChosenByPlatformNotByWish()
+    {
+        // There is no session bus on Windows, so the ownership token has to be
+        // something the OS guarantees: a named pipe can only be created once.
+        QCOMPARE(lt::chooseSingleInstanceToken(true, false),
+                 SingleInstanceToken::LocalSocket);
+        QCOMPARE(lt::chooseSingleInstanceToken(true, true),
+                 SingleInstanceToken::LocalSocket);
+        QCOMPARE(lt::chooseSingleInstanceToken(false, true),
+                 SingleInstanceToken::BusName);
+        // A Linux box with no session bus keeps the bus token and its honest
+        // failure. Falling back to a pipe there would quietly allow two trays,
+        // which is the exact thing the token exists to prevent.
+        QCOMPARE(lt::chooseSingleInstanceToken(false, false),
+                 SingleInstanceToken::BusName);
+    }
+
+    void localSocketTokenRefusesTheSecondCopyAndWakesTheFirst()
+    {
+        // An id of its own, and a cleared name first: this row must not be
+        // poisoned by a socket a crashed earlier run left behind.
+        QLocalServer::removeServer(QStringLiteral("traduku-token-test-") + lt::userToken());
+        {
+            SingleInstance first(QStringLiteral("traduku-token-test"),
+                                 SingleInstanceToken::LocalSocket);
+            QVERIFY2(first.start(), qPrintable(first.errorText()));
+            QSignalSpy woke(&first, &SingleInstance::activateRequested);
+
+            SingleInstance second(QStringLiteral("traduku-token-test"),
+                                  SingleInstanceToken::LocalSocket);
+            QVERIFY(!second.start());
+            QVERIFY2(second.errorText().contains(QStringLiteral("already owned")),
+                     qPrintable(second.errorText()));
+            // One verdict function for both tokens: the shell's sentence must
+            // not depend on which OS asked the question.
+            const lt::SingleInstanceVerdict v =
+                lt::singleInstanceVerdict(second.errorText());
+            QVERIFY2(v.duplicate, qPrintable(v.message));
+            QCOMPARE(v.exitCode, 0);
+            QTRY_COMPARE_WITH_TIMEOUT(woke.count(), 1, 5000);
+        }
+        // Releasing it lets the next copy own it (the restart case: quit from
+        // the tray, start again, and do not be told another copy is running).
+        SingleInstance third(QStringLiteral("traduku-token-test"),
+                             SingleInstanceToken::LocalSocket);
+        QVERIFY2(third.start(), qPrintable(third.errorText()));
     }
 };
 

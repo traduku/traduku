@@ -6,8 +6,14 @@
 
 #include "app/AppFlavour.h"
 
+#include "core/settings.h"
+#include "core/soundplayer.h"
+
 #include <QCoreApplication>
+#include <QDir>
+#include <QFile>
 #include <QObject>
+#include <QTemporaryDir>
 #include <QtTest>
 
 using lt::qpaWasForcedByUs;
@@ -18,11 +24,62 @@ using lt::needsWidgets;
 using lt::prepareCliEnvironment;
 using lt::planFirstRun;
 using lt::FirstRunPlan;
+using lt::guiRefusalNeedsDialog;
+using lt::trayStatusLabel;
+using lt::soundReport;
+using lt::SoundReport;
+using lt::Settings;
+using lt::SoundPlayer;
 
 class TestAppFlavour : public QObject
 {
     Q_OBJECT
 private slots:
+    /// A refusal nobody can read is not a refusal.
+    ///
+    /// The GUI mode used to print "there is no display" to stderr and exit 2
+    /// when double-clicked from Explorer - a terminal that does not exist. The
+    /// desktop bug itself is fixed (the question is now asked of the OS);
+    /// these rows keep the *symptom* from coming back as silence, because
+    /// silence is what made it survive.
+    void aRefusalWithoutATerminalGoesOnTheScreen()
+    {
+        QVERIFY(guiRefusalNeedsDialog(/*consoleAvailable=*/false));
+        // And with a terminal it stays text: a modal in front of someone
+        // reading a console, or in front of a CI runner, is a worse bug than
+        // the one being fixed here.
+        QVERIFY(!guiRefusalNeedsDialog(/*consoleAvailable=*/true));
+    }
+
+    /// The tray's status line, spelled in characters rather than in bytes.
+    ///
+    /// It read `QStringLiteral("Traduku %1 \xC2\xB7 tray %2")` - UTF-8 bytes
+    /// pasted into a UTF-16 literal. QStringLiteral makes a QChar per *byte*, so
+    /// the separator arrived as U+00C2 U+00B7 and the tray menu showed "Traduku
+    /// 0.3.0 Â· tray qt": a mojibake the user reported from the live desktop,
+    /// and the kind of thing no amount of reading the source catches, because
+    /// the source looks correct.
+    void theTrayStatusLineIsTextNotBytes()
+    {
+        const QString line = trayStatusLabel(QStringLiteral("0.3.0"),
+                                             QStringLiteral("qt"));
+        QVERIFY2(!line.contains(QChar(0x00C2)),    // the "Â" of a double-encoded UTF-8
+                 qPrintable(QStringLiteral("mojibake in the tray line: [") + line
+                            + QStringLiteral("]")));
+        QVERIFY2(line.contains(QStringLiteral("0.3.0")),
+                 qPrintable(QStringLiteral("no version in: [") + line + QStringLiteral("]")));
+        QVERIFY2(line.contains(QStringLiteral("tray qt")),
+                 qPrintable(QStringLiteral("no tray kind in: [") + line
+                            + QStringLiteral("]")));
+        // The separator is one character, not a two-byte imitation of one.
+        QVERIFY2(line.contains(QChar(0x00B7)) || line.contains(QLatin1Char('-')),
+                 qPrintable(QStringLiteral("no separator in: [") + line
+                            + QStringLiteral("]")));
+        QVERIFY2(line.size() < QStringLiteral("Traduku 0.3.0 ").size() + 32,
+                 qPrintable(QStringLiteral("the line grew past its parts: [")
+                            + line + QStringLiteral("]")));
+    }
+
     // First run is where a tray-less desktop is won or lost: the app is
     // installed, there is no icon (GNOME shows one only with the appindicator
     // extension), and nobody has told the user that Ctrl+C twice is the whole
@@ -149,23 +206,46 @@ private slots:
         qunsetenv("DISPLAY");
         qunsetenv("WAYLAND_DISPLAY");
         QVERIFY(lt::displayAdviceForMissingDisplay(
-                    {QStringLiteral("traduku"), QStringLiteral("--selftest")}, false)
+                    {QStringLiteral("traduku"), QStringLiteral("--selftest")}, false, false)
                 .contains(QStringLiteral("QT_QPA_PLATFORM")));
         QVERIFY(!lt::displayAdviceForMissingDisplay(
-                     {QStringLiteral("traduku")}, false).isEmpty());
+                     {QStringLiteral("traduku")}, false, false).isEmpty());
         // The console modes are rescued by decideQpa() and must not be refused:
         // they are the commands a user runs precisely when the desktop is broken.
         QVERIFY(lt::displayAdviceForMissingDisplay(
-                    {QStringLiteral("traduku"), QStringLiteral("--backend-info")}, false).isEmpty());
+                    {QStringLiteral("traduku"), QStringLiteral("--backend-info")}, false, false).isEmpty());
         QVERIFY(lt::displayAdviceForMissingDisplay(
-                    {QStringLiteral("traduku"), QStringLiteral("--autostart=off")}, false).isEmpty());
+                    {QStringLiteral("traduku"), QStringLiteral("--autostart=off")}, false, false).isEmpty());
         // With a display - or with a QPA of the user's own - there is nothing to
         // advise, and the modes run as they always did.
         QVERIFY(lt::displayAdviceForMissingDisplay(
-                    {QStringLiteral("traduku"), QStringLiteral("--selftest")}, true).isEmpty());
+                    {QStringLiteral("traduku"), QStringLiteral("--selftest")}, true, false).isEmpty());
         qputenv("QT_QPA_PLATFORM", "offscreen");   // the user answered already
         QVERIFY(lt::displayAdviceForMissingDisplay(
-                    {QStringLiteral("traduku"), QStringLiteral("--selftest")}, false).isEmpty());
+                    {QStringLiteral("traduku"), QStringLiteral("--selftest")}, false, false).isEmpty());
+    }
+
+    // The same refusal on Windows must not send the user to export DISPLAY.
+    void theMissingDisplayAdviceNamesTheOperatingSystemItIsSpeakingOn()
+    {
+        QProcessEnvironmentGuard g;
+        qunsetenv("QT_QPA_PLATFORM");
+        const QStringList selftest = {QStringLiteral("traduku"),
+                                      QStringLiteral("--selftest")};
+        const QString win = lt::displayAdviceForMissingDisplay(selftest, false, true);
+        QVERIFY(!win.isEmpty());
+        QVERIFY2(win.contains(QStringLiteral("desktop session")), qPrintable(win));
+        QVERIFY2(!win.contains(QStringLiteral("WAYLAND_DISPLAY")),
+                 "a Windows refusal that tells the user to export DISPLAY is "
+                 "advice nobody can follow");
+        // Named unixAdvice, not unix: GNU C defines `unix` (and `linux`) as
+        // macro =1 in standard-macros mode, so `const QString unix` expands to
+        // `const QString 1` - it compiles under MinGW, which does not define
+        // the macro, and breaks the build on every Linux compiler. This line
+        // is why: the Windows port landed green on its own box and red on
+        // Debian, where nobody ran the gate afterwards.
+        const QString unixAdvice = lt::displayAdviceForMissingDisplay(selftest, false, false);
+        QVERIFY2(unixAdvice.contains(QStringLiteral("DISPLAY")), qPrintable(unixAdvice));
     }
 
     void aHumanChosenQpaIsNeverOverwritten()
@@ -225,6 +305,259 @@ private slots:
         // The report says "(no display here)" only when it was our doing, and
         // this is the case where it was.
         QVERIFY(qpaWasForcedByUs());
+    }
+
+    // ---- Windows: the console a GUI-subsystem binary does not have -------
+    //
+    // `traduku --translate` from cmd on Windows is a GUI executable with no
+    // console of its own: without attaching to the parent's, the streamed
+    // translation and every error go nowhere and only the exit code comes
+    // back. The tray app must NOT do it - it has no parent console, and
+    // "attach to whoever launched me" from Explorer is a bug waiting for a
+    // shell that has one.
+    void consoleAttachOnlyForConsoleModesOnWindows()
+    {
+        using lt::ConsoleDecision;
+        QCOMPARE(lt::decideConsoleAttach(true, false, false), ConsoleDecision::Attach);
+        QCOMPARE(lt::decideConsoleAttach(true, true, false), ConsoleDecision::LeaveAsIs);
+        QCOMPARE(lt::decideConsoleAttach(true, false, true), ConsoleDecision::LeaveAsIs);
+        // Not Windows: the process already has the terminal it was started
+        // from, and attaching to a parent is nonsense there.
+        QCOMPARE(lt::decideConsoleAttach(false, false, false), ConsoleDecision::LeaveAsIs);
+        QCOMPARE(lt::decideConsoleAttach(false, false, true), ConsoleDecision::LeaveAsIs);
+    }
+
+    // --selftest needs widgets *and* prints, so it must not be classified as
+    // the tray app: on Windows that classification is the difference between a
+    // report and a silent exit code.
+    // A GUI binary has no console, and Qt's default handler on Windows notices
+    // and sends qWarning() to the debugger. These rows pin the replacement:
+    // every diagnostic that matters reaches the terminal, and says who said it.
+    void qtDiagnosticsBecomeAttributableTerminalLines()
+    {
+        QCOMPARE(lt::qtConsoleMessage(QStringLiteral("warning"),
+                                       QStringLiteral("no display")),
+                 QStringLiteral("traduku: no display"));
+        QCOMPARE(lt::qtConsoleMessage(QStringLiteral("fatal"),
+                                       QStringLiteral("boom")),
+                 QStringLiteral("traduku: boom"));
+        // Debug chatter keeps its text but does not get the product prefix:
+        // it is not a message to the user, and dressing it as one makes the
+        // report unreadable.
+        QCOMPARE(lt::qtConsoleMessage(QStringLiteral("debug"),
+                                      QStringLiteral("hook installed")),
+                 QStringLiteral("hook installed"));
+        // An empty diagnostic must produce no line at all, or the handler
+        // prints blank rows between the selftest's PASS lines.
+        QVERIFY(lt::qtConsoleMessage(QStringLiteral("warning"), QString()).isEmpty());
+        // Advice strings are also printed directly and already carry the
+        // prefix; adding it again gives "traduku: traduku: ...".
+        QCOMPARE(lt::qtConsoleMessage(
+                     QStringLiteral("warning"),
+                     QStringLiteral("traduku: no display here")),
+                 QStringLiteral("traduku: no display here"));
+    }
+
+    // A QPA the human named that is not installed is their mistake, but the
+    // app is the one that dies: Qt reaches qFatal/QMessageLogger and the GUI
+    // binary ends in a dialog that waits for a click (measured - a stray
+    // traduku.exe behind an invisible window, killed by hand). Refusing in
+    // words, before Qt is asked, is the product's job.
+    void aNamedButAbsentPlatformPluginIsRefusedInWords()
+    {
+        const QStringList installed = {QStringLiteral("windows"),
+                                       QStringLiteral("offscreen")};
+        // Nothing named: the platform picks its own default, not our business.
+        QVERIFY(lt::platformPluginProblem(QString(), installed).isEmpty());
+        // Named and present (including the "name:option" spelling Qt accepts).
+        QVERIFY(lt::platformPluginProblem(QStringLiteral("offscreen"), installed)
+                    .isEmpty());
+        QVERIFY(lt::platformPluginProblem(QStringLiteral("windows:darkmode=1"),
+                                          installed).isEmpty());
+        QVERIFY(lt::platformPluginProblem(QStringLiteral(" WINDOWS "), installed)
+                    .isEmpty());
+
+        const QString problem = lt::platformPluginProblem(
+            QStringLiteral("traduku-no-such-platform"), installed);
+        QVERIFY2(!problem.isEmpty(), "the typo was accepted");
+        QVERIFY2(problem.contains(QStringLiteral("traduku-no-such-platform")),
+                 qPrintable(QStringLiteral("the refused name is not echoed: ")
+                            + problem));
+        // ... and the fix has to be visible from here: an empty list would
+        // leave the reader guessing what this machine does have.
+        QVERIFY2(problem.contains(QStringLiteral("windows"))
+                     && problem.contains(QStringLiteral("offscreen")),
+                 qPrintable(QStringLiteral("the installed platforms are not "
+                                           "listed: ") + problem));
+        // A machine with no plugins at all is a different sentence: naming an
+        // empty choice list reads like a bug in the report.
+        const QString none = lt::platformPluginProblem(QStringLiteral("offscreen"), {});
+        QVERIFY2(!none.isEmpty(), "an empty install was accepted");
+        QVERIFY2(none.contains(QStringLiteral("no platform plugins")),
+                 qPrintable(none));
+    }
+
+    void selftestIsATerminalReportNotTheTrayApp()
+    {
+        using lt::ConsoleDecision;
+        QVERIFY(lt::printsToTerminal({QStringLiteral("traduku"),
+                                      QStringLiteral("--selftest")}));
+        QVERIFY(lt::printsToTerminal({QStringLiteral("traduku"),
+                                      QStringLiteral("--selftest"),
+                                      QStringLiteral("--live")}));
+        QVERIFY(lt::printsToTerminal({QStringLiteral("traduku"),
+                                      QStringLiteral("--backend-info")}));
+        QVERIFY(!lt::printsToTerminal({QStringLiteral("traduku")}));
+        QVERIFY(lt::needsWidgets({QStringLiteral("traduku"),
+                                  QStringLiteral("--selftest")}));
+        // ... and the two rules still disagree in exactly the way they should.
+        QCOMPARE(lt::decideConsoleAttach(true, false,
+                                         !lt::printsToTerminal({QStringLiteral("traduku"),
+                                                                QStringLiteral("--selftest")})),
+                 ConsoleDecision::Attach);
+        QCOMPARE(lt::decideConsoleAttach(true, false,
+                                         !lt::printsToTerminal({QStringLiteral("traduku")})),
+                 ConsoleDecision::LeaveAsIs);
+    }
+
+    // ---- the sound report names every cue, on every shell --------------
+    //
+    // Three copies of this block lived in the three main()s, each printing the
+    // status of SoundEvent::Finished alone. The Windows hand walk (ROADMAP.md
+    // \u00a77.8 item 2) then read "the profile has three cues, the report names
+    // one" - and a report that names one cue cannot tell you which of the other
+    // two is the silent one. Same rule that moved the tray line here: one
+    // portable function, tested on every platform, no main() able to get it
+    // wrong again.
+    void everyCueIsNamedInTheSoundReport()
+    {
+        QTemporaryDir dir;
+        QVERIFY(dir.isValid());
+        for (const char *n : {"bell.oga", "complete.oga", "dialog-error.oga"}) {
+            QFile f(QDir(dir.path()).filePath(QLatin1String(n)));
+            QVERIFY(f.open(QIODevice::WriteOnly));
+            f.write("x");
+            f.close();
+        }
+        Settings s(QDir(dir.path()).filePath(QStringLiteral("config.ini")));
+        SoundPlayer player(&s, {}, {dir.path()}, false,
+                           [](const QString &prog) { return prog; });
+
+        const SoundReport r = soundReport(player);
+        QVERIFY2(r.summary.contains(QStringLiteral("freedesktop")),
+                 qPrintable(QStringLiteral("the report does not name the profile: ")
+                            + r.summary));
+        QVERIFY2(r.cues.size() == 3,
+                 qPrintable(QStringLiteral("a profile with three cues, a report with ")
+                            + QString::number(r.cues.size())));
+        const QStringList events{QStringLiteral("started"), QStringLiteral("finished"),
+                                 QStringLiteral("failed")};
+        for (int i = 0; i < r.cues.size(); ++i) {
+            QVERIFY2(r.cues.at(i).startsWith(events.at(i) + QLatin1Char(':')),
+                     qPrintable(QStringLiteral("cue ") + QString::number(i)
+                                + QStringLiteral(" is not the event it should be: ")
+                                + r.cues.at(i)));
+            // Resolved: the line carries a path, and that file exists.
+            const QString path = r.cues.at(i).section(QLatin1Char(':'), 1).trimmed();
+            QVERIFY2(QFile::exists(path),
+                     qPrintable(QStringLiteral("a clean cue names a file that is "
+                                               "not there: ") + path));
+        }
+    }
+
+    /// A cue that cannot resolve has to say why, per cue: "no sound" from one
+    /// user is "nothing is wrong" from the report when the report only looked
+    /// at the event that happens to work.
+    void anUnresolvableCueIsReportedWithItsProblem()
+    {
+        QTemporaryDir dir;
+        QVERIFY(dir.isValid());
+        Settings s(QDir(dir.path()).filePath(QStringLiteral("config.ini")));
+        // No files at all; every player "installed", so the only complaint
+        // left is the missing theme - and it must be attached to each cue.
+        SoundPlayer player(&s, {}, {dir.path()}, false,
+                           [](const QString &prog) { return prog; });
+        const SoundReport r = soundReport(player);
+        QCOMPARE(r.cues.size(), 3);
+        for (const QString &line : r.cues) {
+            // A cue that resolves to nothing must not report a file: the part
+            // after the colon is the advice, and the advice has to be readable
+            // as advice.
+            QVERIFY2(line.contains(QStringLiteral("no sound theme")),
+                     qPrintable(QStringLiteral("the problem is not the sentence "
+                                               "the profile wrote: ") + line));
+        }
+    }
+
+    /// The user's own switch is one sentence, not three complaints: advice
+    /// about a feature somebody turned off is what teaches a user to skip the
+    /// advice that is true.
+    void aSwitchedOffSoundIsOneLineAndNoCueComplaints()
+    {
+        QTemporaryDir dir;
+        QVERIFY(dir.isValid());
+        Settings s(QDir(dir.path()).filePath(QStringLiteral("config.ini")));
+        s.setSoundsEnabled(false);
+        SoundPlayer player(&s, {}, {dir.path()}, false,
+                           [](const QString &prog) { return prog; });
+        const SoundReport r = soundReport(player);
+        QVERIFY2(r.summary.startsWith(QStringLiteral("off")), qPrintable(r.summary));
+        QVERIFY2(r.cues.isEmpty(),
+                 "a switched-off sound produced per-cue problems to read");
+    }
+
+    /// One cue muted is one line of "off" and two lines of files. A report
+    /// that only knows the master switch prints "off" for an app that still
+    /// chimes when the answer arrives - and prints a live path for an app whose
+    /// start cue the user silenced, which is the same lie in the other
+    /// direction. ROADMAP.md §7.8, hand walk of 2026-11-09.
+    void aSingleMutedCueIsReportedAsOffForThatCueOnly()
+    {
+        QTemporaryDir dir;
+        QVERIFY(dir.isValid());
+        for (const char *n : {"bell.oga", "complete.oga", "dialog-error.oga"}) {
+            QFile f(QDir(dir.path()).filePath(QLatin1String(n)));
+            QVERIFY(f.open(QIODevice::WriteOnly));
+            f.write("x");
+            f.close();
+        }
+        Settings s(QDir(dir.path()).filePath(QStringLiteral("config.ini")));
+        s.setSoundOnStart(false);
+        SoundPlayer player(&s, {}, {dir.path()}, false,
+                           [](const QString &prog) { return prog; });
+
+        const SoundReport r = soundReport(player);
+        QVERIFY2(r.summary.startsWith(QStringLiteral("freedesktop")),
+                 qPrintable(QStringLiteral("the app is not muted: ") + r.summary));
+        QCOMPARE(r.cues.size(), 3);
+        QVERIFY2(r.cues.at(0).contains(QStringLiteral("off")),
+                 qPrintable(QStringLiteral("the muted cue is not reported as off: ")
+                            + r.cues.at(0)));
+        for (int i = 1; i < r.cues.size(); ++i) {
+            const QString path = r.cues.at(i).section(QLatin1Char(':'), 1).trimmed();
+            QVERIFY2(QFile::exists(path),
+                     qPrintable(QStringLiteral("a live cue lost its file: ")
+                                + r.cues.at(i)));
+        }
+    }
+
+    // ---- Windows: what the first launch asks ----------------------------
+    //
+    // Windows ships no package and installs no autostart entry, so the app
+    // must ASK (the Plasma rule), and it must not be told the tray is missing
+    // unless the tray really is: on this OS a shell is always there.
+    void windowsFirstRunAsksAboutAutostart()
+    {
+        const FirstRunPlan win = lt::planFirstRun(QStringLiteral("windows"), true, false);
+        QVERIFY(win.greet);
+        QVERIFY(win.askAboutAutostart);
+        QVERIFY(win.openSettings);        // nothing to translate with yet
+        QVERIFY(!win.explainMissingIcon); // tray available -> nothing to explain
+
+        const FirstRunPlan winTrayless = lt::planFirstRun(QStringLiteral("windows"),
+                                                         false, true);
+        QVERIFY(winTrayless.explainMissingIcon);
+        QVERIFY(!winTrayless.openSettings);   // endpoint set: do not block them
     }
 
 private:
