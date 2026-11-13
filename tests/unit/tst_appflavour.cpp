@@ -506,6 +506,41 @@ private slots:
                  "a switched-off sound produced per-cue problems to read");
     }
 
+    /// One cue muted is one line of "off" and two lines of files. A report
+    /// that only knows the master switch prints "off" for an app that still
+    /// chimes when the answer arrives - and prints a live path for an app whose
+    /// start cue the user silenced, which is the same lie in the other
+    /// direction. ROADMAP.md §7.8, hand walk of 2026-11-09.
+    void aSingleMutedCueIsReportedAsOffForThatCueOnly()
+    {
+        QTemporaryDir dir;
+        QVERIFY(dir.isValid());
+        for (const char *n : {"bell.oga", "complete.oga", "dialog-error.oga"}) {
+            QFile f(QDir(dir.path()).filePath(QLatin1String(n)));
+            QVERIFY(f.open(QIODevice::WriteOnly));
+            f.write("x");
+            f.close();
+        }
+        Settings s(QDir(dir.path()).filePath(QStringLiteral("config.ini")));
+        s.setSoundOnStart(false);
+        SoundPlayer player(&s, {}, {dir.path()}, false,
+                           [](const QString &prog) { return prog; });
+
+        const SoundReport r = soundReport(player);
+        QVERIFY2(r.summary.startsWith(QStringLiteral("freedesktop")),
+                 qPrintable(QStringLiteral("the app is not muted: ") + r.summary));
+        QCOMPARE(r.cues.size(), 3);
+        QVERIFY2(r.cues.at(0).contains(QStringLiteral("off")),
+                 qPrintable(QStringLiteral("the muted cue is not reported as off: ")
+                            + r.cues.at(0)));
+        for (int i = 1; i < r.cues.size(); ++i) {
+            const QString path = r.cues.at(i).section(QLatin1Char(':'), 1).trimmed();
+            QVERIFY2(QFile::exists(path),
+                     qPrintable(QStringLiteral("a live cue lost its file: ")
+                                + r.cues.at(i)));
+        }
+    }
+
     // ---- Windows: what the first launch asks ----------------------------
     //
     // Windows ships no package and installs no autostart entry, so the app

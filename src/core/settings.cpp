@@ -133,6 +133,33 @@ void Settings::reload()
     if (f.open(QIODevice::ReadOnly)) {
         m_values = parseIni(f.readAll());
     }
+    migrateLegacySoundSwitch();
+}
+
+/// One old bit for two cues becomes two keys, once, on load.
+///
+/// The dialog used to have a single "starts / finishes" box writing
+/// SoundsEnabled. Reading that file with the new controls means deciding what
+/// `SoundsEnabled=false` says about each cue, and the answer cannot be "both
+/// on": a user who muted the app would find sound back after an upgrade, which
+/// is the one migration a user notices. A config with no SoundsEnabled key at
+/// all is a new install, where both cues are on and nothing is written.
+void Settings::migrateLegacySoundSwitch()
+{
+    const QString prefix = QLatin1String(Section) + QLatin1Char('.');
+    const QString master = prefix + QLatin1String("SoundsEnabled");
+    const QString start = prefix + QLatin1String("SoundsOnStart");
+    const QString finish = prefix + QLatin1String("SoundsOnFinish");
+    if (!m_values.contains(master) || m_values.contains(start)) {
+        return;     // new config, or already carried over
+    }
+    const bool on = m_values.value(master).toBool();
+    m_values.insert(start, on ? QStringLiteral("true") : QStringLiteral("false"));
+    m_values.insert(finish, on ? QStringLiteral("true") : QStringLiteral("false"));
+    // The master stops carrying meaning of its own (it becomes "at least one
+    // cue is on", which the cue setters maintain) - leaving it false would
+    // mute a cue the user has just seen checked in the dialog.
+    m_values.insert(master, QStringLiteral("true"));
 }
 
 bool Settings::configFileExists() const
@@ -286,7 +313,56 @@ bool Settings::soundsEnabled() const
 {
     return value("SoundsEnabled", true).toBool();
 }
-LT_DEFINE_SETTER(setSoundsEnabled, soundsEnabled, bool, "SoundsEnabled")
+
+void Settings::setSoundsEnabled(bool on)
+{
+    if (soundsEnabled() == on) {
+        return;
+    }
+    setValue("SoundsEnabled", on);
+    // One bit for two cues, in both directions. Muting the app mutes both,
+    // because that is the only thing the old single box could mean - and
+    // un-muting gives both back, because a master that silences two cues on the
+    // way down and restores none on the way up is a switch that can only be
+    // turned off. --selftest, the CLI and every config written before this
+    // split use it alone, so it has to remain able to say "sound".
+    setValue("SoundsOnStart", on);
+    setValue("SoundsOnFinish", on);
+}
+
+bool Settings::soundOnStart() const
+{
+    return value("SoundsOnStart", true).toBool();
+}
+
+bool Settings::soundOnFinish() const
+{
+    // One switch for both endings: "the translation is over" is the moment the
+    // user is asking about, and it arrives as a success or as a failure.
+    return value("SoundsOnFinish", true).toBool();
+}
+
+void Settings::setSoundOnStart(bool on)
+{
+    if (soundOnStart() == on) {
+        return;
+    }
+    setValue("SoundsOnStart", on);
+    // The master is the pair, not a third switch somebody has to discover: a
+    // user who muted both cues has a muted app - and --backend-info, which
+    // answers with the master, must not claim a live sound path - while one
+    // cue turned back on un-mutes it without a second click somewhere else.
+    setValue("SoundsEnabled", on || soundOnFinish());
+}
+
+void Settings::setSoundOnFinish(bool on)
+{
+    if (soundOnFinish() == on) {
+        return;
+    }
+    setValue("SoundsOnFinish", on);
+    setValue("SoundsEnabled", on || soundOnStart());
+}
 
 QString Settings::globalShortcut() const
 {
