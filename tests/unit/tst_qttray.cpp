@@ -154,7 +154,12 @@ private slots:
         QVERIFY2(englishChecked, "the checked entry must be the configured language");
     }
 
-    void pickingALanguageWritesSettings()
+    /// The tray is a view. It used to write the setting itself, which left the
+    /// destination language with two writers - the tray's menu handler and the
+    /// app controller answering the same click - and the consequence of a pick
+    /// ("translate the pane into this") had no owner at all. One click, one
+    /// emitted code; the writer is AppController::pickTargetLanguage.
+    void pickingALanguageEmitsTheCodeAndWritesNothing()
     {
         Settings s(path());
         s.setTargetLanguage(QStringLiteral("ru"));
@@ -178,7 +183,58 @@ private slots:
         toEnglish->trigger();
         QCOMPARE(picked.count(), 1);
         QCOMPARE(picked.first().first().toString(), QStringLiteral("en"));
-        QCOMPARE(Settings(path()).targetLanguage(), QStringLiteral("en"));
+        QCOMPARE(s.targetLanguage(), QStringLiteral("ru"));
+        QCOMPARE(Settings(path()).targetLanguage(), QStringLiteral("ru"));
+    }
+
+    /// The tick must say what the app has, not what was clicked last. A menu
+    /// that ticks itself on click shows "German" while the app is translating
+    /// into Russian - which is the same lie the tray's status row was pinned
+    /// against (§7.8 item 1), one menu lower.
+    void theTickFollowsTheSettingNotTheClick()
+    {
+        Settings s(path());
+        s.setTargetLanguage(QStringLiteral("ru"));
+        s.save();
+        FakeAutostart autostart;
+        QtTray tray(&s, &autostart);
+
+        QAction *toEnglish = nullptr;
+        for (QAction *a : tray.menu()->actions()) {
+            if (!a->menu()) {
+                continue;
+            }
+            for (QAction *lang : a->menu()->actions()) {
+                if (lang->data().toString() == QLatin1String("en")) {
+                    toEnglish = lang;
+                }
+            }
+        }
+        QVERIFY(toEnglish);
+
+        auto checked = [&tray]() {
+            QStringList codes;
+            for (QAction *a : tray.menu()->actions()) {
+                for (QAction *lang : a->menu() ? a->menu()->actions()
+                                               : QList<QAction *>()) {
+                    if (lang->isChecked()) {
+                        codes << lang->data().toString();
+                    }
+                }
+            }
+            return codes;
+        };
+
+        QCOMPARE(checked().size(), 1);          // exactly one tick: the current language
+        QCOMPARE(checked().first(), QStringLiteral("ru"));
+        toEnglish->trigger();                   // clicked, nobody wrote
+        QCOMPARE(checked().size(), 1);
+        QCOMPARE(checked().first(), QStringLiteral("ru"));
+
+        s.setTargetLanguage(QStringLiteral("en"));   // the writer wrote
+        s.save();
+        QCOMPARE(checked().size(), 1);
+        QCOMPARE(checked().first(), QStringLiteral("en"));
     }
 
     void autostartEntryTogglesTheBackendAndStaysChecked()

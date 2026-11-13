@@ -346,6 +346,12 @@ int main(int argc, char **argv)
                      &AppController::surfaceWindow);
     QObject::connect(tray, &ITray::translateRequested,
                      &controller, &AppController::translateNow);
+    // The tray's language menu is a control over a setting the whole app
+    // reads; the consequence of a pick lives in the controller, and a shell
+    // that forgets this connect ships a menu row that leads nowhere (gate:
+    // tests/cmake/test_tray_language_wiring.sh).
+    QObject::connect(tray, &ITray::targetLanguagePicked,
+                     &controller, &AppController::pickTargetLanguage);
     QObject::connect(tray, &ITray::quitRequested, &app,
                      [&]() { app.quit(); });   // trays only ask, the shell leaves
     QObject::connect(&controller, &AppController::settingsRequested, &app,
