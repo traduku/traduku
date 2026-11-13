@@ -13,6 +13,7 @@
 #include <QDataStream>
 #include <QFileInfo>
 #include <QTemporaryDir>
+#include <QVector>
 #include <cmath>
 #include <memory>
 
@@ -247,28 +248,27 @@ private slots:
     }
 
     /// A cue nobody hears is not a cue - and "nobody hears it" is measurable
-    /// off the file, without ears and without a speaker: a RIFF/PCM file
-    /// carries its own length and its own energy.
+    /// off the file, without ears and without a speaker.
     ///
-    /// Measured off C:\Windows\Media on this machine (2026-11-09), of the files
-    /// this profile pointed at before the row below existed:
-    ///   Windows Menu Command.wav    0.15 s  rms 0.001   <- the start cue
-    ///   Windows Feed Discovered.wav 0.11 s  rms 0.003
-    ///   Windows Ding.wav            1.09 s  rms 0.009
-    ///   Windows Notify System Generic.wav  1.29 s  rms 0.058  <- the finish cue
-    /// The pair the user described as "a mosquito squeak" under a real chime:
-    /// the start cue is a quarter of the length and a fiftieth of the energy of
-    /// the finish cue. It is not a taste question, and the old candidate list
-    /// was picked by reading folder names, which is how it stayed invisible.
+    /// The metric is the loudest 100 ms of the file, not its average.
+    /// The first version of this row averaged the whole file, which is a
+    /// statement about the sound's energy and not about the ear: a bell rings
+    /// and decays, so the decay is counted as if it were silence. That metric
+    /// called the cue a person chose by ear "three times too quiet"
+    /// (Windows Notify.wav: 0.0117 averaged over 1.29 s, 0.0262 over its loudest
+    /// 100 ms), and called the cue the same person rejected - "a mosquito
+    /// squeak" - about as quiet (Windows Menu Command.wav: 0.0011 averaged,
+    /// 0.0013 over its loudest 100 ms). It is the second number that agrees
+    /// with the ear, and `theLoudnessMetricIsAnchoredOnTheEarVerdicts` below
+    /// pins that agreement, so the floor cannot be moved by taste.
     void theChosenCuesAreFilesAPersonCanHear()
     {
-        // The floor is a claim, so it is named: 0.25 s is the shortest length
-        // that survives being heard over a fan (the finish cue of the same
-        // profile is 5x that), and rms 0.02 (-34 dBFS) is the level below which
-        // Windows' own default volume puts a file under room noise - the cues
-        // this machine ships all sit between 0.03 and 0.07.
-        const double minSeconds = 0.25;
-        const double minRms = 0.02;
+        // The floors are claims, so they are named, and both sit on the side of
+        // the measurements that the ear rejected: 0.25 s is above the 0.11 s of
+        // the squeak, 0.02 is below the 0.0262 of the accepted cue and above
+        // the 0.0013 of the rejected one.
+        const double minAudibleSeconds = 0.25;
+        const double minLoudness = 0.02;
 
         const QString media = windowsMediaDir();
         if (media.isEmpty() || !QFileInfo::exists(media)) {
@@ -289,24 +289,85 @@ private slots:
                 continue;      // not PCM16: this row cannot speak about it
             }
             ++measured;
-            const QString what = QStringLiteral("%1 (%2 s, rms %3)")
+            const QString what = QStringLiteral("%1 (heard for %2 s, loudness %3)")
                 .arg(QFileInfo(file).fileName())
-                .arg(QString::number(facts.seconds, 'f', 2))
-                .arg(QString::number(facts.rms, 'f', 4));
-            QVERIFY2(facts.seconds >= minSeconds,
+                .arg(QString::number(facts.audible, 'f', 2))
+                .arg(QString::number(facts.loudness, 'f', 4));
+            QVERIFY2(facts.audible >= minAudibleSeconds,
                      qPrintable(QStringLiteral("cue too short to be heard: ") + what));
-            QVERIFY2(facts.rms >= minRms,
+            QVERIFY2(facts.loudness >= minLoudness,
                      qPrintable(QStringLiteral("cue too quiet to be heard: ") + what));
         }
         QVERIFY2(measured > 0, "no cue on this machine is a PCM16 wav to measure");
+    }
+
+    /// The negative control of the row above, written as a product rule.
+    ///
+    /// A loudness floor with no anchored samples is a number somebody picked:
+    /// the first version of this gate rejected the cue a person chose and
+    /// accepted the cue a person rejected. So the metric is required to order
+    /// the two verdicts the way the ear ordered them, by a margin, on this
+    /// machine's own files - and if a future edit moves the floor to make a
+    /// cue fit, this row says which verdict it was moved away from.
+    void theLoudnessMetricIsAnchoredOnTheEarVerdicts()
+    {
+        const QString media = windowsMediaDir();
+        if (media.isEmpty() || !QFileInfo::exists(media)) {
+            QSKIP("no %WINDIR%\\Media on this machine - no bytes to measure");
+        }
+        const WavFacts squeak = measureWav(QDir(media).filePath(
+            QStringLiteral("Windows Menu Command.wav")));    // "писк комара"
+        const WavFacts chosen = measureWav(QDir(media).filePath(
+            QStringLiteral("Windows Notify.wav")));           // chosen by ear
+        if (!squeak.parsed || !chosen.parsed) {
+            QSKIP("this Windows does not ship both files to compare");
+        }
+        QVERIFY2(chosen.loudness > squeak.loudness * 4.0,
+                 qPrintable(QStringLiteral("the metric does not separate the cue "
+                                            "the ear chose from the one it "
+                                            "rejected: chosen ")
+                            + QString::number(chosen.loudness, 'f', 4)
+                            + QStringLiteral(" vs squeak ")
+                            + QString::number(squeak.loudness, 'f', 4)));
+        QVERIFY2(chosen.audible > squeak.audible * 4.0,
+                 "the chosen cue is not longer, in heard seconds, than the squeak");
+    }
+
+    /// Which file the start cue is, on a machine that has it.
+    ///
+    /// The choice is the user's (2026-11-09, after an audition of four
+    /// candidates played on a live desktop), and it is recorded as a product
+    /// decision, so that the next person who "improves" the list by picking a
+    /// louder file has to answer the ear that picked this one.
+    void theStartCueIsTheOneTheEarChose()
+    {
+        const QString media = windowsMediaDir();
+        if (media.isEmpty()) {
+            QSKIP("no %WINDIR%\\Media on this machine");
+        }
+        const QStringList names = windowsSoundCandidates(SoundEvent::Started);
+        QVERIFY(!names.isEmpty());
+        QString resolved;
+        for (const QString &name : names) {
+            if (QFile::exists(QDir(media).filePath(name))) {
+                resolved = name;
+                break;
+            }
+        }
+        if (resolved.isEmpty()) {
+            QSKIP("this Windows has none of the start-cue files");
+        }
+        QCOMPARE(resolved, QStringLiteral("Windows Notify.wav"));
     }
 
 private:
     struct WavFacts
     {
         bool parsed = false;
-        double seconds = 0.0;
-        double rms = -1.0;
+        double seconds = 0.0;   ///< the whole file
+        double audible = 0.0;   ///< first to last frame above the noise gate
+        double loudness = 0.0;  ///< rms of the loudest 100 ms - what an ear hears
+        double rms = 0.0;       ///< over the whole file; see the row above
     };
 
     /// The two facts a sound file has to answer for a cue: how long it is, and
@@ -332,7 +393,7 @@ private:
         if (magic != 0x46464952 /* "RIFF" */ || wave != 0x45564157 /* "WAVE" */) {
             return f;
         }
-        quint16 channels = 0, bits = 0, blockAlign = 0;
+        quint16 channels = 0, bits = 0;
         quint32 rate = 0;
         bool haveFmt = false;
         r.device()->seek(12);
@@ -345,17 +406,16 @@ private:
                 // read two bytes early - the first draft of this function did
                 // that, and reported 16-bit files as 44100 Hz mono of unknown
                 // width.
-                quint16 format = 0, blockAlignUnused = 0;
+                quint16 format = 0, blockAlign = 0;
                 quint32 avgBytesPerSec = 0;
                 r.device()->seek(body);
                 r >> format >> channels >> rate >> avgBytesPerSec
-                  >> blockAlignUnused >> bits;
-                blockAlign = blockAlignUnused;
+                  >> blockAlign >> bits;
                 if (format != 1) {
                     return f;              // not PCM: this row has no opinion
                 }
                 haveFmt = true;
-            } else if (id == 0x61746164 /* "data " */) {
+            } else if (id == 0x61746164 /* "data" */) {
                 if (!haveFmt || bits != 16 || channels == 0 || rate == 0) {
                     return f;
                 }
@@ -366,14 +426,49 @@ private:
                 if (n <= 0) {
                     return f;
                 }
+                // One channel is enough: every cue Windows ships is a stereo
+                // pair of the same signal, and a window over a mono stream is
+                // the same window with half the samples.
+                QVector<double> s;
+                s.reserve(n / channels);
                 const auto *v = reinterpret_cast<const quint16 *>(pcm.constData());
-                double sum = 0.0;
-                for (int i = 0; i < n; ++i) {
-                    const double s = (v[i] ^ 0x8000) - 0x8000;   // signed, no casts
-                    sum += s * s;
+                for (int i = 0; i < n; i += channels) {
+                    s << ((double(int(v[i]) ^ 0x8000) - 32768.0) / 32768.0);
                 }
-                f.rms = std::sqrt(sum / n) / 32768.0;
-                f.seconds = double(pcm.size()) / (channels * rate * 2.0);
+                const int sn = s.size();
+                const int window = qMax(1, int(rate / 10));          // 100 ms
+                double sumAll = 0.0;
+                for (double x : s) {
+                    sumAll += x * x;
+                }
+                f.rms = std::sqrt(sumAll / sn);
+                // The loudest 100 ms in the file, in 50 ms steps: the ear
+                // answers to a cue's loudest moment, not to its average.
+                double loud = 0.0;
+                for (int i = 0; i + window <= sn; i += qMax(1, window / 2)) {
+                    double sum = 0.0;
+                    for (int k = i; k < i + window; ++k) {
+                        sum += s.at(k) * s.at(k);
+                    }
+                    loud = qMax(loud, std::sqrt(sum / window));
+                }
+                f.loudness = loud;
+                f.seconds = double(sn) / rate;
+                // How long anything is actually in there: the span between the
+                // first and the last sample above 2% of the loudest moment - a
+                // noise gate, so a 2-second file whose tone is 150 ms long is
+                // reported as 150 ms of cue.
+                const double gate = 0.02 * loud;
+                int first = -1, last = -1;
+                for (int i = 0; i < sn; ++i) {
+                    if (qAbs(s.at(i)) >= gate) {
+                        if (first < 0) {
+                            first = i;
+                        }
+                        last = i;
+                    }
+                }
+                f.audible = first < 0 ? 0.0 : double(last - first) / rate;
                 f.parsed = true;
                 return f;
             }

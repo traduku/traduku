@@ -229,10 +229,13 @@ instead of silently omitting an icon.
 - **Audio progress cues**: a start chime when the gesture fires, a
   completion sound when the translation is ready, an error sound on failure
   (freedesktop theme; toggleable in Settings). You can follow the process
-  without watching the screen. `--backend-info` names the player it found
-  (`audio: pw-play - /usr/share/sounds/freedesktop/stereo/complete.oga`) or
+  without watching the screen. `--backend-info` names the player it found and
+  one line per cue
+  (`audio: freedesktop: pw-play`, `audio started: .../bell.oga`,
+  `audio finished: .../complete.oga`, `audio failed: .../dialog-error.oga`) or
   the precise reason there is none — it does not guess `paplay` on a PipeWire
-  box that has only `pw-play`.
+  box that has only `pw-play`, and a three-cue profile that reports one file
+  cannot answer "which cue is the silent one".
 - **Configurable endpoint** (address / API key / model), destination
   language, double-press window, clipboard behaviour — stored as a plain
   INI in `~/.config/traduku/config.ini`, editable from any DE.
@@ -450,9 +453,10 @@ traduku --translate --text "Hello"
   automatically and its shortcut appears in the tooltip. For the evdev path,
   check the ACL: `getfacl /dev/input/eventN` must list `user:<you>:rw-`.
 - **No sounds**: a freedesktop sound theme and *some* player (`pw-play`,
-  `paplay`, `aplay`) must exist; `--backend-info` prints
-  `audio: <player> - <file>` or the reason it has none, and says nothing
-  alarming if you switched sounds off. Sounds are best-effort.
+  `paplay`, `aplay`) must exist; `--backend-info` prints `audio: <profile>:
+  <player>` plus one `audio <cue>: <file>` line per cue (or the reason that
+  cue has none), and says nothing alarming if you switched sounds off. Sounds
+  are best-effort.
 - **Non-Latin layouts**: supported (keycode-based matching); a `ru_RU.UTF-8`
   session also defaults the destination language to Russian.
 - **kf.i18n warnings**: the app ships plain-English source strings and no
