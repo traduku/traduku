@@ -40,8 +40,18 @@ public:
     void setPressInterval(double seconds);
     bool copyResult() const;            // clipboard := translation
     void setCopyResult(bool on);
-    bool soundsEnabled() const;
+    bool soundsEnabled() const;         // the master switch
     void setSoundsEnabled(bool on);
+    /// The two cues, separately. A translation has two moments worth hearing -
+    /// the request leaving, the answer arriving - and they are not one
+    /// decision: the first fires on every gesture, the second is the reason the
+    /// app exists. `soundsEnabled()` stays the master (existing configs, the
+    /// CLI and --selftest speak it), and these two answer through it: a muted
+    /// app reports every cue off, whatever the cue keys say.
+    bool soundOnStart() const;
+    bool soundOnFinish() const;         // the finish AND the failure cue
+    void setSoundOnStart(bool on);
+    void setSoundOnFinish(bool on);
     int maxWholeTextChars() const;       // <= this: one whole-text request
     void setMaxWholeTextChars(int chars);
     int maxParallel() const;             // concurrent chunk requests
@@ -83,6 +93,9 @@ Q_SIGNALS:
 private:
     QVariant value(const char *key, const QVariant &fallback) const;
     void setValue(const char *key, const QVariant &v);
+    /// Carries the single legacy SoundsEnabled bit into the two cue keys, once,
+    /// on load. See the definition.
+    void migrateLegacySoundSwitch();
 
     QString m_path;
     bool m_existed = false;

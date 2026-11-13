@@ -15,6 +15,24 @@ QString detect(const QString &program)
     return QStandardPaths::findExecutable(program);
 }
 
+/// Whether this cue is on, on this user's switches.
+///
+/// One lookup for play() and status(), because the two questions - "will a
+/// sound come out now" and "what does the report say about it" - are the same
+/// fact, and a report that answers it differently from the player is how
+/// "--backend-info says live, my laptop says silent" happens. The master
+/// switch lives inside the getters (Settings::soundOnStart), and the failure
+/// cue belongs to the finish switch: "the translation ended" is the moment the
+/// user asked to hear, and it arrives as a success or as a failure.
+bool cueEnabled(const Settings *settings, SoundEvent event)
+{
+    if (!settings) {
+        return true;
+    }
+    return event == SoundEvent::Started ? settings->soundOnStart()
+                                        : settings->soundOnFinish();
+}
+
 SoundPlayer::Player detachedPlayer(const QString &program,
                                    const SoundPlayer::ToolFinder &find)
 {
@@ -131,7 +149,7 @@ QString SoundPlayer::resolve(SoundEvent event) const
 SoundPlayer::Status SoundPlayer::status(SoundEvent event) const
 {
     Status st;
-    st.enabled = !m_settings || m_settings->soundsEnabled();
+    st.enabled = cueEnabled(m_settings, event);
     if (!st.enabled) {
         // The user switched it off. Nothing is broken, and advice about a
         // feature someone turned off is noise that gets the real advice
@@ -163,7 +181,7 @@ SoundPlayer::Status SoundPlayer::status(SoundEvent event) const
 
 void SoundPlayer::play(SoundEvent event)
 {
-    if (m_settings && !m_settings->soundsEnabled()) {
+    if (!cueEnabled(m_settings, event)) {
         return;
     }
     const QString path = resolve(event);

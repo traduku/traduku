@@ -400,7 +400,9 @@ Keys beyond address / key / model that are worth knowing:
 | `DisableReasoning` | `true` | asks the model to skip its hidden reasoning channel |
 | `ReasoningOffOptions` | vLLM+OpenAI preset | the JSON merged when the switch is on |
 | `ExtraOptions` | *(empty)* | any JSON object merged into the request body |
-| `SoundsEnabled` | `true` | the three progress sounds |
+| `SoundsEnabled` | `true` | master switch for the three progress sounds |
+| `SoundsOnStart` | `true` | the cue played when a translation begins |
+| `SoundsOnFinish` | `true` | the cue played when it ends, success or failure |
 
 Reasoning models (`delta.reasoning` in the stream) answer the same prompt
 3× slower because they first emit a private chain of thought we discard.
@@ -454,9 +456,15 @@ traduku --translate --text "Hello"
   check the ACL: `getfacl /dev/input/eventN` must list `user:<you>:rw-`.
 - **No sounds**: a freedesktop sound theme and *some* player (`pw-play`,
   `paplay`, `aplay`) must exist; `--backend-info` prints `audio: <profile>:
-  <player>` plus one `audio <cue>: <file>` line per cue (or the reason that
-  cue has none), and says nothing alarming if you switched sounds off. Sounds
-  are best-effort.
+  <player>` plus one `audio <cue>: <file>` line per cue — a cue you switched
+  off in the settings dialog answers `audio <cue>: off (SoundsOnStart=false)`
+  instead of a path, and a fully muted app answers with one
+  `audio: off (Sounds.Enabled=false)` line and no per-cue complaints. Sounds
+  are best-effort. The two dialog switches are per cue: `SoundsOnStart` for the
+  beginning, `SoundsOnFinish` for the end (it also covers the failure cue,
+  because "the translation is over" arrives as a success or as a failure).
+  `SoundsEnabled` remains the master: turning it off mutes both cues, turning it
+  on gives both back.
 - **Non-Latin layouts**: supported (keycode-based matching); a `ru_RU.UTF-8`
   session also defaults the destination language to Russian.
 - **kf.i18n warnings**: the app ships plain-English source strings and no

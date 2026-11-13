@@ -20,6 +20,14 @@
 namespace lt {
 
 namespace {
+/// The three cues the report speaks about, in the order it prints them.
+constexpr int cueCount()
+{
+    return 3;
+}
+} // namespace
+
+namespace {
 
 /// Modes that never open a window and never live in the tray. Kept here
 /// rather than per shell: two lists drifted once already (the KDE shell had
@@ -126,11 +134,24 @@ SoundReport soundReport(const SoundPlayer &player)
     SoundReport r;
     const SoundPlayer::Profile &profile = player.profile();
 
-    // The user's switch first: it is one sentence, and three lines of advice
-    // about a feature somebody turned off is how the advice that is true gets
-    // skipped.
-    const SoundPlayer::Status start = player.status(SoundEvent::Started);
-    if (!start.enabled) {
+    const struct { SoundEvent event; const char *name; const char *key; } cues[] = {
+        {SoundEvent::Started, "started", "SoundsOnStart"},
+        {SoundEvent::Finished, "finished", "SoundsOnFinish"},
+        {SoundEvent::Failed, "failed", "SoundsOnFinish"},
+    };
+
+    SoundPlayer::Status statusOf[cueCount()];
+    bool allOff = true;
+    for (int i = 0; i < cueCount(); ++i) {
+        statusOf[i] = player.status(cues[i].event);
+        allOff = allOff && !statusOf[i].enabled;
+    }
+
+    // The user's master switch, and only that: it is one sentence, and three
+    // lines of advice about a feature somebody turned off is how the advice
+    // that is true gets skipped. One cue muted is not a muted app - the loop
+    // below prints that cue as off and leaves the other two with their files.
+    if (allOff) {
         r.summary = QStringLiteral("off (Sounds.Enabled=false)");
         return r;
     }
@@ -138,23 +159,28 @@ SoundReport soundReport(const SoundPlayer &player)
     // The summary names the profile and the player that would run: "which
     // sound system is this" is a question about the machine, and the answer
     // comes from the object that plays.
+    QString player_;
+    for (int i = 0; i < cueCount(); ++i) {
+        if (statusOf[i].enabled && !statusOf[i].player.isEmpty()) {
+            player_ = statusOf[i].player;
+            break;
+        }
+    }
     r.summary = QStringLiteral("%1: %2").arg(
-        profile.name,
-        start.player.isEmpty() ? QStringLiteral("no player") : start.player);
+        profile.name, player_.isEmpty() ? QStringLiteral("no player") : player_);
 
     // One line per cue. A report that prints one cue for a three-cue profile
     // cannot answer "which of the two is the silent one", and that is the
     // question a user with no sound came here to ask.
-    const struct { SoundEvent event; const char *name; } cues[] = {
-        {SoundEvent::Started, "started"},
-        {SoundEvent::Finished, "finished"},
-        {SoundEvent::Failed, "failed"},
-    };
-    for (const auto &cue : cues) {
-        const SoundPlayer::Status st = player.status(cue.event);
-        r.cues << QStringLiteral("%1: %2").arg(
-            QString::fromUtf8(cue.name),
-            st.problem.isEmpty() ? st.file : st.problem);
+    for (int i = 0; i < cueCount(); ++i) {
+        QString value;
+        if (!statusOf[i].enabled) {
+            value = QStringLiteral("off (%1=false)").arg(QLatin1String(cues[i].key));
+        } else {
+            value = statusOf[i].problem.isEmpty() ? statusOf[i].file
+                                                  : statusOf[i].problem;
+        }
+        r.cues << QStringLiteral("%1: %2").arg(QString::fromUtf8(cues[i].name), value);
     }
     return r;
 }
