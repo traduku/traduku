@@ -1,3 +1,35 @@
+traduku (0.4.0-1) unstable; urgency=medium
+
+  * Windows 10/11 is a platform this app ships for. traduku.exe is built GUI
+    subsystem (no console window behind a tray app), the gesture is a
+    WH_KEYBOARD_LL passive hook (RegisterHotKey was rejected: it intercepts the
+    copy the user is making), the clipboard is Qt's win32 one, notifications are
+    Shell_NotifyIcon balloons, the tray is QSystemTrayIcon, autostart is the
+    HKCU Run value verified by an independent reader, and the artifact is a
+    portable zip that runs with no Qt and no compiler installed.
+  * The Windows cues are audible. A Qt 6 QMediaPlayer without a QAudioOutput
+    plays to nobody, and the one sound people heard was Windows' own balloon
+    chime. The player is wired to a speaker, the audio device is opened before
+    the first gesture, and --backend-info prints the device and the file behind
+    every cue - so "no sound" and "there is no sound device" are two different
+    answers.
+  * The start cue is a sound a person chose by ear, selected from the Windows
+    media files by measurement (audible span, loudness of the loudest 100 ms),
+    not by filename.
+  * Sound has two switches: one for the beginning of a translation, one for the
+    end. One box labelled "starts / finishes" carried one bit, so muting the
+    start cue - the request the desktop walk produced - had no control at all.
+  * Choosing a destination language now translates. The window's list and the
+    tray's "Translate To" save the language and translate the text that is on
+    screen, the way the Ctrl+C twice gesture does: a language picked over a pane
+    full of text is a question about that text. The list in the Settings dialog
+    stays a form field - it applies on OK, and Cancel cancels.
+  * The tray menu is a view, not a second writer of the settings file, and the
+    tick on the language row follows the language the app has rather than the
+    last row clicked.
+
+ -- Traduku contributors <dev@localhost>  Fri, 13 Nov 2026 21:15:00 +0000
+
 traduku (0.3.0-1) unstable; urgency=medium
 
   * GNOME shell: the app now runs on GNOME/Wayland without any KF6 - the
