@@ -15,6 +15,24 @@ QString detect(const QString &program)
     return QStandardPaths::findExecutable(program);
 }
 
+/// Whether this cue is on, on this user's switches.
+///
+/// One lookup for play() and status(), because the two questions - "will a
+/// sound come out now" and "what does the report say about it" - are the same
+/// fact, and a report that answers it differently from the player is how
+/// "--backend-info says live, my laptop says silent" happens. The master
+/// switch lives inside the getters (Settings::soundOnStart), and the failure
+/// cue belongs to the finish switch: "the translation ended" is the moment the
+/// user asked to hear, and it arrives as a success or as a failure.
+bool cueEnabled(const Settings *settings, SoundEvent event)
+{
+    if (!settings) {
+        return true;
+    }
+    return event == SoundEvent::Started ? settings->soundOnStart()
+                                        : settings->soundOnFinish();
+}
+
 SoundPlayer::Player detachedPlayer(const QString &program,
                                    const SoundPlayer::ToolFinder &find)
 {
@@ -50,10 +68,27 @@ const QStringList &SoundPlayer::candidatePlayers()
     return players;
 }
 
-QVector<SoundPlayer::Player> SoundPlayer::defaultChain(const ToolFinder &finder)
+SoundPlayer::Profile::Profile()
+    : name(QStringLiteral("freedesktop"))
+    , fileNames([](SoundEvent event) {
+          return QStringList{SoundPlayer::fileName(event)};
+      })
+    , players(candidatePlayers())
+    , missingThemeAdvice(QStringLiteral(
+          "no sound theme: %1 was not found in %2 (install yaru-sound-theme / "
+          "freedesktop-sound-theme, or point [Sounds] ThemeDir at a directory "
+          "that has it)"))
+    , missingPlayerAdvice(QStringLiteral(
+          "nothing can play %1: none of %2 is installed (on PipeWire: sudo apt "
+          "install wireplumber, or pulseaudio-utils for paplay)"))
+{
+}
+
+QVector<SoundPlayer::Player> SoundPlayer::defaultChain(const ToolFinder &finder,
+                                                       const QStringList &players)
 {
     QVector<Player> chain;
-    for (const QString &prog : candidatePlayers()) {
+    for (const QString &prog : players) {
         chain.append(detachedPlayer(prog, finder));
     }
     return chain;
@@ -62,10 +97,11 @@ QVector<SoundPlayer::Player> SoundPlayer::defaultChain(const ToolFinder &finder)
 SoundPlayer::SoundPlayer(Settings *settings, Player singlePlayer,
                          const QStringList &searchDirs,
                          bool includeSystemThemeDirs, ToolFinder finder,
-                         QObject *parent)
+                         QObject *parent, Profile profile)
     : QObject(parent)
     , m_settings(settings)
     , m_find(finder ? std::move(finder) : ToolFinder(detect))
+    , m_profile(std::move(profile))
 {
     m_dirs = searchDirs;
     // Freedesktop theme locations (XDG_DATA_HOME first, then XDG_DATA_DIRS,
@@ -79,8 +115,10 @@ SoundPlayer::SoundPlayer(Settings *settings, Player singlePlayer,
 
     if (singlePlayer) {
         m_chain = {std::move(singlePlayer)};
+    } else if (m_profile.chain) {
+        m_chain = m_profile.chain();
     } else {
-        m_chain = defaultChain(m_find);
+        m_chain = defaultChain(m_find, m_profile.players);
     }
 }
 
@@ -91,11 +129,18 @@ void SoundPlayer::setBackendChain(QVector<Player> chain)
 
 QString SoundPlayer::resolve(SoundEvent event) const
 {
-    const QString name = fileName(event);
+    // First hit wins, per directory, over the profile's candidates: a theme
+    // (or %WINDIR%\Media) does not have to ship every one of the names we ask
+    // for, and "no sound at all because one filename is missing" is not a
+    // reason to leave the user mute.
+    const QStringList names = m_profile.fileNames ? m_profile.fileNames(event)
+                                                 : QStringList{fileName(event)};
     for (const QString &dir : m_dirs) {
-        const QString path = QDir(dir).filePath(name);
-        if (QFile::exists(path)) {
-            return path;
+        for (const QString &name : names) {
+            const QString path = QDir(dir).filePath(name);
+            if (QFile::exists(path)) {
+                return path;
+            }
         }
     }
     return QString();
@@ -104,7 +149,7 @@ QString SoundPlayer::resolve(SoundEvent event) const
 SoundPlayer::Status SoundPlayer::status(SoundEvent event) const
 {
     Status st;
-    st.enabled = !m_settings || m_settings->soundsEnabled();
+    st.enabled = cueEnabled(m_settings, event);
     if (!st.enabled) {
         // The user switched it off. Nothing is broken, and advice about a
         // feature someone turned off is noise that gets the real advice
@@ -112,31 +157,31 @@ SoundPlayer::Status SoundPlayer::status(SoundEvent event) const
         return st;
     }
     st.file = resolve(event);
-    for (const QString &prog : candidatePlayers()) {
+    for (const QString &prog : m_profile.players) {
         if (!m_find(prog).isEmpty()) {
             st.player = prog;
             break;
         }
     }
+    const QStringList names = m_profile.fileNames ? m_profile.fileNames(event)
+                                                 : QStringList{fileName(event)};
+    const QString asked = names.isEmpty() ? QStringLiteral("(no candidates)")
+                                          : names.first();
     if (st.file.isEmpty()) {
-        st.problem = QStringLiteral("no sound theme: %1 was not found in %2 "
-                                    "(install yaru-sound-theme / freedesktop-sound-theme, "
-                                    "or point [Sounds] ThemeDir at a directory that has it)")
-                        .arg(fileName(event),
-                             m_dirs.isEmpty() ? QStringLiteral("the XDG sound dirs")
-                                              : m_dirs.first());
+        st.problem = m_profile.missingThemeAdvice
+            .arg(asked,
+                 m_dirs.isEmpty() ? QStringLiteral("the XDG sound dirs")
+                                  : m_dirs.first());
     } else if (st.player.isEmpty()) {
-        st.problem = QStringLiteral("nothing can play %1: none of %2 is installed "
-                                    "(on PipeWire: sudo apt install wireplumber, or "
-                                    "pulseaudio-utils for paplay)")
-                        .arg(fileName(event), candidatePlayers().join(QStringLiteral(", ")));
+        st.problem = m_profile.missingPlayerAdvice
+            .arg(st.file, m_profile.players.join(QStringLiteral(", ")));
     }
     return st;
 }
 
 void SoundPlayer::play(SoundEvent event)
 {
-    if (m_settings && !m_settings->soundsEnabled()) {
+    if (!cueEnabled(m_settings, event)) {
         return;
     }
     const QString path = resolve(event);

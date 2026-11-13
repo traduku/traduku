@@ -68,9 +68,18 @@ SettingsDialog::SettingsDialog(Settings *settings, QWidget *parent)
     copy->setObjectName(QStringLiteral("m_copyResult"));
     form->addRow(QString(), copy);
 
-    auto *sounds = new QCheckBox(QStringLiteral("Play sounds when a translation starts / finishes"), this);
-    sounds->setObjectName(QStringLiteral("m_soundsEnabled"));
-    form->addRow(QString(), sounds);
+    // Two boxes, one per cue. The old one promised "starts / finishes" and
+    // carried one bit, so the request "let me hear the answer arrive, not every
+    // keypress" had no control to express it - and on Windows the balloon has a
+    // voice of its own, which makes that the common request rather than a
+    // niche one. ROADMAP.md §7.8, hand walk of 2026-11-09.
+    auto *soundStart = new QCheckBox(QStringLiteral("Play sound on translation start"), this);
+    soundStart->setObjectName(QStringLiteral("m_soundsOnStart"));
+    form->addRow(QString(), soundStart);
+
+    auto *soundFinish = new QCheckBox(QStringLiteral("Play sound on translation finish"), this);
+    soundFinish->setObjectName(QStringLiteral("m_soundsOnFinish"));
+    form->addRow(QString(), soundFinish);
 
     auto *autoTr = new QCheckBox(QStringLiteral("Auto-translate when editing the source text"), this);
     autoTr->setObjectName(QStringLiteral("m_autoTranslate"));
@@ -138,8 +147,10 @@ void SettingsDialog::load()
         ->setValue(m_settings->pressInterval());
     findChild<QCheckBox *>(QStringLiteral("m_copyResult"))
         ->setChecked(m_settings->copyResult());
-    findChild<QCheckBox *>(QStringLiteral("m_soundsEnabled"))
-        ->setChecked(m_settings->soundsEnabled());
+    findChild<QCheckBox *>(QStringLiteral("m_soundsOnStart"))
+        ->setChecked(m_settings->soundOnStart());
+    findChild<QCheckBox *>(QStringLiteral("m_soundsOnFinish"))
+        ->setChecked(m_settings->soundOnFinish());
     findChild<QCheckBox *>(QStringLiteral("m_autoTranslate"))
         ->setChecked(m_settings->autoTranslate());
     findChild<QDoubleSpinBox *>(QStringLiteral("m_autoTranslateDelay"))
@@ -163,8 +174,13 @@ void SettingsDialog::accept()
         findChild<QDoubleSpinBox *>(QStringLiteral("m_pressInterval"))->value());
     m_settings->setCopyResult(
         findChild<QCheckBox *>(QStringLiteral("m_copyResult"))->isChecked());
-    m_settings->setSoundsEnabled(
-        findChild<QCheckBox *>(QStringLiteral("m_soundsEnabled"))->isChecked());
+    // Both, in this order: the master switch is derived from the pair by
+    // Settings::setSoundOn*, so unchecking both mutes the app in the report as
+    // well as in the player.
+    m_settings->setSoundOnStart(
+        findChild<QCheckBox *>(QStringLiteral("m_soundsOnStart"))->isChecked());
+    m_settings->setSoundOnFinish(
+        findChild<QCheckBox *>(QStringLiteral("m_soundsOnFinish"))->isChecked());
     m_settings->setAutoTranslate(
         findChild<QCheckBox *>(QStringLiteral("m_autoTranslate"))->isChecked());
     m_settings->setAutoTranslateDelay(
@@ -189,7 +205,8 @@ void SettingsDialog::restoreDefaults()
                 ->findData(QStringLiteral("ru")));
     findChild<QDoubleSpinBox *>(QStringLiteral("m_pressInterval"))->setValue(0.5);
     findChild<QCheckBox *>(QStringLiteral("m_copyResult"))->setChecked(true);
-    findChild<QCheckBox *>(QStringLiteral("m_soundsEnabled"))->setChecked(true);
+    findChild<QCheckBox *>(QStringLiteral("m_soundsOnStart"))->setChecked(true);
+    findChild<QCheckBox *>(QStringLiteral("m_soundsOnFinish"))->setChecked(true);
     findChild<QCheckBox *>(QStringLiteral("m_autoTranslate"))->setChecked(true);
     findChild<QDoubleSpinBox *>(QStringLiteral("m_autoTranslateDelay"))->setValue(0.6);
     findChild<QSpinBox *>(QStringLiteral("m_maxWholeText"))->setValue(6000);

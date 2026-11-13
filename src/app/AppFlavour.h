@@ -6,9 +6,12 @@
 
 #pragma once
 
+#include <QString>
 #include <QStringList>
 
 namespace lt {
+
+class SoundPlayer;
 
 /*!
  * Which QApplication flavour an invocation needs, and what the environment
@@ -31,6 +34,14 @@ namespace lt {
 /// True when this invocation draws a window (the tray app, or --selftest,
 /// which screenshots itself). False for the console modes.
 bool needsWidgets(const QStringList &argv);
+
+/// True when this invocation was asked to print a report to the terminal:
+/// every console mode, and `--selftest` (which needs widgets *and* prints).
+/// The tray app is the one thing that is not, and the distinction is what
+/// decideConsoleAttach() needs: on Windows a GUI-subsystem binary has no
+/// console, and a user running `traduku --selftest` in cmd deserves more than
+/// an exit code.
+bool printsToTerminal(const QStringList &argv);
 
 /// True if Qt can choose a platform integration on its own, which means
 /// WAYLAND_DISPLAY or DISPLAY in this process's environment. Deliberately not
@@ -55,13 +66,64 @@ QpaDecision decideQpa(const QStringList &argv, bool qpaSetByHuman, bool qtCanPic
 /// modes - the tray app with no desktop is a broken desktop, not a headless
 /// tool, and must fail visibly rather than run invisibly. Does nothing when
 /// QT_QPA_PLATFORM is already set: a human's choice outranks our guess.
-void prepareCliEnvironment(const QStringList &argv);
+///
+/// `qtCanPickPlatform` is the platform's answer, not a variable reading: the
+/// default is the Unix one (DISPLAY/WAYLAND_DISPLAY), and the Windows main
+/// passes its window-station fact instead. Passing the Unix reading on Windows
+/// made every console mode force offscreen even on a logged-in desktop, which
+/// then made `--backend-info` report `tray: none (no tray host)` on a machine
+/// with a tray - a diagnostic that contradicts the product it describes.
+void prepareCliEnvironment(const QStringList &argv,
+                           bool qtCanPickPlatform = qtCanPickAPlatform());
 
 /// True when the call above is what put QT_QPA_PLATFORM=offscreen there. The
 /// backend report says so on its session line: "session: offscreen" read on
 /// a box that has a desktop (ssh inherits no environment) tells the user
 /// their session is gone, when what is gone is our knowledge of it.
 bool qpaWasForcedByUs();
+
+/*
+ * Whether a console mode has to go and get the console it does not have.
+ *
+ * On Windows the tray binary is a GUI-subsystem executable (no black window
+ * behind the tray), which also means it has no stdout: `traduku --translate`
+ * from cmd would stream a translation into nothing. The answer is
+ * AttachConsole(ATTACH_PARENT_PROCESS) - for the console modes only, and only
+ * when the process does not already have a console (a pipe, or a real
+ * terminal). Pure, so tests/unit/tst_appflavour.cpp pins the table; the call
+ * itself is platform/win/WinConsole.cpp.
+ */
+enum class ConsoleDecision { Attach, LeaveAsIs };
+ConsoleDecision decideConsoleAttach(bool onWindows, bool hasConsole,
+                                   bool trayApp);
+
+/*!
+ * The line a Qt diagnostic becomes on the terminal.
+ *
+ * A GUI-subsystem binary has no console, and Qt's default message handler on
+ * Windows notices that and routes qWarning() to OutputDebugString - invisible
+ * unless a debugger is attached. Measured: `traduku --selftest` with no usable
+ * desktop printed *nothing at all* and exited 2, because the advice it was
+ * supposed to print went to a debugger nobody had open. The handler in
+ * app/windows/main.cpp formats through this, and this is pure and tested
+ * (tests/unit/tst_appflavour.cpp).
+ */
+QString qtConsoleMessage(const QString &type, const QString &text);
+
+/*!
+ * Why a QT_QPA_PLATFORM that names an absent plugin must be refused, in words.
+ *
+ * The rule is not "the user asked for it, so honour it": Qt answers an unknown
+ * plugin name with a fatal message and, for a GUI-subsystem binary on Windows,
+ * a modal dialog - a process that waits for a hand that is not there (a
+ * scheduled task or an ssh session keeps one alive forever). So the refusal
+ * happens before Qt is asked, and it says what was asked, what is missing, and
+ * what this machine actually has.
+ *
+ * Pure: the caller collects the installed plugin names; this decides.
+ */
+QString platformPluginProblem(const QString &requestedQpa,
+                              const QStringList &installedBaseNames);
 
 /// What to tell the user - and the exit code 2 to use - when the mode they
 /// asked for draws a window and this machine cannot give Qt a platform to do it
@@ -73,7 +135,51 @@ bool qpaWasForcedByUs();
 /// act on. A mode that needs a screen may refuse; it may not crash. The console
 /// modes are not refused - they are what a user reaches for when the desktop is
 /// broken - and a QT_QPA_PLATFORM of the user's own is treated as their answer.
-QString displayAdviceForMissingDisplay(const QStringList &argv, bool canPickPlatform);
+/// @param onWindows  which OS's missing variables to name: "no DISPLAY" is
+///                   correct on Linux and useless on Windows, where the
+///                   equivalent is "no interactive desktop session".
+/// Where a refusal of the GUI mode has to be put: the screen or the terminal.
+///
+/// A program started by double-click has no terminal, so writing a sentence to
+/// stderr is writing it nowhere: the process exits 2 and the desktop shows
+/// nothing at all - indistinguishable from a shortcut that was never clicked,
+/// which is how the "double-click does nothing" bug survived long enough to
+/// reach a person instead of a test log. A refusal is only a refusal if the
+/// user can read it, so with no console it becomes a dialogue. With a console
+/// it stays a line of text: putting a modal in front of someone reading a
+/// terminal, or in front of a CI runner, would be worse than the silence.
+bool guiRefusalNeedsDialog(bool consoleAvailable);
+
+/// The tray's status line: the version, and which tray this is running as.
+///
+/// Built here rather than spelled out in each shell's main() because the
+/// separator is where the bug was: a UTF-8 byte sequence written inside
+/// QStringLiteral() arrives as one QChar per byte, so the middle dot became an
+/// "A with circumflex" plus an invisible control, and the tray menu advertised a
+/// broken build to every user who looked at it. One portable function, tested on
+/// every platform, and no main() able to get it wrong again.
+QString trayStatusLabel(const QString &version, const QString &trayKind);
+
+/// What `--backend-info` says about sound, built for every shell at once.
+///
+/// Three copies of this block sat in three main()s, each asking about
+/// SoundEvent::Finished alone. A profile whose three cues are answered by one
+/// line cannot tell "the start cue is silent" apart from "the finish cue is
+/// silent" - the pair the Windows hand walk of ROADMAP.md section 7.8 item 2
+/// had to separate by ear. One function, the report on every shell, and no
+/// main() able to print one cue and stay quiet about the other two.
+struct SoundReport {
+    QString summary;   ///< the "audio:" line: profile + the player that would run
+    QStringList cues;  ///< one line per cue: "started: <file>", or the advice
+};
+
+/// The report for one player, asked - it resolves nothing new and plays
+/// nothing, which is what makes it safe to call on the app's own player.
+SoundReport soundReport(const SoundPlayer &player);
+
+
+QString displayAdviceForMissingDisplay(const QStringList &argv,
+                                       bool canPickPlatform, bool onWindows);
 
 } // namespace lt
 

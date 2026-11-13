@@ -156,7 +156,11 @@ private slots:
         // and a server that answers STRING with them is broken - but TEXT
         // below is the case that matters.
         QCOMPARE(TextTargets::decodeAtom(QByteArray("caf\xE9"), QStringLiteral("STRING")),
-                 QStringLiteral("caf\xE9"));   // U+00E9, not U+FFFD
+                 // The bytes on the left are latin-1 on purpose; the expectation
+                 // on the right is a code point, because QStringLiteral() builds
+                 // UTF-16 - an é in that literal means U+00E9 only while
+                 // nobody reads it as the two bytes C2 B9.
+                 QStringLiteral("café"));   // U+00E9, not U+FFFD
     }
 
     void decodeAtomRescuesTextLegacyOffers()

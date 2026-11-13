@@ -80,6 +80,73 @@ private slots:
                             + st.problem));
     }
 
+    // ---- one switch per cue, not one for the pair ----------------------
+    //
+    // "Play sounds when a translation starts / finishes" was one checkbox for
+    // two moments of a translation, and the two moments are not the same
+    // request: the start cue fires on every gesture the user makes, the finish
+    // cue is the reason the app exists. On Windows the pair is worse, because
+    // the notification channel has a voice of its own (a balloon sounds), so a
+    // user who wants to hear the answer arrive and not hear every keypress has
+    // no way to say that. ROADMAP.md §7.8, hand walk of 2026-11-09.
+
+    void aCueSwitchedOffIsNotPlayedAndTheOtherStillIs()
+    {
+        const QString theme = makeTheme(m_dir.path() + "/percue",
+                                       {"bell.oga", "complete.oga",
+                                        "dialog-error.oga"});
+        Settings s(m_dir.path() + "/percue.ini");
+        s.setSoundOnStart(false);
+        QStringList played;
+        SoundPlayer p(&s,
+                      [&](const QString &file) { played << file; return true; },
+                      {theme}, false);
+        p.play(SoundEvent::Started);
+        p.play(SoundEvent::Finished);
+        p.play(SoundEvent::Failed);
+        QCOMPARE(played.size(), 2);
+        QVERIFY2(played.contains(theme + QStringLiteral("/complete.oga")),
+                 "the finish cue went silent with the start cue");
+        QVERIFY2(played.contains(theme + QStringLiteral("/dialog-error.oga")),
+                 "the failure cue belongs to the end of a translation, and the "
+                 "end switch is one switch for both endings");
+        QVERIFY2(!played.contains(theme + QStringLiteral("/bell.oga")),
+                 "the start cue played after the user switched it off");
+    }
+
+    void eachCueReportsItsOwnSwitch()
+    {
+        const QString theme = makeTheme(m_dir.path() + "/percue2",
+                                       {"bell.oga", "complete.oga",
+                                        "dialog-error.oga"});
+        Settings s(m_dir.path() + "/percue2.ini");
+        s.setSoundOnStart(false);
+        SoundPlayer p(&s, {}, {theme}, false,
+                      [](const QString &prog) { return prog; });
+        QVERIFY2(!p.status(SoundEvent::Started).enabled,
+                 "--backend-info says the start cue is live; the user switched it off");
+        QVERIFY2(p.status(SoundEvent::Finished).enabled,
+                 "--backend-info says the finish cue is off; the user did not switch it off");
+        QVERIFY(p.status(SoundEvent::Failed).enabled);
+        // A cue the user switched off is not a broken cue: no advice.
+        QVERIFY2(p.status(SoundEvent::Started).problem.isEmpty(),
+                 qPrintable(p.status(SoundEvent::Started).problem));
+
+        // The two switches are independent in both directions: muting the end
+        // of a translation leaves the start cue where the user left it (off, in
+        // this row), and putting the start cue back must not touch the end.
+        s.setSoundOnFinish(false);
+        QVERIFY(!p.status(SoundEvent::Finished).enabled);
+        QVERIFY(!p.status(SoundEvent::Failed).enabled);
+        QVERIFY(!p.status(SoundEvent::Started).enabled);
+
+        s.setSoundOnStart(true);
+        QVERIFY2(p.status(SoundEvent::Started).enabled,
+                 "the start cue came back with its own switch");
+        QVERIFY2(!p.status(SoundEvent::Finished).enabled,
+                 "the finish cue woke up when the start cue was switched on");
+    }
+
     void statusDoesNotComplainAboutASwitchTheUserTurnedOff()
     {
         Settings s(m_dir.path() + "/muted.ini");
