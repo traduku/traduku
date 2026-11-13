@@ -10,8 +10,10 @@
 
 #include <QDir>
 #include <QFile>
+#include <QDataStream>
 #include <QFileInfo>
 #include <QTemporaryDir>
+#include <cmath>
 #include <memory>
 
 #ifdef Q_OS_WIN
@@ -244,7 +246,142 @@ private slots:
             QStringLiteral("complete.oga")));
     }
 
+    /// A cue nobody hears is not a cue - and "nobody hears it" is measurable
+    /// off the file, without ears and without a speaker: a RIFF/PCM file
+    /// carries its own length and its own energy.
+    ///
+    /// Measured off C:\Windows\Media on this machine (2026-11-09), of the files
+    /// this profile pointed at before the row below existed:
+    ///   Windows Menu Command.wav    0.15 s  rms 0.001   <- the start cue
+    ///   Windows Feed Discovered.wav 0.11 s  rms 0.003
+    ///   Windows Ding.wav            1.09 s  rms 0.009
+    ///   Windows Notify System Generic.wav  1.29 s  rms 0.058  <- the finish cue
+    /// The pair the user described as "a mosquito squeak" under a real chime:
+    /// the start cue is a quarter of the length and a fiftieth of the energy of
+    /// the finish cue. It is not a taste question, and the old candidate list
+    /// was picked by reading folder names, which is how it stayed invisible.
+    void theChosenCuesAreFilesAPersonCanHear()
+    {
+        // The floor is a claim, so it is named: 0.25 s is the shortest length
+        // that survives being heard over a fan (the finish cue of the same
+        // profile is 5x that), and rms 0.02 (-34 dBFS) is the level below which
+        // Windows' own default volume puts a file under room noise - the cues
+        // this machine ships all sit between 0.03 and 0.07.
+        const double minSeconds = 0.25;
+        const double minRms = 0.02;
+
+        const QString media = windowsMediaDir();
+        if (media.isEmpty() || !QFileInfo::exists(media)) {
+            QSKIP("no %WINDIR%\\Media on this machine - no bytes to measure");
+        }
+        QTemporaryDir dir;
+        QVERIFY(dir.isValid());
+        Settings s(dir.path() + QStringLiteral("/config.ini"));
+        SoundPlayer player(&s, {}, {media}, false, {}, nullptr, windowsSoundProfile());
+
+        int measured = 0;
+        for (SoundEvent e : {SoundEvent::Started, SoundEvent::Finished,
+                             SoundEvent::Failed}) {
+            const QString file = player.resolve(e);
+            QVERIFY2(!file.isEmpty(), "the cue does not resolve on this machine");
+            const WavFacts facts = measureWav(file);
+            if (!facts.parsed) {
+                continue;      // not PCM16: this row cannot speak about it
+            }
+            ++measured;
+            const QString what = QStringLiteral("%1 (%2 s, rms %3)")
+                .arg(QFileInfo(file).fileName())
+                .arg(QString::number(facts.seconds, 'f', 2))
+                .arg(QString::number(facts.rms, 'f', 4));
+            QVERIFY2(facts.seconds >= minSeconds,
+                     qPrintable(QStringLiteral("cue too short to be heard: ") + what));
+            QVERIFY2(facts.rms >= minRms,
+                     qPrintable(QStringLiteral("cue too quiet to be heard: ") + what));
+        }
+        QVERIFY2(measured > 0, "no cue on this machine is a PCM16 wav to measure");
+    }
+
 private:
+    struct WavFacts
+    {
+        bool parsed = false;
+        double seconds = 0.0;
+        double rms = -1.0;
+    };
+
+    /// The two facts a sound file has to answer for a cue: how long it is, and
+    /// how much energy it carries. Reads the RIFF chunks; anything that is not
+    /// PCM16 comes back unparsed rather than guessed, because a row that
+    /// invents a number is worse than a row that skips.
+    static WavFacts measureWav(const QString &path)
+    {
+        WavFacts f;
+        QFile in(path);
+        if (!in.open(QIODevice::ReadOnly)) {
+            return f;
+        }
+        const QByteArray blob = in.readAll();
+        QDataStream r(blob);
+        r.setByteOrder(QDataStream::LittleEndian);
+        quint32 magic = 0, riffSize = 0, wave = 0;
+        // RIFF, then the file size, then WAVE: the field between the two
+        // signatures is a length, and reading it as the form name is how the
+        // first draft of this function returned "not a wav" for every wav on
+        // the machine (0x00006604 is a file size, not "WAVE").
+        r >> magic >> riffSize >> wave;
+        if (magic != 0x46464952 /* "RIFF" */ || wave != 0x45564157 /* "WAVE" */) {
+            return f;
+        }
+        quint16 channels = 0, bits = 0, blockAlign = 0;
+        quint32 rate = 0;
+        bool haveFmt = false;
+        r.device()->seek(12);
+        while (!r.atEnd()) {
+            quint32 id = 0, size = 0;
+            r >> id >> size;
+            const quint32 body = quint32(r.device()->pos());
+            if (id == 0x20746d66 /* "fmt " */) {
+                // All seven fields, in order, or every number after them is
+                // read two bytes early - the first draft of this function did
+                // that, and reported 16-bit files as 44100 Hz mono of unknown
+                // width.
+                quint16 format = 0, blockAlignUnused = 0;
+                quint32 avgBytesPerSec = 0;
+                r.device()->seek(body);
+                r >> format >> channels >> rate >> avgBytesPerSec
+                  >> blockAlignUnused >> bits;
+                blockAlign = blockAlignUnused;
+                if (format != 1) {
+                    return f;              // not PCM: this row has no opinion
+                }
+                haveFmt = true;
+            } else if (id == 0x61746164 /* "data " */) {
+                if (!haveFmt || bits != 16 || channels == 0 || rate == 0) {
+                    return f;
+                }
+                r.device()->seek(body);
+                const QByteArray pcm = r.device()->read(
+                    qMin<qint64>(size, 8 * 1024 * 1024));
+                const int n = int(pcm.size() / 2);
+                if (n <= 0) {
+                    return f;
+                }
+                const auto *v = reinterpret_cast<const quint16 *>(pcm.constData());
+                double sum = 0.0;
+                for (int i = 0; i < n; ++i) {
+                    const double s = (v[i] ^ 0x8000) - 0x8000;   // signed, no casts
+                    sum += s * s;
+                }
+                f.rms = std::sqrt(sum / n) / 32768.0;
+                f.seconds = double(pcm.size()) / (channels * rate * 2.0);
+                f.parsed = true;
+                return f;
+            }
+            r.device()->seek(body + size + (size & 1));   // chunks are word-aligned
+        }
+        return f;
+    }
+
 #ifdef Q_OS_WIN
     /// The first candidate of the first cue that this machine really has. The
     /// rows above invent a media dir; these two ask for a file the OS ships,
