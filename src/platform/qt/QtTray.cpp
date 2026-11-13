@@ -208,9 +208,19 @@ void QtTray::buildMenu()
         act->setCheckable(true);
         act->setData(lang.code);   // so a menu entry can be found by language
         connect(act, &QAction::triggered, this, [this, code = lang.code]() {
-            m_settings->setTargetLanguage(code);
-            m_settings->save();
+            // Emit only. The tray used to write the setting here, which left
+            // the destination language with two writers and the consequence of
+            // a pick ("translate the pane into this") with none. The write
+            // belongs to AppController::pickTargetLanguage.
             Q_EMIT targetLanguagePicked(code);
+            // And re-read the model. A checkable QAction toggles ITSELF when it
+            // is activated, so after a click the menu would show a tick on the
+            // language the app does not have (two ticks, one per row involved)
+            // for as long as nobody wrote the setting. This line writes nothing:
+            // it puts the row back to what Settings says, which is the truth
+            // after the controller answered, and the old truth if nobody did.
+            // Settings::changed covers the same path in the live app; the
+            // self-toggle is why the view cannot rely on that alone.
             syncLanguageChecks();
         });
         m_languageActions.insert(lang.code, act);

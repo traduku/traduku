@@ -366,7 +366,12 @@ verify an install.
    and streams the translation; start/finish sounds mark the boundaries.
    When enabled, the finished translation also replaces the clipboard.
 4. Tray: translate now, destination language, autostart, settings, quit.
-   Window: pick destination language (persisted), copy, settings.
+   Window: pick destination language (persisted), copy, settings. Picking a
+   destination language — in the window's list or in the tray's *Translate To*
+   — saves it and translates the text that is open, the same way the gesture
+   does; with nothing in the source pane it only saves. The list in the
+   Settings dialog is a form field: it takes effect on OK, and cancels with the
+   rest of the form.
 
 The tray is not the only way in — these work headless, over ssh, with no
 display:

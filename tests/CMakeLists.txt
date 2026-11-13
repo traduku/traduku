@@ -258,6 +258,15 @@ set_tests_properties(packaging_tracked PROPERTIES TIMEOUT 120
 set_tests_properties(cmake_lt_tray_option PROPERTIES TIMEOUT 300
     ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:${_bash_dir}")
 
+# Every shell that builds a tray must connect the tray's language pick; three
+# main.cpp files, no compiler check between them, and the gap was found by a
+# person clicking the menu (see the script's header).
+add_test(NAME tray_language_wiring
+         COMMAND ${BASH_PROGRAM} ${CMAKE_CURRENT_SOURCE_DIR}/cmake/test_tray_language_wiring.sh
+                 ${CMAKE_SOURCE_DIR})
+set_tests_properties(tray_language_wiring PROPERTIES TIMEOUT 120
+    ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:${_bash_dir}")
+
 # selftest --live must use the config file it was handed (--config), not the
 # user's default path
 lt_add_test(tst_selftest SOURCES integration/tst_selftest.cpp

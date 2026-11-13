@@ -52,6 +52,21 @@ public slots:
     /// The one-shot entry point (hotkey, tray click, DBus, CLI activation).
     void translateNow();
 
+    /*! The destination language picked in a control: the window's dropdown, the
+     * tray's "Translate To". Both fire the same signal and mean the same thing,
+     * so both come here - one owner for the consequence.
+     *
+     * Saves the setting, then translates what the source pane holds, the way the
+     * double-Ctrl+C gesture does: a language chosen over a pane full of text is
+     * a question about that text, and "in the next translation" is not an answer
+     * (ROADMAP.md §7.8 item 4). An empty pane is not a question: the code is
+     * saved and no request is made. Re-translates through setSource, not
+     * applyEdit - applyEdit keeps the translations of chunks that did not
+     * change, and a language change changes no chunk, so a fix built on it would
+     * be a dropdown that still does nothing.
+     */
+    void pickTargetLanguage(const QString &code);
+
     /// Bring the window to the front. Connected to SingleInstance's
     /// activateRequested (and to KDBusService::Activate on Plasma): the second
     /// copy prints "asked it to surface its window", and a message that asks
