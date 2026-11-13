@@ -238,8 +238,14 @@ private slots:
         QVERIFY2(!win.contains(QStringLiteral("WAYLAND_DISPLAY")),
                  "a Windows refusal that tells the user to export DISPLAY is "
                  "advice nobody can follow");
-        const QString unix = lt::displayAdviceForMissingDisplay(selftest, false, false);
-        QVERIFY2(unix.contains(QStringLiteral("DISPLAY")), qPrintable(unix));
+        // Named unixAdvice, not unix: GNU C defines `unix` (and `linux`) as
+        // macro =1 in standard-macros mode, so `const QString unix` expands to
+        // `const QString 1` - it compiles under MinGW, which does not define
+        // the macro, and breaks the build on every Linux compiler. This line
+        // is why: the Windows port landed green on its own box and red on
+        // Debian, where nobody ran the gate afterwards.
+        const QString unixAdvice = lt::displayAdviceForMissingDisplay(selftest, false, false);
+        QVERIFY2(unixAdvice.contains(QStringLiteral("DISPLAY")), qPrintable(unixAdvice));
     }
 
     void aHumanChosenQpaIsNeverOverwritten()
