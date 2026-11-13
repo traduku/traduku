@@ -27,9 +27,16 @@ it. That is a weaker claim and is written as one.
 
 | distro | GNOME | Plasma |
 |---|---|---|
-| **Debian 13 (trixie)** | ✅ `traduku-gnome_0.3.0-1_amd64.deb` — 20 passed / 3 skipped, 40.6 s. GNOME on **Xorg**, and no GNOME extensions at all, so the tray test skips naming the missing appindicator host | ✅ `traduku_0.3.0-1_amd64.deb` — 17 passed / 6 skipped, 91.1 s. Plasma on **X11** (`kwin_x11`, Xorg on vt2) |
-| **Ubuntu 25.10** | ✅ `traduku-gnome_0.3.0-1_amd64.deb` — 21 passed / 2 skipped, 43.9 s. GNOME Shell 49 on Wayland, tray hosted | ✅ `traduku_0.3.0-1_amd64.deb` — 18 passed / 5 skipped, 103.0 s. Plasma on Wayland (`kwin_wayland` + Xwayland) |
-| **Arch** | ⚠️ `traduku-gnome-0.3.0-1-x86_64.pkg.tar.zst` is built and gated (37/37 in the GNOME tree, `--selftest` on the guest), but **no Arch GNOME session has been booted** - nobody has run the e2e suite on it | ✅ `traduku-0.3.0-1-x86_64.pkg.tar.zst` — 18 passed / 5 skipped, 154.3 s. Plasma on Wayland |
+| **Debian 13 (trixie)** | ✅ the GNOME `.deb` — 20 passed / 3 skipped, 40.6 s. GNOME on **Xorg**, and no GNOME extensions at all, so the tray test skips naming the missing appindicator host | ✅ the Plasma `.deb` — 17 passed / 6 skipped, 91.1 s. Plasma on **X11** (`kwin_x11`, Xorg on vt2) |
+| **Ubuntu 25.10** | ✅ the GNOME `.deb` — 21 passed / 2 skipped, 43.9 s. GNOME Shell 49 on Wayland, tray hosted | ✅ the Plasma `.deb` — 18 passed / 5 skipped, 103.0 s. Plasma on Wayland (`kwin_wayland` + Xwayland) |
+| **Arch** | ⚠️ the GNOME Arch package is built and gated (37/37 in the GNOME tree, `--selftest` on the guest), but **no Arch GNOME session has been booted** - nobody has run the e2e suite on it | ✅ the Plasma Arch package — 18 passed / 5 skipped, 154.3 s. Plasma on Wayland |
+
+Every run in this table was made on the **0.3.0** packages, and that is
+what the numbers describe: 0.4.0 adds the Windows port, the sound switches and
+the language pick, and its packages have been built and container-gated
+(`--selftest`, ctest over live Xvfb) on a machine with no QEMU - so no 0.4.0 run
+has been booted on a guest desktop, and no 0.4.0 Arch package exists yet. A
+version bump is not a re-measurement.
 
 Two cells are worth a sentence because they are the ones an assumption would
 have got wrong:
@@ -52,7 +59,7 @@ have got wrong:
 | **Plasma on Wayland** | `traduku` | X RECORD on XWayland (helper process) | `wl-clipboard` | X RECORD | KNotification | Qt SNI (Plasma hosts SNI) | `~/.config/autostart`, written when you answer the first-run question | `arch-kde` and `ubuntu-kde`, ready line `(kde, wayland; clipboard=wl-clipboard hotkey=x11-record tray=yes)`, e2e **18 passed / 5 skipped** each |
 | **Plasma on X11** | `traduku` | XI2 raw on the X server | **X11 selection** | XI2 raw | KNotification | Qt SNI | as above | `debian-kde`, ready line `(kde, x11; clipboard=x11 hotkey=x11-xi2 tray=yes)`, e2e **17 passed / 6 skipped** |
 | **Bare X11 / other DE** | either | XI2 raw (RECORD fallback) | X11 selection, Qt last | XI2 raw | freedesktop D-Bus | Qt SNI if a host exists | XDG autostart (XFCE, i3, … honour it) | unit/integration only (`make x11test`, 37 tests against a real X server) |
-| **Windows 10/11 (win64)** | `traduku.exe` (MinGW, GUI subsystem) | `WH_KEYBOARD_LL` hook, passive | Qt (win32 clipboard) | — (the hook *is* the gesture; `RegisterHotKey` was rejected: it intercepts the copy) | tray balloon via `Shell_NotifyIcon` | `QSystemTrayIcon` | `HKCU\…\CurrentVersion\Run` | built 2026-11-08, Qt 6.8.3 + MinGW 13.1: **41/41** ctest rows (9 of them exist only here), `--translate`/`--selftest --live` measured against a mock SSE endpoint, the Run value verified by an independent reader. **Walked by hand on a live Windows 11 desktop**: tray icon at start, left-click translates the clipboard, right-click menu, balloon, `Ctrl+C`+`Ctrl+C` — and two defects came out of that walk, neither visible to any test (a mojibake tray label, the start cue silent while the finish cue plays). See ROADMAP.md §7.7–§7.8 |
+| **Windows 10/11 (win64)** | `traduku.exe` (MinGW, GUI subsystem) | `WH_KEYBOARD_LL` hook, passive | Qt (win32 clipboard) | — (the hook *is* the gesture; `RegisterHotKey` was rejected: it intercepts the copy) | tray balloon via `Shell_NotifyIcon` | `QSystemTrayIcon` | `HKCU\…\CurrentVersion\Run` | built 2026-11-08, Qt 6.8.3 + MinGW 13.1: **44/44** ctest rows (9 of them exist only here), `--translate`/`--selftest --live` measured against a mock SSE endpoint, the Run value verified by an independent reader. **Walked by hand on a live Windows 11 desktop twice (2026-11-08, 2026-11-09)**: tray icon at start, left-click translates the clipboard, right-click menu, balloon, `Ctrl+C`+`Ctrl+C`, second copy surfaces the first window, `TRADUKU_TRAY=none`, screen lock and RDP disconnect. Six findings came out of the two walks, none visible to any test: a mojibake tray label, the cues silent (Qt 6 plays to nobody without a QAudioOutput) with the one sound people hearing being Windows' own balloon, a start cue too short and quiet to notice, one sound checkbox promising two moments, a destination-language list that changed nothing, and a translation window whose scroll jumps to the top on every chunk. The first five are fixed with pins; the sixth is recorded as skipped, with the reason. See ROADMAP.md §7.7–§7.8 |
 
 The hotkey column is a measurement, not a menu: on the same image the listener
 can be `x11-xi2` or the X RECORD helper, and the choice is printed by
@@ -79,8 +86,8 @@ sounds and (GNOME) the uaccess rule:
 
 | platform | download | install it |
 |---|---|---|
-| Arch / CachyOS | `traduku-0.3.0-1-x86_64.pkg.tar.zst` (Plasma) or `traduku-gnome-0.3.0-1-x86_64.pkg.tar.zst` (GNOME) | `sudo pacman -U ./traduku-0.3.0-1-x86_64.pkg.tar.zst` |
-| Debian / Ubuntu | `traduku_0.3.0-1_amd64.deb` (Plasma) or `traduku-gnome_0.3.0-1_amd64.deb` (GNOME) | `sudo apt install ./traduku_0.3.0-1_amd64.deb` |
+| Arch / CachyOS | `traduku-0.4.0-1-x86_64.pkg.tar.zst` (Plasma) or `traduku-gnome-0.4.0-1-x86_64.pkg.tar.zst` (GNOME) | `sudo pacman -U ./traduku-0.4.0-1-x86_64.pkg.tar.zst` |
+| Debian / Ubuntu | `traduku_0.4.0-1_amd64.deb` (Plasma) or `traduku-gnome_0.4.0-1_amd64.deb` (GNOME) | `sudo apt install ./traduku_0.4.0-1_amd64.deb` |
 
 The Arch packages are signed, and on Arch that is not decoration: with the
 default `SigLevel = Required`, `pacman -U` of a package whose signature the
@@ -93,7 +100,7 @@ it once:
 gpg --show-keys traduku-release.asc   # fingerprint 6412BB09BC5E27F2D0FE2EE7DE28065CC5A065AC
 sudo pacman-key --add traduku-release.asc
 sudo pacman-key --lsign-key DE28065CC5A065AC
-sudo pacman -U ./traduku-0.3.0-1-x86_64.pkg.tar.zst
+sudo pacman -U ./traduku-0.4.0-1-x86_64.pkg.tar.zst
 ```
 
 That is trust-on-first-use: the key is published by the same repository as the
@@ -102,7 +109,7 @@ that matters to you. To check a download without trusting anything:
 
 ```sh
 sha256sum -c SHA256SUMS                              # names every package + the source tarball
-gpg --verify traduku-0.3.0-1-x86_64.pkg.tar.zst.sig
+gpg --verify traduku-0.4.0-1-x86_64.pkg.tar.zst.sig
 ```
 
 Building it yourself (`packaging/arch/mkrelease.sh` for Arch, `dpkg-buildpackage`
