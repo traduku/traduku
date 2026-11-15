@@ -78,26 +78,45 @@ name="traduku-$version-win64-portable"
 
 mkdir -p "$out"
 rm -f "$out/$name.zip"
-# The zip is written by Windows' own bsdtar, not by the `tar` on PATH: git bash
-# ships GNU tar, whose -a does not understand a .zip suffix and would happily
-# produce a gzip'd tar named .zip - an archive that "built" and unpacks into
-# nonsense. Named by path, so the choice is not whoever installed last.
-bsdtar="/c/Windows/System32/tar.exe"
-if [ ! -x "$bsdtar" ]; then
-    bsdtar="$(command -v tar.exe || true)"
-fi
-[ -n "${bsdtar:-}" ] && [ -x "${bsdtar:-}" ] || fail "no bsdtar to write the archive"
-"$bsdtar" -a -cf "$out/$name.zip" -C "$stage" . || fail "could not write the archive"
+# The archive is written by mkzip.sh, not by a `tar` line here: the layout of a
+# shipped zip is a release contract, and a contract with one sentence in it
+# (`-C <stage> .`, which stores every member as `./traduku.exe`) has to live in
+# one file that has a test of its own. 0.4.0 shipped exactly that archive and
+# Windows called it "Compressed (zipped) Folder Invalid".
+"$here/mkzip.sh" "$out/$name.zip" "$stage" || fail "could not write the archive"
 
 built_sha="$(sha256sum "$exe" | cut -d' ' -f1)"
 zip_sha="$(sha256sum "$out/$name.zip" | cut -d' ' -f1)"
 printf '%s  %s\n' "$zip_sha"  "$name.zip"        >  "$out/SHA256SUMS"
 printf '%s  %s\n' "$built_sha" "$name/traduku.exe" >> "$out/SHA256SUMS"
 
-# --- verification: unzip somewhere else and run it with a PATH that has no Qt
+# --- the release checks: the archive must open with the reader users have ----
+# bsdtar wrote it and bsdtar reading it back proves nothing about Explorer;
+# check-portable-zip.sh is the layer that asks zipfldr, and then runs what
+# zipfldr produced with no Qt on PATH.
+"$here/check-portable-zip.sh" "$out/$name.zip" "$stage" \
+    || fail "the archive is not a package a user can open"
+
+# --- and the bytes are the bytes: unpack, compare, run -----------------------
+# Unpack with bsdtar (Windows' tar reads and writes zip; the GNU tar on PATH
+# does not, and says "this does not look like a tar archive"), and with Python's
+# zipfile where bsdtar is absent. The 0.4.0 lesson was that a reader chosen for
+# convenience is a reader that lies, so the choice is named, not inherited.
+bsdtar="/c/Windows/System32/tar.exe"
+[ -x "$bsdtar" ] || bsdtar="$(command -v tar.exe || true)"
+[ -n "${bsdtar:-}" ] && [ -x "${bsdtar:-}" ] || bsdtar=""
 check="$(mktemp -d)"
 trap 'rm -rf "$check"' EXIT
-"$bsdtar" -xf "$out/$name.zip" -C "$check" || fail "the archive does not unpack"
+if [ -n "$bsdtar" ]; then
+    "$bsdtar" -xf "$out/$name.zip" -C "$check" || fail "the archive does not unpack (bsdtar)"
+elif command -v python >/dev/null 2>&1 || command -v python3 >/dev/null 2>&1; then
+    py="$(command -v python || command -v python3)"
+    "$py" -c 'import sys,zipfile; zipfile.ZipFile(sys.argv[1]).extractall(sys.argv[2])' \
+        "$(cd "$out" && pwd)/$name.zip" "$check" || fail "the archive does not unpack (zipfile)"
+else
+    fail "no reader to unpack the archive with (need bsdtar or python)"
+fi
+[ -f "$check/traduku.exe" ] || fail "the unpacked archive has no traduku.exe at its root"
 unpacked_sha="$(sha256sum "$check/traduku.exe" | cut -d' ' -f1)"
 [ "$unpacked_sha" = "$built_sha" ] \
     || fail "the archive holds a different binary than the build produced:

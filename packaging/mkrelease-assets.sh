@@ -52,6 +52,23 @@ cp "$SRC_ARCH/traduku-$VER.tar.gz" "$OUT/"
 need "$ROOT/packaging/arch/traduku-release.asc" "the release key's public half, tracked in the repo"
 cp "$ROOT/packaging/arch/traduku-release.asc" "$OUT/"
 
+# Windows: the portable zip, built on a Windows machine by
+# packaging/windows/build-portable.sh. It is in the set because it is the only
+# artifact a Windows user can click - and it is checked before it is copied,
+# because the 0.4.0 zip passed every build check and could not be extracted on
+# Windows at all (see packaging/windows/check-portable-zip.sh).
+SRC_WIN=${4:-$ROOT/dist}
+win_zip="$(find "$SRC_WIN" -maxdepth 1 -name "traduku-$VER-win64-portable.zip" 2>/dev/null | head -1)"
+if [ -n "$win_zip" ]; then
+    "$ROOT/packaging/windows/check-portable-zip.sh" "$win_zip" \
+        || { echo "mkrelease-assets.sh: refusing to assemble a release around a Windows package nobody can open" >&2; exit 1; }
+    cp "$win_zip" "$OUT/"
+else
+    # Not a silence: a release assembled on a Linux machine without the Windows
+    # artifact is a decision, and the line below says which one was made.
+    echo "mkrelease-assets.sh: NOTE no traduku-$VER-win64-portable.zip in $SRC_WIN - the release set will have no Windows package"
+fi
+
 # One file naming everything else, and nothing that is not there.
 (cd "$OUT" && rm -f SHA256SUMS && sha256sum -- ./* > SHA256SUMS)
 

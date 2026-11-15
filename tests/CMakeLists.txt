@@ -267,6 +267,17 @@ add_test(NAME tray_language_wiring
 set_tests_properties(tray_language_wiring PROPERTIES TIMEOUT 120
     ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:${_bash_dir}")
 
+# The 0.4.0 Windows release shipped an archive that no Windows user could open:
+# bsdtar wrote `./`-prefixed members, bsdtar read them back happily, and zipfldr
+# (Explorer, "Extract All") called the package invalid. The gate packs through
+# the real writer, checks with the reader's rules - including zipfldr on
+# Windows - and requires that the shipped layout is refused. See the script.
+add_test(NAME portable_zip
+         COMMAND ${BASH_PROGRAM} ${CMAKE_CURRENT_SOURCE_DIR}/cmake/test_portable_zip.sh
+                 ${CMAKE_SOURCE_DIR})
+set_tests_properties(portable_zip PROPERTIES TIMEOUT 600
+    ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:${_bash_dir}")
+
 # selftest --live must use the config file it was handed (--config), not the
 # user's default path
 lt_add_test(tst_selftest SOURCES integration/tst_selftest.cpp
