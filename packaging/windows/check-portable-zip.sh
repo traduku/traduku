@@ -33,6 +33,7 @@ case "${1:-}" in
 esac
 archive="${1:-}"
 compare="${2:-}"
+here="$(cd "$(dirname "$0")" && pwd)"   # run-isolated.sh lives beside this file
 [ -n "$archive" ] || { echo "usage: $0 [--no-run] <archive.zip> [staged-dir]" >&2; exit 2; }
 [ -f "$archive" ] || { echo "check-portable-zip.sh: no such archive: $archive" >&2; exit 2; }
 # zipfldr is a shell namespace API: it addresses files by absolute path, and a
@@ -208,7 +209,7 @@ PS
         # The last claim of the package: what zipfldr produced runs with no Qt
         # and no compiler on PATH, which is the definition of portable.
         syspath="$(dirname "$(command -v cmd.exe 2>/dev/null || echo /c/Windows/System32/cmd.exe)")"
-        if ! (cd "$dest" && PATH="$syspath" QT_QPA_PLATFORM=offscreen ./traduku.exe --selftest 2>/dev/null \
+        if ! (cd "$dest" && PATH="$syspath" "$BASH" "$here/run-isolated.sh" ./traduku.exe --selftest 2>/dev/null \
                 | grep -q '^SELFTEST PASSED'); then
             bad "the exe that zipfldr extracted does not pass --selftest with a PATH that has no Qt"
         else

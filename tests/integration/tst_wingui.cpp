@@ -117,6 +117,22 @@ private slots:
         }
         const QString out = QString::fromLocal8Bit(p.readAllStandardOutput());
         const QString err = QString::fromLocal8Bit(p.readAllStandardError());
+        // The single-instance guard, and it fires on the one machine where this
+        // row is supposed to be green: a developer with traduku in the tray.
+        // The second instance surfaces the first window and exits 0, which is
+        // correct behaviour and indistinguishable from "the double-click did
+        // nothing" at the exit code. Measured on the desktop this row exists
+        // for: traduku.exe running, 47 rows, this one red.
+        //
+        // So it is skipped, with the reason, like the rows above: the guard is
+        // measured by the single-instance tests, and this one measures a start
+        // from nothing. A red row that asks the developer to quit their own app
+        // before running the suite is a row nobody runs.
+        if ((out + err).contains(QStringLiteral("already running"))) {
+            QSKIP("a traduku instance is already running in this session (the "
+                  "single-instance guard answered and the new process exited) - "
+                  "quit the tray app to measure a cold start here");
+        }
         QVERIFY2(!(out + err).contains(QStringLiteral("no interactive desktop")),
                  qPrintable(QStringLiteral("the GUI mode refused a session that "
                                            "has a desktop: [") + out + err

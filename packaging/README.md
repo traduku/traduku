@@ -70,3 +70,75 @@ Verify a rule without root before installing it:
 `install=traduku-gnome.install` hook on Arch - and `--backend-info` reports
 the state plus the exact fix command; ROADMAP.md §2 records why the file
 alone is not enough.)
+
+## Windows
+
+Two artifacts from one staging tree (`dist/portable`, filled by
+`build-portable.sh` via `deploy-runtime.sh` — Qt plugins, the MinGW trio by
+name, and the offscreen platform that `--selftest` needs):
+
+| script | what it writes | gate row |
+|---|---|---|
+| `windows/build-portable.sh` | `traduku-<v>-win64-portable.zip` | `portable_zip` |
+| `windows/build-msi.sh` | `traduku-<v>-x64.msi` | `msi` |
+
+The zip is the primary package: no UAC, works for a user without admin rights,
+and it is the one 0.4 shipped. The `.msi` is the same files in the form people
+expect — one entry in "Installed apps", install and uninstall from Settings.
+`windows/product.wxs` records the decisions that come with it: per-machine (a
+global-hotkey tray app is one program per machine, the price is UAC, and the
+zip is the answer for anyone who will not pay it); the runtime is payload files,
+not merge modules (MinGW has no redist to chain); the config in
+`%LOCALAPPDATA%\traduku\config.ini` survives uninstall (a person's API key is
+not the installer's to delete); autostart belongs to the Settings window, not to
+the MSI (two writers of one setting will disagree); the licence dialog shows the
+repository's `LICENSE`, converted to RTF at build time, so `LICENSE` stays the
+only licence text in the tree.
+
+The file list is **harvested** (`heat dir`), never written by hand — a package
+that carries a list requiring an edit when a DLL appears ships yesterday's list,
+and the user meets it as "Qt6Svg.dll not found" from a green build. The count is
+compared with the staging tree before and after: `harvested components == staged
+files`.
+
+`mkzip.sh`/`check-portable-zip.sh` exist because of ROADMAP.md §7.8 item 5 (the
+0.4.0 zip that Windows refused to open, verified by the tool that wrote it), and
+the MSI follows the same rule: `msi-inspect.ps1` reads the finished package back
+**through `msi.dll`** — the engine on the user's machine — and asks about tables:
+File vs the tree, the required Qt/MinGW files by name, `platforms\` present,
+every component referenced by a feature, the cabinet embedded (`#cab1.cab`; a
+`.cab` sibling is a package that installs on the machine that built it), one
+UpgradeCode across the Upgrade rows, package type 2 (per-machine), template
+`x64;`, the `VersionNT64 >= 603` launch condition, and the `CREATEDESKTOPSHORTCUT`
+condition on the shortcut component. candle and light exit 0 for a package that
+installs the wrong thing; this does not.
+
+The `msi` gate then builds three deliberate mutants and requires each to be
+refused by the check meant to catch it: a cabinet that is not embedded, a
+shortcut that cannot be declined, a payload with one plugin missing. A gate that
+cannot reproduce the incident measures its own optimism.
+
+Install round-trip (`test-msi-install.ps1`: install → `--selftest` from the
+install dir with no Qt on `PATH` → the "Installed apps" entry in HKLM →
+uninstall → no files left) needs elevation. `build-msi.sh` runs it when the
+shell is elevated, asks Windows with `--prompt-uac` on a desktop, and prints the
+skip with its reason otherwise — a red "1603" from a test that never installed
+anything is worse than a skip.
+
+Tools: WiX Toolset v3 (`candle`, `light`, `heat`). Either
+`winget install --id WiXToolset.WiXToolset` (UAC), or, with no admin rights, the
+binaries zip unpacked into the profile — which is what this machine uses:
+
+```bash
+curl -sL -o wix.zip https://github.com/wixtoolset/wix3/releases/download/wix3141rtm/wix314-binaries.zip
+mkdir -p "$LOCALAPPDATA/wix314" && /c/Windows/System32/tar.exe -xf wix.zip -C "$LOCALAPPDATA/wix314"
+packaging/windows/build-msi.sh            # finds it, no install, no UAC
+```
+
+One caveat worth knowing before you compare checksums: a WiX package with
+`Product/@Id="*"` is **not byte-reproducible** — the ProductCode GUID and the
+summary timestamps are regenerated every run, so `traduku-0.4.0-x64.msi` gets a
+new sha256 on every build of the same source. What is reproducible, and checked,
+is the payload: the `traduku.exe` inside the package is compared with the build
+output (`sha256sum`, and the `msi` gate prints it). Publish the `.msi` you
+installed, not the one you inspect.

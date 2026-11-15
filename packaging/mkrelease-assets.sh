@@ -69,6 +69,27 @@ else
     echo "mkrelease-assets.sh: NOTE no traduku-$VER-win64-portable.zip in $SRC_WIN - the release set will have no Windows package"
 fi
 
+# The Windows installer, when this machine has one. An .msi is an OLE compound
+# file, so the magic number is the cheapest statement that the bytes are a
+# database and not a truncated download. The real reading - tables, embedded
+# cabinet, one upgrade code, per-machine - is packaging/windows/msi-inspect.ps1,
+# and it runs where msi.dll exists: on Windows, in build-msi.sh and in the `msi`
+# gate. Here the file is copied and the limit of what this machine can say about
+# it is written down, because "checked" is a word a release script must not use
+# for a thing it did not check.
+win_msi="$(find "$SRC_WIN" -maxdepth 1 -name "traduku-$VER-x64.msi" 2>/dev/null | head -1)"
+if [ -n "$win_msi" ]; then
+    magic="$(od -An -tx1 -N8 "$win_msi" | tr -dc '0-9a-f')"
+    if [ "$magic" != "d0cf11e0a1b11ae1" ]; then
+        echo "mkrelease-assets.sh: $win_msi is not an OLE compound file (magic: $magic) - an .msi starts d0cf11e0a1b11ae1" >&2
+        exit 1
+    fi
+    cp "$win_msi" "$OUT/"
+    echo "mkrelease-assets.sh: traduku-$VER-x64.msi copied; its tables are inspected on Windows (msi-inspect.ps1), not here - msi.dll does not exist on Linux"
+else
+    echo "mkrelease-assets.sh: NOTE no traduku-$VER-x64.msi in $SRC_WIN - the release set will have no Windows installer"
+fi
+
 # One file naming everything else, and nothing that is not there.
 (cd "$OUT" && rm -f SHA256SUMS && sha256sum -- ./* > SHA256SUMS)
 

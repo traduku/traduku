@@ -1,0 +1,127 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  The Windows installer for traduku.
+
+  Why an .msi next to the portable zip: the zip is the package for someone who
+  wants a folder they can delete, and it is what a Windows user without
+  administrator rights can use. The .msi is the package for everyone else - the
+  one that appears in "Installed apps", can be deployed by an enterprise
+  installer, gets repaired and uninstalled from the Settings page, and is the
+  form most people expect software to arrive in. One staging tree feeds both
+  (packaging/windows/build-portable.sh fills it, this file wraps it).
+
+  WHAT THIS FILE DECIDES, because an installer is a list of decisions and each
+  one is a bug if it is left implicit:
+
+  * perMachine. traduku is a tray application that registers a global hotkey;
+    two users on one machine should get one copy, not two entries in "Installed
+    apps". The price is UAC, and the portable zip is the answer for anyone who
+    will not or cannot pay it.
+  * the MinGW and Qt runtimes are files in the payload, listed by the harvest,
+    not merge modules. There is no VC++ redist to chain: the app is built with
+    MinGW, whose runtime DLLs ship inside (the same three files the portable
+    zip carries, named in deploy-runtime.sh). A "prerequisite" for a Qt/MinGW
+    app would be a dependency on a machine that has nothing to do with this one.
+  * the config file is not touched by uninstall. traduku writes
+    %LOCALAPPDATA%\traduku\config.ini (the API key, the model, the language,
+    the hotkey). An installer that deletes a person's key on uninstall has
+    destroyed something it did not create, and the file is per-user anyway -
+    the machine-wide uninstall has no business in %LOCALAPPDATA%.
+  * the autostart entry is the app's, not the installer's. The Settings window
+    owns "start on login" (it writes HKCU\...\Run); a second writer in the MSI
+    is a second owner of one setting, and they will disagree.
+  * the install directory is fixed to %ProgramFiles%\traduku, overridable on
+    the command line (INSTALLFOLDER="D:\traduku"). No browse dialog: the
+    dialog is the reason a "simple" installer needs a UI sequence, and this
+    package has one file to place.
+  * UpgradeCode is a permanent identity, below. ProductCode changes with every
+    build (Id="*"), which is what makes a version install over the old one
+    instead of sitting next to it.
+
+  Built by packaging/windows/build-msi.sh, which harvests the file list from
+  the staging tree with heat.exe (no file names are written here - a package
+  whose file list is maintained by hand is a package that ships yesterday's
+  list) and verifies the result by reading the installer database back.
+-->
+<Wix xmlns="http://schemas.microsoft.com/wix/2006/wi">
+
+    <!-- Id="*": a new ProductCode per build. A fixed ProductCode plus a new
+         version is an illegal package (Windows installs it as a "newer version
+         of the same product" and refuses the file table); a fixed UpgradeCode
+         plus a new ProductCode is the upgrade the Upgrade table below drives. -->
+    <Product Id="*"
+             Name="traduku"
+             Language="1033"
+             Codepage="1252"
+             Version="$(var.ProductVersion)"
+             Manufacturer="$(var.Manufacturer)"
+             UpgradeCode="$(var.UpgradeCode)">
+
+        <!-- InstallerVersion 500 = Windows Installer 5.0, which is Windows 8
+             and newer: the same floor as the launch condition below, so the
+             package cannot be opened by an engine too old to run the app. -->
+        <Package InstallerVersion="500" Compressed="yes" Platform="x64"
+                 InstallScope="perMachine"
+                 Manufacturer="$(var.Manufacturer)"
+                 Description="traduku $(var.ProductVersion) for Windows x64"
+                 Comments="traduku - the clipboard translator that types the translation back" />
+
+        <!-- One file on the release page. A package whose cabinet is a sibling
+           is the classic MSI footgun: copy the .msi without the .cab and the
+           install fails at the first file, on the user's machine, after the
+           progress bar started. build-msi.sh reads the Media table back to
+           prove the cabinet is embedded. -->
+        <MediaTemplate EmbedCab="yes" />
+
+        <!-- The row that turns "install 0.5 over 0.4" into an upgrade instead
+             of two products in the control panel. Scheduling it after
+             InstallExecute means a failed upgrade rolls the old version back
+             intact; afterInstallInitialize would have already removed it. -->
+        <MajorUpgrade Schedule="afterInstallExecute"
+                      DowngradeErrorMessage="traduku $(var.ProductVersion) is older than the version already installed. Uninstall the newer version first, or install the newer package." />
+
+        <!-- Where the user reads about the product after installing it. -->
+        <Property Id="ARPURLINFOABOUT" Value="https://github.com/traduku/traduku" />
+        <Property Id="ARPCONTACT" Value="https://github.com/traduku/traduku/issues" />
+        <!-- "Modify" is switched off by WixUI_Minimal itself (it sets
+             ARPNOMODIFY, and light refuses a second definition of it), which is
+             the right default here: there is nothing to modify, one feature
+             with all the files. "Repair" stays - it re-copies files that were
+             deleted by hand, which is exactly what it is for. -->
+
+        <!-- The app calls Windows 10/11 APIs (WinRT toast notifications, the
+             shell's global hotkey path). 603 is Windows 8.1, one release below
+             the oldest OS the product claims: the floor is where the app stops
+             working, not where it stops being tested. -->
+        <Condition Message="traduku needs Windows 8.1 x64 or newer. The portable zip in the same release runs the same binary without an installer.">
+            <![CDATA[VersionNT64 >= 603]]>
+        </Condition>
+
+        <Directory Id="TARGETDIR" Name="SourceDir">
+            <Directory Id="ProgramFiles64Folder">
+                <Directory Id="INSTALLFOLDER" Name="traduku" />
+            </Directory>
+            <Directory Id="ProgramMenuFolder">
+                <Directory Id="AppMenuFolder" Name="traduku" />
+            </Directory>
+            <Directory Id="DesktopFolder" Name="Desktop" />
+        </Directory>
+
+        <Feature Id="MainApplication" Title="traduku" Level="1">
+            <!-- RuntimeFiles is the harvested staging tree: traduku.exe, the
+                 Qt DLLs, platforms/qwindows.dll and qoffscreen.dll, the MinGW
+                 trio, the image/svg/tls plugin folders. Generated at build
+                 time, never edited. -->
+            <ComponentGroupRef Id="RuntimeFiles" />
+            <ComponentRef Id="StartMenuShortcut" />
+            <ComponentRef Id="DesktopShortcut" />
+        </Feature>
+
+        <UIRef Id="WixUI_Minimal" />
+        <!-- The licence dialog shows the licence the repository ships, as
+             RTF. build-msi.sh converts packaging's LICENSE (GPL-3.0-or-later)
+             into RTF at build time: a dialog that shows a summary instead of
+             the licence is a dialog that argues with the licence. -->
+        <WixVariable Id="WixUILicenseRtf" Value="$(var.LicenseRtf)" />
+    </Product>
+</Wix>

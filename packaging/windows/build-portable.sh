@@ -72,7 +72,7 @@ cp "$exe" "$stage/traduku.exe" || fail "could not stage the binary"
 "$here/deploy-runtime.sh" --build "$build" --qt "$qt" --mingw-bin "$mingwbin" "$stage" \
     || fail "runtime deployment into $stage failed"
 
-version="$("$stage/traduku.exe" --version | sed -n 's/^traduku \([0-9.]*\).*/\1/p')"
+version="$("$BASH" "$here/run-isolated.sh" "$stage/traduku.exe" --version | sed -n 's/^traduku \([0-9.]*\).*/\1/p')"
 [ -n "$version" ] || fail "could not read the version from the staged binary"
 name="traduku-$version-win64-portable"
 
@@ -131,12 +131,12 @@ if [ "$on_windows" = 1 ]; then
     # No Qt, no compiler on PATH: only the shipped DLLs may be loadable. The
     # system dir stays, because Windows itself is not in the package.
     syspath="$(dirname "$(command -v cmd.exe 2>/dev/null || echo /c/Windows/System32/cmd.exe)")"
-    if ! (cd "$check" && PATH="$syspath" QT_QPA_PLATFORM=offscreen \
+    if ! (cd "$check" && PATH="$syspath" "$BASH" "$here/run-isolated.sh" \
             ./traduku.exe --version >/dev/null); then
         fail "the unzipped package does not run without Qt on PATH - a shipped \
 DLL is missing (this is the check that finds it, not the build)"
     fi
-    if ! (cd "$check" && PATH="$syspath" QT_QPA_PLATFORM=offscreen \
+    if ! (cd "$check" && PATH="$syspath" "$BASH" "$here/run-isolated.sh" \
             ./traduku.exe --selftest | grep -q '^SELFTEST PASSED'); then
         fail "the unzipped package cannot pass its own --selftest"
     fi

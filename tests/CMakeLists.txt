@@ -278,6 +278,33 @@ add_test(NAME portable_zip
 set_tests_properties(portable_zip PROPERTIES TIMEOUT 600
     ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:${_bash_dir}")
 
+# The Windows installer, and the checks that read it: candle/light/heat build a
+# package from the staging tree, msi-inspect.ps1 reads it back through msi.dll,
+# and three deliberate mutants (a cabinet that is not embedded, a shortcut that
+# cannot be declined, a payload with one plugin missing) must be refused - the
+# rule portable_zip learned the hard way, that a gate which cannot reproduce
+# the incident is measuring its own optimism. It skips, with the reason, on a
+# machine that is not Windows, has no WiX, or has no staged tree; the install
+# round-trip needs elevation and build-msi.sh says so when it cannot run it.
+add_test(NAME msi
+         COMMAND ${BASH_PROGRAM} ${CMAKE_CURRENT_SOURCE_DIR}/cmake/test_msi.sh
+                 ${CMAKE_SOURCE_DIR})
+set_tests_properties(msi PROPERTIES TIMEOUT 900
+    ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:${_bash_dir}")
+
+# No check may write the settings of the account that runs it: every call site
+# that *runs* traduku has to use the program's own isolation switch
+# ($TRADUKU_CONFIG, via packaging/windows/run-isolated.sh), proven three ways -
+# the shipped tree, a control tree that violates the rule, and the real binary
+# naming a sentinel endpoint it was given. The accident it records is ROADMAP.md
+# §7.8 item 7: a packaging run replaced a configured install's settings with the
+# mock values it was testing with, and every check in that run was green.
+add_test(NAME selftest_isolation
+         COMMAND ${BASH_PROGRAM} ${CMAKE_CURRENT_SOURCE_DIR}/cmake/test_selftest_isolation.sh
+                 ${CMAKE_SOURCE_DIR})
+set_tests_properties(selftest_isolation PROPERTIES TIMEOUT 300
+    ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:${_bash_dir}")
+
 # selftest --live must use the config file it was handed (--config), not the
 # user's default path
 lt_add_test(tst_selftest SOURCES integration/tst_selftest.cpp
