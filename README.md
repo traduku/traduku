@@ -2,27 +2,25 @@
 
 Clipboard translator for Linux & Windows, powered by any OpenAI-compatible LLM
 endpoint (Ollama, llama.cpp, vLLM, LM Studio, OpenAI, OpenRouter, etc).
+
 Select text, press **Ctrl+C twice** — get a translation in a pop-up window and the clipboard.
-
-- confidential and unlimited (when using a local AI)
-- runs on **Linux** (KDE and GNOME, X11 and Wayland) and **Windows**.
-
-The core is desktop-agnostic plain Qt; each desktop is a thin interface.
 
 ## Features
 
-- Double Ctrl+C shortcut (`Ctrl+Alt+C` as a fallback).
+- confidential and unlimited (when using a local AI)
+- runs on **Linux** (Arch/Debian/Ubuntu, X11/Wayland, KDE/GNOME) and **Windows**.
+- Call translation with double `Ctrl+C` (`Ctrl+Alt+C` as a fallback).
 - Two-panes window that streams and re-translates as you edit.
 - Long texts are split into chunks by paragraphs and translated in parallel.
-- Audio sounds for start / finish / failure
-- a lot of destination languages, the default follows your locale.
+- Sound notifications for start / finish / failure
+- Many destination languages, the default destination == your locale.
 - Plain INI config
-- Console modes that work headless, over ssh, with no display:
-  `--translate`, `--selftest`, `--backend-info`, `--autostart`,
-  `--notify-test`.
 - Tray icon (translates clipboard on left mouse click, menu on the right click
 - Tray menu (translate now, destination language, launch on login, settings, quit)
 - autostart
+- Console modes that work headless, over ssh, with no display:
+  `--translate`, `--selftest`, `--backend-info`, `--autostart`,
+  `--notify-test`.
 
 ## Install
 
@@ -34,7 +32,8 @@ Packages for each platform are on the [release page](https://github.com/traduku/
 | Debian / Ubuntu, GNOME | `traduku-gnome_<ver>_amd64.deb` | `sudo apt install ./traduku-gnome_<ver>_amd64.deb` |
 | Arch / CachyOS, Plasma | `traduku-<ver>-1-x86_64.pkg.tar.zst` | `sudo pacman -U ./traduku-<ver>-1-x86_64.pkg.tar.zst` |
 | Arch / CachyOS, GNOME | `traduku-gnome-<ver>-1-x86_64.pkg.tar.zst` | `sudo pacman -U ./traduku-gnome-<ver>-1-x86_64.pkg.tar.zst` |
-| Windows 10/11 (x64) | `traduku-<ver>-win64-portable.zip` | unzip anywhere, run `traduku.exe` |
+| Windows portable | `traduku-<ver>-win64-portable.zip` | unzip anywhere, run `traduku.exe` |
+| Windows MSI | `traduku-<ver>-x64.msi` | install, run desktop shortcut |
 
 Arch packages are signed. The public key ships with the release (`packaging/arch/traduku-release.asc`); trust it once:
 
