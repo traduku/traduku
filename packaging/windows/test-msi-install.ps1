@@ -1,5 +1,14 @@
-# Install a traduku .msi for real, prove the installed program runs, prove the
-# control panel sees it, uninstall it, prove nothing is left.
+# The .msi end-to-end: install it for real, prove the installed program runs, prove
+# it translates against the repository mock, prove the control panel sees it,
+# uninstall it, prove nothing is left.
+#
+# Stages, and why each is in this order (each one is a thing a package can get
+# wrong while msiexec reports success):
+#   1. msiexec /i returns 0 and traduku.exe is on disk
+#   2. --selftest passes from the install dir with no Qt on PATH  -> payload complete
+#   3. --translate reaches the mock endpoint                      -> network stack shipped
+#   4. the HKLM uninstall entry exists with the right version     -> the user can see it
+#   5. msiexec /x removes every file and the entry                -> the user can remove it
 #
 # This is the check that cannot be faked by reading tables: msi-inspect.ps1 can
 # tell you the cabinet is embedded and the Upgrade row is right, and the
@@ -14,17 +23,29 @@
 # skip with its reason when it is not; --prompt-uac there asks Windows for the
 # elevation, which is the right thing on a desktop and the wrong thing in CI.
 #
-# Usage: test-msi-install.ps1 -Msi <path> [-KeepLogs]
+# Usage: test-msi-install.ps1 -Msi <path> [-MockPort N] [-NoTranslate] [-KeepLogs] [-Quiet]
 
 param(
     [Parameter(Mandatory = $true)][string]$Msi,
     [string]$InstallDir = '',
-    [switch]$KeepLogs
+    [int]$MockPort = 0,
+    [switch]$NoTranslate,
+    [switch]$KeepLogs,
+    [switch]$Quiet
 )
+
+# Path separator, asked of the runtime rather than typed: this script is run by
+# build-msi.sh from a shell that mixes MSYS and Windows paths, and the one
+# literal that was hard-coded here pointed at tools\mock-openai.py by
+# concatenating a variable that did not exist - it resolved to "tools" + "" +
+# "mock-openai.py" and the stage reported "no mock server" on a machine that
+# had one.
+$B = [IO.Path]::DirectorySeparatorChar
 
 $ErrorActionPreference = 'Stop'
 $fail = 0
-function Ok($s)  { Write-Output ("ok    " + $s) }
+function Say($s) { if (-not $Quiet) { Write-Output $s } }   # used below; undefined here once, and the
+function Ok($s)  { Write-Output ("ok    " + $s) }           # first elevated run would have thrown on it
 function Bad($s) { Write-Output ("FAIL  " + $s); $script:fail++ }
 
 $elevated = ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()
@@ -146,6 +167,79 @@ else {
     # what Settings shows, and an empty one is a package that never says what
     # it is.
     if ($arp.DisplayIcon) { Say ("icon: " + $arp.DisplayIcon) }
+}
+
+# --- the installed program does the one thing the product does ----------------
+# --selftest proves the payload is complete. This proves the *installed*
+# artifact answers a translation request: the mock OpenAI server from the
+# repository (tools/mock-openai.py) is started on a loopback port, one isolated
+# config points the installed exe at it, and `--translate` must stream back the
+# mock's answer. Everything runs with a PATH that has no Qt in it, so the
+# network stack that answers is the one the package carried (Qt6Network.dll) -
+# a package that installs the exe and forgets the network plugin passes
+# --selftest and cannot translate, and this is the row that sees the
+# difference.
+#
+# No user settings, no user endpoint: the config is a temp file ($env:
+# TRADUKU_CONFIG, the switch the program documents), and the endpoint is
+# 127.0.0.1, so nothing here can reach a real API or spend a real key.
+if (-not $NoTranslate) {
+    $root = Split-Path -Parent (Split-Path -Parent $PSScriptRoot)
+    $mock = Join-Path $root ('tools' + $B + 'mock-openai.py')
+    $py = $null
+    foreach ($cand in @('python', 'python3', 'py')) {
+        $g = Get-Command $cand -ErrorAction SilentlyContinue
+        if ($g) { $py = $g.Source; break }
+    }
+    if (-not (Test-Path -LiteralPath $mock)) { Bad "no $mock - cannot run the translate stage" }
+    elseif (-not $py) { Bad 'no python on PATH - cannot start the mock endpoint (pass -NoTranslate for a packages-only run)' }
+    else {
+        if ($MockPort -le 0) { $MockPort = 8931 + (Get-Random -Maximum 400) }
+        $mockLog = Join-Path $logDir 'mock.log'
+        $mockProc = Start-Process -FilePath $py -ArgumentList @($mock, "$MockPort") `
+            -PassThru -WindowStyle Hidden -RedirectStandardOutput $mockLog -RedirectStandardError (Join-Path $logDir 'mock.err')
+        try {
+            $up = $false
+            for ($i = 0; $i -lt 40 -and -not $up; $i++) {
+                Start-Sleep -Milliseconds 250
+                try {
+                    $r = Invoke-WebRequest -UseBasicParsing -Uri ('http://127.0.0.1:' + $MockPort + '/v1/models') -TimeoutSec 2
+                    if ($r.StatusCode -eq 200) { $up = $true }
+                } catch { }
+            }
+            if (-not $up) { Bad "the mock endpoint never answered on port $MockPort (see $logDir)" }
+            else {
+                $cfg = Join-Path $iso 'translate.ini'
+                @(
+                    '[General]',
+                    ('ApiUrl=http://127.0.0.1:' + $MockPort + '/v1'),
+                    'ApiKey=e2e-only-not-a-secret',
+                    'Model=test-model',
+                    'TargetLanguage=nl'
+                ) | Set-Content -LiteralPath $cfg -Encoding ASCII
+                $probe = 'hello from the installer test'
+                $prevPath2 = $env:PATH; $prevQpa2 = $env:QT_QPA_PLATFORM
+                $env:PATH = $purePath; $env:QT_QPA_PLATFORM = 'offscreen'
+                try { $tr = & $exe --translate --text $probe --config $cfg 2>&1 | Out-String }
+                finally { $env:PATH = $prevPath2; $env:QT_QPA_PLATFORM = $prevQpa2 }
+                # The mock replies "[MOCK -> Nederlands (Dutch)] <text>": the
+                # prefix proves the request arrived and streamed, the echo
+                # proves the text is the one we sent, and the language name
+                # proves TargetLanguage from the config reached the prompt.
+                if ($tr -notmatch '\[MOCK -> ') {
+                    Bad ('the installed program did not translate (reply: [' + ($tr.Trim()) + ']) - a package with the exe and not Qt6Network.dll passes --selftest and cannot talk to an API')
+                } elseif ($tr -notmatch [regex]::Escape($probe)) {
+                    Bad ("the translation did not echo the probe text: [" + ($tr.Trim()) + ']')
+                } elseif ($tr -notmatch 'Dutch') {
+                    Bad ("the reply does not name the configured target language: [" + ($tr.Trim()) + ']')
+                } else {
+                    Ok ('the installed traduku translated through the network stack the package carries: ' + ($tr.Trim()))
+                }
+            }
+        } finally {
+            Stop-Process -Id $mockProc.Id -Force -ErrorAction SilentlyContinue
+        }
+    }
 }
 
 # Autostart is the app's setting, not the installer's (see product.wxs). The

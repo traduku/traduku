@@ -80,7 +80,7 @@ name, and the offscreen platform that `--selftest` needs):
 | script | what it writes | gate row |
 |---|---|---|
 | `windows/build-portable.sh` | `traduku-<v>-win64-portable.zip` | `portable_zip` |
-| `windows/build-msi.sh` | `traduku-<v>-x64.msi` | `msi` |
+| `windows/build-msi.sh` | `traduku-<v>-x64.msi` | `msi`, `msi_e2e` |
 
 The zip is the primary package: no UAC, works for a user without admin rights,
 and it is the one 0.4 shipped. The `.msi` is the same files in the form people
@@ -119,11 +119,24 @@ shortcut that cannot be declined, a payload with one plugin missing. A gate that
 cannot reproduce the incident measures its own optimism.
 
 Install round-trip (`test-msi-install.ps1`: install → `--selftest` from the
-install dir with no Qt on `PATH` → the "Installed apps" entry in HKLM →
-uninstall → no files left) needs elevation. `build-msi.sh` runs it when the
-shell is elevated, asks Windows with `--prompt-uac` on a desktop, and prints the
-skip with its reason otherwise — a red "1603" from a test that never installed
-anything is worse than a skip.
+install dir with no Qt on `PATH` → `--translate` against `tools/mock-openai.py`
+→ the "Installed apps" entry in HKLM → uninstall → no files left) needs
+elevation. `build-msi.sh` runs it when the shell is elevated, asks Windows with
+`--prompt-uac` on a desktop, and prints the skip with its reason otherwise — a
+red "1603" from a test that never installed anything is worse than a skip. CI
+Windows runners run elevated, so the `msi_e2e` row executes there.
+
+The translate stage is what makes it an e2e of the product and not of msiexec:
+the program that landed in `%ProgramFiles%` answers a translation request, with
+a `PATH` that contains no Qt, so the network stack that replies is the one the
+package carried. A package that ships `Qt6Core.dll` and forgets `Qt6Network.dll`
+passes `--selftest` and cannot talk to an API. The endpoint is `127.0.0.1` on a
+random port and the config is a temp file via `TRADUKU_CONFIG` — the row cannot
+reach a real API or spend a real key. The row is followed by two controls, both
+required to fail: a package with the cabinet not embedded (the two-file package:
+it installs on the machine that built it, fails on the one that downloaded it),
+and the translate stage with nothing listening on its port ("the program
+translates" must be a thing the script checked, not a line it prints).
 
 Tools: WiX Toolset v3 (`candle`, `light`, `heat`). Either
 `winget install --id WiXToolset.WiXToolset` (UAC), or, with no admin rights, the

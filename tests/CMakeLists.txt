@@ -305,6 +305,19 @@ add_test(NAME selftest_isolation
 set_tests_properties(selftest_isolation PROPERTIES TIMEOUT 300
     ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:${_bash_dir}")
 
+# The installer end-to-end: install the package, make the *installed* program
+# translate against tools/mock-openai.py, uninstall it, and then prove the row
+# can see a broken package - the two-file mutant must fail to install, and the
+# translate stage must fail with no server behind its port. A per-machine .msi
+# needs an elevated token: CI Windows runners have one, so the row executes
+# there; a developer shell does not, and the row prints the skip, the reason and
+# the command that runs it for real (ROADMAP.md §7.4, §7.8 items 5-7).
+add_test(NAME msi_e2e
+         COMMAND ${BASH_PROGRAM} ${CMAKE_CURRENT_SOURCE_DIR}/cmake/test_msi_e2e.sh
+                 ${CMAKE_SOURCE_DIR})
+set_tests_properties(msi_e2e PROPERTIES TIMEOUT 1800
+    ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:${_bash_dir}")
+
 # selftest --live must use the config file it was handed (--config), not the
 # user's default path
 lt_add_test(tst_selftest SOURCES integration/tst_selftest.cpp
