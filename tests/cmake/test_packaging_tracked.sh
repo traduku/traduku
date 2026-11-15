@@ -21,6 +21,21 @@ if ! git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
     exit 0
 fi
 
+# The other half of the skip condition, and the second accident this gate has
+# survived. Every git call below resolves paths against the ENCLOSING repo, so
+# the index is evidence only for the worktree root. A release tarball extracted
+# INSIDE the checkout - makepkg unpacks into release-out/src/traduku-$ver, a
+# directory .gitignore keeps out of that index - passed the check above (it is
+# inside a worktree), and the gate then reported every packaging file as "not
+# tracked": true statements about paths under release-out/, false statements
+# about a tree that was exactly HEAD. A gate that fails a clean release because
+# of where the builder put it is measuring the builder, not the release.
+top=$(git rev-parse --show-toplevel)
+if [ "$(pwd -P)" != "$(cd "$top" && pwd -P)" ]; then
+    echo "SKIP packaging_tracked: $(pwd -P) is not the worktree root ($top) - the git index describes the outer repo, not this tree"
+    exit 0
+fi
+
 fail=0
 
 # The release depends on these two by name; a rename that drops one is the same
